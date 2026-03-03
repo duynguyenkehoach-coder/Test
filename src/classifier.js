@@ -3,6 +3,17 @@ const config = require('./config');
 
 const groq = new Groq({ apiKey: config.GROQ_API_KEY });
 
+// Gemini AI fallback
+let geminiModel = null;
+try {
+    const { GoogleGenerativeAI } = require('@google/generative-ai');
+    if (config.GEMINI_API_KEY) {
+        const genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY);
+        geminiModel = genAI.getGenerativeModel({ model: config.GEMINI_MODEL || 'gemini-1.5-flash' });
+        console.log('[Classifier] ✅ Gemini AI fallback loaded');
+    }
+} catch (e) { /* @google/generative-ai not installed */ }
+
 // Fallback models: try main model first, then smaller/cheaper models
 const AI_MODELS = [
     config.AI_MODEL || 'llama-3.3-70b-versatile',
@@ -148,11 +159,56 @@ async function classifyPost(post) {
             }
 
             console.error('[Classifier] ✗ Error:', err.message);
-            return makeFallback();
+            // Try Gemini before giving up
+            const geminiResult = await classifyWithGemini(post);
+            return geminiResult || makeFallback();
         }
     }
 
-    return makeFallback();
+    // All Groq models failed — try Gemini
+    const geminiResult = await classifyWithGemini(post);
+    return geminiResult || makeFallback();
+}
+
+/**
+ * Fallback: Classify using Google Gemini AI
+ */
+async function classifyWithGemini(post) {
+    if (!geminiModel) return null;
+
+    try {
+        console.log('[Classifier] 🔄 Groq exhausted — trying Gemini...');
+        const userPrompt = USER_PROMPT_TEMPLATE
+            .replace('{platform}', post.platform)
+            .replace('{content}', post.content.substring(0, 1500));
+
+        const prompt = SYSTEM_PROMPT + '\n\n' + userPrompt;
+        const result = await geminiModel.generateContent(prompt);
+        const text = result.response.text();
+
+        // Extract JSON from response
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) return null;
+
+        const parsed = JSON.parse(jsonMatch[0]);
+        const role = parsed.author_role || 'unknown';
+        const isProvider = role === 'logistics_agency' || role === 'spammer';
+        const isPotential = parsed.is_potential === true && !isProvider;
+
+        console.log('[Classifier] ✅ Gemini classified successfully');
+        return {
+            isLead: isPotential,
+            role: isPotential ? 'buyer' : (isProvider ? 'provider' : 'irrelevant'),
+            score: isPotential ? Math.min(100, Math.max(0, parsed.score || 0)) : 0,
+            category: parsed.service_match === 'None' ? 'NotRelevant' : (parsed.service_match || 'General'),
+            summary: parsed.reasoning || '',
+            urgency: isPotential ? (parsed.urgency || 'low') : 'low',
+            buyerSignals: isPotential ? (parsed.reasoning || '') : '',
+        };
+    } catch (err) {
+        console.error('[Classifier] ❌ Gemini also failed:', err.message);
+        return null;
+    }
 }
 
 function makeFallback() {
