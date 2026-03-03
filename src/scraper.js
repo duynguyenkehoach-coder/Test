@@ -750,13 +750,96 @@ async function fbFromApify(keywords, maxPosts) {
     return allPosts;
 }
 
+// --- Source 3: Direct Group Scraping (HIGH PRIORITY) ---
+async function fbFromGroups(maxPostsPerGroup = 5) {
+    const groups = config.FB_TARGET_GROUPS || [];
+    if (groups.length === 0) return [];
+
+    const apiKey = process.env.RAPIDAPI_KEY;
+    if (!apiKey) return [];
+
+    console.log(`[FB:Groups] 📋 Scraping ${groups.length} target groups...`);
+    const allPosts = [];
+
+    for (const group of groups) {
+        try {
+            console.log(`[FB:Groups]   → ${group.name} (${group.id})`);
+
+            // Try facebook-scraper3 group posts endpoint
+            const resp = await axios.get(
+                `https://facebook-scraper3.p.rapidapi.com/group/posts`,
+                {
+                    headers: {
+                        'x-rapidapi-host': 'facebook-scraper3.p.rapidapi.com',
+                        'x-rapidapi-key': apiKey,
+                    },
+                    params: { group_id: group.id, page: 1 },
+                    timeout: 30000,
+                }
+            );
+
+            const results = resp.data?.results || resp.data?.data || resp.data?.posts || [];
+            const posts = (Array.isArray(results) ? results : [])
+                .slice(0, maxPostsPerGroup)
+                .map((item) => {
+                    const extracted = extractFBFields(item);
+                    return {
+                        platform: 'facebook',
+                        post_url: extracted.postUrl,
+                        author_name: extracted.authorName,
+                        author_url: extracted.authorUrl,
+                        author_avatar: extracted.authorAvatar,
+                        content: extracted.content,
+                        post_created_at: parseTimestamp(extracted.rawDate),
+                        scraped_at: new Date().toISOString(),
+                        source_group: group.name, // Tag for priority tracking
+                    };
+                })
+                .filter((p) => p.content && p.content.length > 15);
+
+            allPosts.push(...posts);
+            console.log(`[FB:Groups]   ✓ ${posts.length} posts from ${group.name}`);
+        } catch (err) {
+            if (isRateLimited(err)) {
+                console.log(`[FB:Groups]   ❌ Rate limited — stopping group scan`);
+                break;
+            }
+            console.log(`[FB:Groups]   ⚠️ ${group.name}: ${err.response?.status || err.message}`);
+        }
+        await new Promise((r) => setTimeout(r, 1500)); // Slower to avoid rate limit
+    }
+
+    console.log(`[FB:Groups] ✅ Total from groups: ${allPosts.length} posts`);
+    return allPosts;
+}
+
 // --- Orchestrator ---
 async function scrapeFacebook(keywords, maxPosts = 50) {
-    console.log(`[Scraper:FB] 📘 Searching Facebook (${keywords.length} keywords)...`);
-    return await fetchWithFallback('Facebook',
-        () => fbFromRapidAPI(keywords, maxPosts),
-        () => fbFromApify(keywords, maxPosts),
-    );
+    console.log(`[Scraper:FB] 📘 Searching Facebook (${keywords.length} keywords + ${(config.FB_TARGET_GROUPS || []).length} groups)...`);
+
+    // Step 1: Scrape target groups FIRST (high priority)
+    let groupPosts = [];
+    try {
+        groupPosts = await fbFromGroups(5);
+    } catch (err) {
+        console.log(`[Scraper:FB] ⚠️ Group scraping failed: ${err.message}`);
+    }
+
+    // Step 2: Keyword search (existing flow)
+    let keywordPosts = [];
+    try {
+        keywordPosts = await fetchWithFallback('Facebook',
+            () => fbFromRapidAPI(keywords, maxPosts),
+            () => fbFromApify(keywords, maxPosts),
+        );
+    } catch (err) {
+        console.log(`[Scraper:FB] ⚠️ Keyword search failed: ${err.message}`);
+    }
+
+    // Merge: groups first (priority), then keyword results
+    const allPosts = [...groupPosts, ...keywordPosts];
+    console.log(`[Scraper:FB] 📊 Total: ${groupPosts.length} from groups + ${keywordPosts.length} from keywords = ${allPosts.length}`);
+    return dedup(allPosts);
 }
 
 // ╔═══════════════════════════════════════════════════════════╗

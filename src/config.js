@@ -42,6 +42,24 @@ module.exports = {
     TIKTOK_SEARCH: 'clockworks/tiktok-scraper',
   },
 
+  // --- Facebook Groups to scrape directly (high-priority) ---
+  FB_TARGET_GROUPS: [
+    { name: 'THG Fulfill US', id: 'thgfulfillus' },
+    { name: 'Ship hàng Mỹ', id: '1312868109620530' },
+    { name: 'Cộng đồng Etsy VN', id: 'congdongetsyvietnam' },
+    { name: 'TikTok Shop US Underground', id: 'tiktokshopusunderground' },
+    { name: 'Fulfillment Group 1', id: '699960295544009' },
+    { name: 'Fulfillment Group 2', id: '1046936722421696' },
+    { name: 'Seller Group 1', id: '514921692619278' },
+    { name: 'Seller Group 2', id: '4345407472191763' },
+    { name: 'Etsy To Go', id: 'etsytogo' },
+    { name: 'Ecommerce Group', id: '3043290549049105' },
+    { name: 'Cộng đồng Amazon VN', id: 'congdongamazonvn' },
+    { name: 'Seller Group 3', id: '245963281899537' },
+    { name: 'eBay Group', id: 'httpswww.facebook.ebay' },
+    { name: 'Logistics Group', id: '504508125465530' },
+  ],
+
   // --- Platforms to enable (toggle on/off) ---
   // All 5 platforms work within Apify free $5/month budget
   ENABLED_PLATFORMS: ['facebook', 'tiktok', 'instagram'],
