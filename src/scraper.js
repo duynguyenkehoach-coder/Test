@@ -18,21 +18,68 @@
 const axios = require('axios');
 const config = require('./config');
 
-// --- Apify client (fallback) ---
-let apifyClient = null;
-try {
-    const { ApifyClient } = require('apify-client');
-    if (config.APIFY_TOKEN) {
-        apifyClient = new ApifyClient({ token: config.APIFY_TOKEN });
-    }
-} catch (e) { /* apify-client not installed */ }
+// ╔═══════════════════════════════════════════════════════════╗
+// ║  MULTI-KEY ROTATION — Xoay vòng nhiều API keys           ║
+// ╚═══════════════════════════════════════════════════════════╝
 
-const RAPIDAPI_KEY = config.RAPIDAPI_KEY;
+// Support comma-separated keys: RAPIDAPI_KEYS=key1,key2,key3
+const RAPIDAPI_KEYS = (process.env.RAPIDAPI_KEYS || process.env.RAPIDAPI_KEY || '')
+    .split(',').map(k => k.trim()).filter(Boolean);
+const APIFY_TOKENS = (process.env.APIFY_TOKENS || process.env.APIFY_TOKEN || '')
+    .split(',').map(k => k.trim()).filter(Boolean);
+
+// Track which keys are exhausted (429) this session
+const exhaustedRapidKeys = new Set();
+const exhaustedApifyTokens = new Set();
+
+// Reset exhausted keys every 1 hour (in case limits reset)
+setInterval(() => {
+    exhaustedRapidKeys.clear();
+    exhaustedApifyTokens.clear();
+    console.log('[KeyPool] 🔄 Reset exhausted key tracking');
+}, 60 * 60 * 1000);
+
+function getActiveRapidKey() {
+    for (const key of RAPIDAPI_KEYS) {
+        if (!exhaustedRapidKeys.has(key)) return key;
+    }
+    return null; // All keys exhausted
+}
+
+function markRapidKeyExhausted(key) {
+    exhaustedRapidKeys.add(key);
+    const remaining = RAPIDAPI_KEYS.length - exhaustedRapidKeys.size;
+    console.log(`[KeyPool] ❌ RapidAPI key ...${key.slice(-6)} exhausted. ${remaining}/${RAPIDAPI_KEYS.length} keys remaining`);
+}
+
+function getActiveApifyClient() {
+    for (const token of APIFY_TOKENS) {
+        if (!exhaustedApifyTokens.has(token)) {
+            try {
+                const { ApifyClient } = require('apify-client');
+                return { client: new ApifyClient({ token }), token };
+            } catch (e) { continue; }
+        }
+    }
+    return null;
+}
+
+function markApifyTokenExhausted(token) {
+    exhaustedApifyTokens.add(token);
+    const remaining = APIFY_TOKENS.length - exhaustedApifyTokens.size;
+    console.log(`[KeyPool] ❌ Apify token ...${token.slice(-6)} exhausted. ${remaining}/${APIFY_TOKENS.length} tokens remaining`);
+}
+
+console.log(`[KeyPool] 🔑 Loaded: ${RAPIDAPI_KEYS.length} RapidAPI keys, ${APIFY_TOKENS.length} Apify tokens`);
+
+// Legacy support
+const RAPIDAPI_KEY = RAPIDAPI_KEYS[0] || '';
 
 function rapidHeaders(host) {
-    if (!RAPIDAPI_KEY) return null;
+    const key = getActiveRapidKey();
+    if (!key) return null;
     return {
-        'x-rapidapi-key': RAPIDAPI_KEY,
+        'x-rapidapi-key': key,
         'x-rapidapi-host': host,
     };
 }
@@ -204,17 +251,19 @@ async function igFromRapidAPI(hashtags, maxPosts) {
     throw new Error('All Instagram RapidAPI hosts exhausted (monthly limits)');
 }
 
-// --- Source 2: Apify fallback ---
+// --- Source 2: Apify fallback (multi-token) ---
 async function igFromApify(hashtags, maxPosts) {
-    if (!apifyClient) throw new Error('Apify client not available');
+    const apify = getActiveApifyClient();
+    if (!apify) throw new Error('No Apify tokens available');
+    const { client, token } = apify;
     const allPosts = [];
     for (const hashtag of hashtags.slice(0, 5)) {
         console.log(`[IG:Apify]   → #${hashtag}`);
-        const run = await apifyClient.actor('apify/instagram-hashtag-scraper').call({
+        const run = await client.actor('apify/instagram-hashtag-scraper').call({
             hashtags: [hashtag],
             resultsLimit: Math.ceil(maxPosts / hashtags.length),
         });
-        const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
+        const { items } = await client.dataset(run.defaultDatasetId).listItems();
         const posts = items
             .map((item) => ({
                 platform: 'instagram',
@@ -722,16 +771,18 @@ async function fbFromRapidAPI(keywords, maxPosts) {
 }
 
 
-// --- Source 2: Apify fallback ---
+// --- Source 2: Apify fallback (multi-token) ---
 async function fbFromApify(keywords, maxPosts) {
-    if (!apifyClient) throw new Error('Apify client not available');
+    const apify = getActiveApifyClient();
+    if (!apify) throw new Error('No Apify tokens available');
+    const { client, token } = apify;
     const allPosts = [];
     for (const keyword of keywords.slice(0, 3)) {
         console.log(`[FB:Apify]   → "${keyword}"`);
-        const run = await apifyClient.actor('apify/facebook-search-scraper').call({
+        const run = await client.actor('apify/facebook-search-scraper').call({
             searchQueries: [keyword], maxPosts: 10, searchType: 'posts',
         });
-        const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
+        const { items } = await client.dataset(run.defaultDatasetId).listItems();
         const posts = items
             .map((item) => ({
                 platform: 'facebook',
