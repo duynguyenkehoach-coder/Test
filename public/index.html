@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>THG Lead Detection Dashboard</title>
+  <meta name="description"
+    content="THG Social Media Lead Detection Tool - Monitor leads and manage customer inbox with AI Copilot">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+
+<body>
+
+  <div class="app-layout">
+    <!-- ============================== -->
+    <!--  SIDEBAR                       -->
+    <!-- ============================== -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <div class="logo-icon">🔍</div>
+          <div>
+            <h1><span>THG</span> Lead</h1>
+            <div class="logo-sub">AI Cyborg Pipeline</div>
+          </div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button class="nav-item active" id="tabLeads" onclick="switchTab('leads')">
+          <span class="nav-icon">📊</span>
+          <span class="nav-text">Leads Database</span>
+          <span class="nav-badge" id="tabLeadsCount">0</span>
+        </button>
+        <button class="nav-item" id="tabInbox" onclick="switchTab('inbox')">
+          <span class="nav-icon">📬</span>
+          <span class="nav-text">AI Inbox</span>
+          <span class="nav-badge badge-accent" id="tabInboxCount">0</span>
+        </button>
+        <button class="nav-item" id="tabData" onclick="switchTab('data')">
+          <span class="nav-icon">📁</span>
+          <span class="nav-text">Data & Archives</span>
+          <span class="nav-badge" id="tabDataCount">0</span>
+        </button>
+        <button class="nav-item" id="tabAnalytics" onclick="switchTab('analytics')">
+          <span class="nav-icon">📈</span>
+          <span class="nav-text">Analytics</span>
+        </button>
+
+        <div class="nav-divider"></div>
+        <button class="nav-item" onclick="toggleTheme()">
+          <span class="nav-icon" id="themeIcon">🌙</span>
+          <span class="nav-text" id="themeText">Dark Mode</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="scan-status-box">
+          <div class="status-indicator"></div>
+          <span class="scan-status" id="scanStatus">System Ready</span>
+        </div>
+        <div class="scan-countdown" id="scanCountdownContainer" style="display: none;">
+          <small>Next auto-scan in:</small>
+          <strong id="scanCountdownTime">--:--</strong>
+        </div>
+        <button class="btn btn-primary btn-scan" id="scanBtn" onclick="triggerScan()">
+          ⚡ Start Scan
+        </button>
+      </div>
+    </aside>
+
+    <!-- ============================== -->
+    <!--  MAIN CONTENT                  -->
+    <!-- ============================== -->
+    <div class="main-wrapper">
+      <header class="top-header">
+        <div class="page-title">
+          <h2 id="pageTitleText">Overview Dashboard</h2>
+          <p class="page-subtitle">Giám sát leads từ social mạng tự động với AI</p>
+        </div>
+        <div class="user-profile">
+          <div class="user-info">
+            <span class="user-name">THG Sales Team</span>
+            <span class="user-role">Administrator</span>
+          </div>
+          <div class="avatar">👨‍💼</div>
+        </div>
+      </header>
+
+      <main class="dashboard-content">
+        <!-- STATS BAR -->
+        <div class="stats-bar" id="statsBar">
+          <div class="stat-card">
+            <div class="stat-label">Total Leads</div>
+            <div class="stat-value" id="statTotal">0</div>
+            <div class="stat-detail" id="statToday">0 hôm nay</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">High Value</div>
+            <div class="stat-value" id="statHighValue">0</div>
+            <div class="stat-detail">Score ≥ 80</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Avg Score</div>
+            <div class="stat-value" id="statAvgScore">0</div>
+            <div class="stat-detail">Trung bình</div>
+          </div>
+          <div class="stat-card stat-card-inbox" onclick="switchTab('inbox')">
+            <div class="stat-label">📬 Inbox</div>
+            <div class="stat-value" id="statPending">0</div>
+            <div class="stat-detail" id="statConvDetail">Chờ phản hồi</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Platforms</div>
+            <div class="stat-value" id="statPlatforms">-</div>
+            <div class="stat-detail" id="statPlatformDetail">FB: 0 | IG: 0</div>
+          </div>
+        </div>
+
+        <!-- ========== LEADS TAB ========== -->
+        <div id="leadsTab">
+          <div class="filter-bar">
+            <label>🔎 Filter</label>
+            <select class="filter-select" id="filterPlatform" onchange="loadLeads()">
+              <option value="">All Platforms</option>
+              <option value="facebook">📘 Facebook</option>
+              <option value="instagram">📷 Instagram</option>
+              <option value="reddit">🟠 Reddit</option>
+              <option value="twitter">🐦 Twitter/X</option>
+              <option value="tiktok">🎵 TikTok</option>
+            </select>
+            <select class="filter-select" id="filterCategory" onchange="loadLeads()">
+              <option value="">All Categories</option>
+              <option value="POD">🖨️ POD</option>
+              <option value="Dropship">📦 Dropship</option>
+              <option value="Fulfillment">🏭 Fulfillment</option>
+              <option value="Express">✈️ Express</option>
+              <option value="Warehouse">🏢 Warehouse</option>
+              <option value="General">🔄 General</option>
+            </select>
+            <select class="filter-select" id="filterStatus" onchange="loadLeads()">
+              <option value="">All Status</option>
+              <option value="new">🆕 New</option>
+              <option value="contacted">📞 Contacted</option>
+              <option value="converted">✅ Converted</option>
+              <option value="ignored">⛔ Ignored</option>
+            </select>
+            <select class="filter-select" id="filterScore" onchange="loadLeads()">
+              <option value="">All Scores</option>
+              <option value="80">Score ≥ 80</option>
+              <option value="60">Score ≥ 60</option>
+              <option value="40">Score ≥ 40</option>
+            </select>
+            <input type="date" class="filter-input" id="filterDate" onchange="renderLeads()" style="width: auto;">
+            <select class="filter-select" id="filterTime" onchange="renderLeads()">
+              <option value="">All Times</option>
+              <!-- Populated by JS -->
+            </select>
+            <input type="text" class="filter-input" id="filterSearch" placeholder="Search content, author..."
+              oninput="debounceSearch()">
+            <div class="filter-spacer"></div>
+            <a href="/api/leads/export" class="btn" style="font-size:0.85rem;padding:8px 14px;text-decoration:none;">
+              📥 Export
+            </a>
+            <button class="btn" onclick="clearAllLeads()"
+              style="font-size:0.85rem;padding:8px 14px;background:linear-gradient(135deg,#ef4444,#dc2626);color:white;border:none;">
+              🗑️ Clear
+            </button>
+            <span class="leads-count" id="leadsCount">0 leads</span>
+          </div>
+          <div class="leads-grid" id="leadsGrid">
+            <div class="empty-state">
+              <div class="empty-state-icon">🔍</div>
+              <h3>No leads yet</h3>
+              <p>Click "Start Scan" to find potential leads.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========== INBOX TAB ========== -->
+        <div id="inboxTab" style="display:none;">
+          <div class="filter-bar">
+            <label>📬 AI Copilot Inbox</label>
+            <select class="filter-select" id="inboxFilter" onchange="loadConversations()">
+              <option value="">All Messages</option>
+              <option value="pending">⏳ Pending</option>
+              <option value="replied">✅ Replied</option>
+              <option value="ignored">⛔ Ignored</option>
+            </select>
+            <div class="filter-spacer"></div>
+            <button class="btn btn-primary" onclick="showTestModal()" style="font-size:0.85rem;padding:8px 16px;">
+              🧪 Test MSG
+            </button>
+            <span class="leads-count" id="inboxCount">0 messages</span>
+          </div>
+          <div class="leads-grid" id="inboxGrid">
+            <div class="empty-state">
+              <div class="empty-state-icon">📬</div>
+              <h3>Inbox Empty</h3>
+              <p>Customer messages will appear here.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========== DATA FILES TAB ========== -->
+        <div id="dataTab" style="display:none;">
+          <div class="filter-bar">
+            <label>📁 Archives (7 days)</label>
+            <div class="filter-spacer"></div>
+            <button class="btn btn-primary" onclick="triggerCleanup()"
+              style="font-size:0.85rem;padding:8px 16px;background:linear-gradient(135deg,#f59e0b,#ef4444);border:none;">
+              🧹 Cleanup
+            </button>
+            <span class="leads-count" id="dataCount">0 files</span>
+          </div>
+          <div class="leads-grid" id="dataGrid">
+            <div class="empty-state">
+              <div class="empty-state-icon">📁</div>
+              <h3>No archives</h3>
+              <p>Data files generated daily.</p>
+            </div>
+          </div>
+          <!-- File content viewer -->
+          <div id="fileViewerPanel" style="display:none;margin-top:20px;">
+            <div class="filter-bar">
+              <label id="fileViewerTitle">📄 File Content</label>
+              <div class="filter-spacer"></div>
+              <button class="action-btn" onclick="closeFileViewer()">✕</button>
+            </div>
+            <div class="leads-grid" id="fileViewerContent"></div>
+          </div>
+        </div>
+
+        <!-- ========== ANALYTICS TAB ========== -->
+        <div id="analyticsTab" style="display:none;">
+          <div class="filter-bar">
+            <label>📈 Analytics Dashboard</label>
+            <div class="filter-spacer"></div>
+            <button class="btn" onclick="loadAnalytics()" style="font-size:0.85rem;padding:8px 14px;">🔄
+              Refresh</button>
+          </div>
+          <div id="analyticsGrid">
+            <div class="empty-state">
+              <div class="empty-state-icon">📈</div>
+              <h3>Loading charts...</h3>
+            </div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- ============================== -->
+  <!--  MODALS                        -->
+  <!-- ============================== -->
+  <div class="modal-overlay" id="testModal" style="display:none;" onclick="hideTestModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <h3>🧪 Test Message</h3>
+      <p style="opacity:0.7;margin-bottom:16px;">Simulate incoming customer message</p>
+      <input type="text" id="testSenderName" placeholder="Tên khách (optional)"
+        style="width:100%;padding:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:white;border-radius:8px;margin-bottom:12px;">
+      <textarea id="testMessage" rows="4" placeholder="VD: 'Tôi tìm kho Mỹ ship hàng'"
+        style="width:100%;padding:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:white;border-radius:8px;resize:vertical;"></textarea>
+      <div style="display:flex;gap:12px;margin-top:16px;justify-content:flex-end;">
+        <button class="action-btn" onclick="hideTestModal()">Cancel</button>
+        <button class="btn btn-primary" id="sendTestBtn" onclick="sendTestMessage()">🚀 Test AI</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner"></div>
+  </div>
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="js/utils.js"></script>
+  <script src="js/leads.js"></script>
+  <script src="js/inbox.js"></script>
+  <script src="js/dataFiles.js"></script>
+  <script src="js/analytics.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+
+</html>

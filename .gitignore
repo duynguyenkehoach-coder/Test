@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Environment variables (NEVER commit secrets!)
+.env
+
+# Database
+data/*.db
+data/*.db-journal
+data/*.db-wal
+
+# Exported data files
+data/leads_*.json
+data/inbox_*.json
+data/fb_api_debug.json
+
+# Secret/debug files
+apify-status.txt
+push_log.txt
+push_log2.txt
+fb_inspect_output.txt
+fb_api_raw.json
+inspect_fb.js
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temp
+/tmp/

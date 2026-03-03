@@ -1,0 +1,25 @@
+# Render.com deployment configuration
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: thg-lead-gen
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node src/index.js
+    envVars:
+      - key: RAPIDAPI_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: APIFY_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: NODE_ENV
+        value: production

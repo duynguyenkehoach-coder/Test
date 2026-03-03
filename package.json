@@ -1,0 +1,33 @@
+{
+  "name": "thg-lead-gen",
+  "version": "2.0.0",
+  "description": "THG AI Cyborg Sales Pipeline — Lead Detection + AI Copilot",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/server.js",
+    "scan": "node src/index.js --scan-once",
+    "prod": "pm2 start ecosystem.config.js",
+    "prod:stop": "pm2 stop thg-lead-gen",
+    "prod:restart": "pm2 restart thg-lead-gen",
+    "prod:logs": "pm2 logs thg-lead-gen",
+    "prod:monit": "pm2 monit"
+  },
+  "keywords": [],
+  "author": "THG",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "apify-client": "^2.11.0",
+    "axios": "^1.13.6",
+    "better-sqlite3": "^11.8.0",
+    "cron-parser": "^5.5.0",
+    "dotenv": "^17.3.1",
+    "express": "^4.21.0",
+    "express-rate-limit": "^8.2.1",
+    "groq-sdk": "^0.37.0",
+    "node-cron": "^4.2.1",
+    "openai": "^6.25.0"
+  }
+}
