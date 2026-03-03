@@ -125,37 +125,74 @@ function parseTimestamp(val) {
     return null;
 }
 
-// --- Source 1: RapidAPI ---
+// --- Source 1: RapidAPI with MULTI-HOST ROTATION ---
+const IG_API_HOSTS = [
+    { host: 'instagram-scraper-api2.p.rapidapi.com', path: '/v1/hashtag', paramKey: 'hashtag', dataPath: 'data.items' },
+    { host: 'instagram-scraper-api3.p.rapidapi.com', path: '/hashtag_posts', paramKey: 'hashtag', dataPath: 'data' },
+    { host: 'instagram-bulk-scraper-latest.p.rapidapi.com', path: '/search_hashtag', paramKey: 'name', dataPath: 'data' },
+    { host: 'real-time-instagram-scraper-api.p.rapidapi.com', path: '/v1/hashtag/posts', paramKey: 'hashtag', dataPath: 'items' },
+];
+
 async function igFromRapidAPI(hashtags, maxPosts) {
-    const host = 'instagram-scraper-api2.p.rapidapi.com';
-    const headers = rapidHeaders(host);
-    if (!headers) throw new Error('No RAPIDAPI_KEY');
+    const apiKey = process.env.RAPIDAPI_KEY;
+    if (!apiKey) throw new Error('No RAPIDAPI_KEY');
 
     const allPosts = [];
-    for (const hashtag of hashtags.slice(0, 5)) {
-        console.log(`[IG:RapidAPI]   → #${hashtag}`);
-        const resp = await axios.get(`https://${host}/v1/hashtag`, {
-            headers, params: { hashtag }, timeout: 30000,
-        });
 
-        const items = resp.data?.data?.items || resp.data?.data?.medias || [];
-        const posts = items.slice(0, Math.ceil(maxPosts / hashtags.length))
-            .map((item) => ({
-                platform: 'instagram',
-                post_url: item.code ? `https://www.instagram.com/p/${item.code}/` : (item.url || ''),
-                author_name: item.user?.username || item.owner?.username || 'Unknown',
-                author_url: item.user?.username ? `https://www.instagram.com/${item.user.username}/` : '',
-                content: item.caption?.text || item.caption || item.text || '',
-                post_created_at: parseTimestamp(item.taken_at || item.created_at),
-                scraped_at: new Date().toISOString(),
-            }))
-            .filter((p) => p.content && p.content.length > 15);
+    for (const api of IG_API_HOSTS) {
+        try {
+            console.log(`[IG:RapidAPI]   🔄 Trying: ${api.host}`);
 
-        allPosts.push(...posts);
-        console.log(`[IG:RapidAPI]   ✓ ${posts.length} posts`);
-        await new Promise((r) => setTimeout(r, 1000));
+            for (const hashtag of hashtags.slice(0, 5)) {
+                console.log(`[IG:RapidAPI]   → #${hashtag}`);
+                const resp = await axios.get(`https://${api.host}${api.path}`, {
+                    headers: { 'x-rapidapi-host': api.host, 'x-rapidapi-key': apiKey },
+                    params: { [api.paramKey]: hashtag },
+                    timeout: 30000,
+                });
+
+                // Dynamic data extraction based on dataPath
+                let items = resp.data;
+                for (const key of api.dataPath.split('.')) {
+                    items = items?.[key];
+                }
+                items = items || resp.data?.data?.medias || resp.data?.items || [];
+
+                const posts = (Array.isArray(items) ? items : [])
+                    .slice(0, Math.ceil(maxPosts / hashtags.length))
+                    .map((item) => ({
+                        platform: 'instagram',
+                        post_url: item.code ? `https://www.instagram.com/p/${item.code}/`
+                            : (item.shortCode ? `https://www.instagram.com/p/${item.shortCode}/` : (item.url || '')),
+                        author_name: item.user?.username || item.owner?.username || item.ownerUsername || 'Unknown',
+                        author_url: (item.user?.username || item.owner?.username || item.ownerUsername)
+                            ? `https://www.instagram.com/${item.user?.username || item.owner?.username || item.ownerUsername}/` : '',
+                        author_avatar: item.user?.profile_pic_url || item.owner?.profile_pic_url || '',
+                        content: item.caption?.text || item.caption || item.text || '',
+                        post_created_at: parseTimestamp(item.taken_at || item.created_at || item.timestamp),
+                        scraped_at: new Date().toISOString(),
+                    }))
+                    .filter((p) => p.content && p.content.length > 15);
+
+                allPosts.push(...posts);
+                console.log(`[IG:RapidAPI]   ✓ ${posts.length} posts`);
+                await new Promise((r) => setTimeout(r, 1000));
+            }
+
+            console.log(`[IG:RapidAPI] ✅ ${api.host} worked! Total: ${allPosts.length} posts`);
+            return allPosts;
+
+        } catch (err) {
+            if (isRateLimited(err)) {
+                console.log(`[IG:RapidAPI]   ❌ ${api.host} → 429 (monthly limit). Trying next...`);
+                continue;
+            }
+            console.log(`[IG:RapidAPI]   ⚠️ ${api.host} → ${err.response?.status || err.message}. Trying next...`);
+            continue;
+        }
     }
-    return allPosts;
+
+    throw new Error('All Instagram RapidAPI hosts exhausted (monthly limits)');
 }
 
 // --- Source 2: Apify fallback ---
@@ -585,42 +622,98 @@ function extractFBFields(item) {
 }
 
 
-// --- Source 1: RapidAPI ---
+// --- Source 1: RapidAPI with MULTI-HOST ROTATION ---
+// Each API has its own free monthly limit. When one hits 429, try the next!
+const FB_API_HOSTS = [
+    { host: 'facebook-scraper3.p.rapidapi.com', path: '/search/posts', paramKey: 'query' },
+    { host: 'facebook-search1.p.rapidapi.com', path: '/posts/search', paramKey: 'query' },
+    { host: 'facebook-data-scraper.p.rapidapi.com', path: '/search', paramKey: 'query' },
+    { host: 'fresh-facebook-scraper.p.rapidapi.com', path: '/search/posts', paramKey: 'query' },
+];
+
 async function fbFromRapidAPI(keywords, maxPosts) {
-    const host = 'facebook-scraper3.p.rapidapi.com';
-    const headers = rapidHeaders(host);
-    if (!headers) throw new Error('No RAPIDAPI_KEY');
+    const apiKey = process.env.RAPIDAPI_KEY;
+    if (!apiKey) throw new Error('No RAPIDAPI_KEY');
 
     const allPosts = [];
-    for (const keyword of keywords.slice(0, 3)) {
-        console.log(`[FB:RapidAPI]   → "${keyword}"`);
-        const resp = await axios.get(`https://${host}/search/posts`, {
-            headers, params: { query: keyword, page: 1 }, timeout: 30000,
-        });
-        const results = resp.data?.results || resp.data?.data || [];
 
-        // ═══ Smart field auto-detection — works with ANY API response schema ═══
-        const posts = (Array.isArray(results) ? results : []).slice(0, 10)
-            .map((item) => {
-                const extracted = extractFBFields(item);
-                return {
-                    platform: 'facebook',
-                    post_url: extracted.postUrl,
-                    author_name: extracted.authorName,
-                    author_url: extracted.authorUrl,
-                    author_avatar: extracted.authorAvatar,
-                    content: extracted.content,
-                    post_created_at: parseTimestamp(extracted.rawDate),
-                    scraped_at: new Date().toISOString(),
-                };
-            })
-            .filter((p) => p.content && p.content.length > 15);
-        allPosts.push(...posts);
-        console.log(`[FB:RapidAPI]   ✓ ${posts.length} posts`);
-        await new Promise((r) => setTimeout(r, 1000));
+    // Try each API host until one works
+    for (const api of FB_API_HOSTS) {
+        try {
+            console.log(`[FB:RapidAPI]   🔄 Trying: ${api.host}`);
+            const testResp = await axios.get(`https://${api.host}${api.path}`, {
+                headers: { 'x-rapidapi-host': api.host, 'x-rapidapi-key': apiKey },
+                params: { [api.paramKey]: keywords[0], page: 1 },
+                timeout: 30000,
+            });
+
+            // If we get here, this API works! Extract posts from all keywords
+            const results = testResp.data?.results || testResp.data?.data || testResp.data?.posts || [];
+            if (Array.isArray(results)) {
+                const posts = results.slice(0, 10).map(item => {
+                    const extracted = extractFBFields(item);
+                    return {
+                        platform: 'facebook',
+                        post_url: extracted.postUrl,
+                        author_name: extracted.authorName,
+                        author_url: extracted.authorUrl,
+                        author_avatar: extracted.authorAvatar,
+                        content: extracted.content,
+                        post_created_at: parseTimestamp(extracted.rawDate),
+                        scraped_at: new Date().toISOString(),
+                    };
+                }).filter(p => p.content && p.content.length > 15);
+                allPosts.push(...posts);
+            }
+
+            // Fetch remaining keywords with this working API
+            for (const keyword of keywords.slice(1, 3)) {
+                console.log(`[FB:RapidAPI]   → "${keyword}"`);
+                try {
+                    const resp = await axios.get(`https://${api.host}${api.path}`, {
+                        headers: { 'x-rapidapi-host': api.host, 'x-rapidapi-key': apiKey },
+                        params: { [api.paramKey]: keyword, page: 1 },
+                        timeout: 30000,
+                    });
+                    const data = resp.data?.results || resp.data?.data || resp.data?.posts || [];
+                    const posts = (Array.isArray(data) ? data : []).slice(0, 10).map(item => {
+                        const extracted = extractFBFields(item);
+                        return {
+                            platform: 'facebook',
+                            post_url: extracted.postUrl,
+                            author_name: extracted.authorName,
+                            author_url: extracted.authorUrl,
+                            author_avatar: extracted.authorAvatar,
+                            content: extracted.content,
+                            post_created_at: parseTimestamp(extracted.rawDate),
+                            scraped_at: new Date().toISOString(),
+                        };
+                    }).filter(p => p.content && p.content.length > 15);
+                    allPosts.push(...posts);
+                    console.log(`[FB:RapidAPI]   ✓ ${posts.length} posts`);
+                } catch (innerErr) {
+                    if (isRateLimited(innerErr)) break; // Hit limit mid-scan, stop
+                }
+                await new Promise(r => setTimeout(r, 1000));
+            }
+
+            console.log(`[FB:RapidAPI] ✅ ${api.host} worked! Total: ${allPosts.length} posts`);
+            return allPosts;
+
+        } catch (err) {
+            if (isRateLimited(err)) {
+                console.log(`[FB:RapidAPI]   ❌ ${api.host} → 429 (monthly limit). Trying next...`);
+                continue;
+            }
+            // Non-rate-limit error (bad endpoint, 404, etc.) — skip to next
+            console.log(`[FB:RapidAPI]   ⚠️ ${api.host} → ${err.response?.status || err.message}. Trying next...`);
+            continue;
+        }
     }
-    return allPosts;
+
+    throw new Error('All Facebook RapidAPI hosts exhausted (monthly limits)');
 }
+
 
 // --- Source 2: Apify fallback ---
 async function fbFromApify(keywords, maxPosts) {
