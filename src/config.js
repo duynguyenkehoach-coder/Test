@@ -53,7 +53,25 @@ module.exports = {
     { name: 'Boxme Global', url: 'https://www.facebook.com/boxme.asia' },
   ],
 
-  // --- Search keywords per platform (TikTok + IG only) ---
+  // --- Target accounts to scrape (SociaVault = profile-based) ---
+  TT_TARGET_ACCOUNTS: [
+    'fulfillmentvietnam',
+    'podsellervn',
+    'kinhdoanhus',
+    'vietsellerus',
+    'shiphangdimi',
+    'tiktokshopsellervn',
+  ],
+  IG_TARGET_ACCOUNTS: [
+    'sellertiktokus',
+    'podvietnam',
+    'dropshipvietnam',
+    'kinhdoanhonlineus',
+    'fulfillmentvn',
+    'vncbiz',
+  ],
+
+  // --- Search keywords (kept for reference) ---
   SEARCH_KEYWORDS: {
     instagram: [
       'sellertiktokus',

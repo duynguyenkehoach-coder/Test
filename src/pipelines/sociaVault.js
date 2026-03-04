@@ -1,10 +1,10 @@
 /**
  * THG Lead Gen — SociaVault API Integration
  * 
- * Replaces PhantomBuster for all platforms:
- * - Facebook: /v1/scrape/facebook/group-posts
- * - Instagram: /v1/scrape/instagram/hashtag
- * - TikTok: /v1/scrape/tiktok/search
+ * REST API for all platforms:
+ * - Facebook: /v1/scrape/facebook/group/posts  (by group URL)
+ * - Instagram: /v1/scrape/instagram/posts       (by handle/account)
+ * - TikTok: /v1/scrape/tiktok/videos            (by handle/account)
  * 
  * API: https://api.sociavault.com
  * Auth: X-API-Key header
@@ -45,43 +45,10 @@ async function svRequest(endpoint, params = {}) {
 
 // ═══════════════════════════════════════════════════════
 // FACEBOOK — Group Posts
+// Endpoint: facebook/group/posts?url=<group_url>&sort_by=RECENT_ACTIVITY
+// Returns ~3 posts per call (Facebook API limit)
 // ═══════════════════════════════════════════════════════
 
-/**
- * Scrape posts from a Facebook group
- * Endpoint: facebook/group-posts?url=<group_url>
- */
-async function scrapeFBGroupPosts(groupUrl, groupName = 'group') {
-    try {
-        console.log(`[SV:FB] 📌 ${groupName}...`);
-        const data = await svRequest('facebook/group-posts', { url: groupUrl });
-
-        const posts = (data.posts || data.items || []).map(item => ({
-            platform: 'facebook',
-            post_url: item.url || item.postUrl || item.permalink || '',
-            author_name: item.authorName || item.author?.name || item.userName || item.profileName || 'Unknown',
-            author_url: item.authorUrl || item.author?.url || item.profileUrl || '',
-            author_avatar: item.authorAvatar || item.author?.avatar || '',
-            content: item.text || item.message || item.content || item.postText || '',
-            post_created_at: item.date || item.timestamp || item.createdAt || new Date().toISOString(),
-            scraped_at: new Date().toISOString(),
-            source: `sv:fb:${groupName}`,
-            likes: item.likes || item.likeCount || item.reactions || 0,
-            comments: item.comments || item.commentCount || 0,
-            shares: item.shares || item.shareCount || 0,
-        })).filter(p => p.content && p.content.length > 15);
-
-        console.log(`[SV:FB] ✅ ${posts.length} posts from ${groupName}`);
-        return posts;
-    } catch (err) {
-        console.warn(`[SV:FB] ⚠️ ${groupName}: ${err.message}`);
-        return [];
-    }
-}
-
-/**
- * Scrape all configured Facebook groups
- */
 async function scrapeFacebookGroups(maxPosts = 30) {
     const groups = config.FB_TARGET_GROUPS || [];
     if (groups.length === 0) { console.log('[SV:FB] ⚠️ No groups configured'); return []; }
@@ -91,66 +58,95 @@ async function scrapeFacebookGroups(maxPosts = 30) {
     const allPosts = [];
 
     for (const group of groups) {
-        const posts = await scrapeFBGroupPosts(group.url, group.name);
-        allPosts.push(...posts);
-        await delay(2000); // Be nice to API
+        try {
+            console.log(`[SV:FB] 📌 ${group.name}...`);
+            const data = await svRequest('facebook/group/posts', {
+                url: group.url,
+                sort_by: 'RECENT_ACTIVITY',
+            });
+
+            // SociaVault returns posts as object {0: {...}, 1: {...}, ...}
+            const postsObj = data.posts || {};
+            const postsArr = typeof postsObj === 'object' && !Array.isArray(postsObj)
+                ? Object.values(postsObj)
+                : (Array.isArray(postsObj) ? postsObj : []);
+
+            const posts = postsArr.map(item => ({
+                platform: 'facebook',
+                post_url: item.url || '',
+                author_name: item.author?.name || item.author?.short_name || 'Unknown',
+                author_url: item.author?.id ? `https://www.facebook.com/${item.author.id}` : '',
+                content: item.text || item.message || '',
+                post_created_at: item.publishTime
+                    ? new Date(item.publishTime * 1000).toISOString()
+                    : new Date().toISOString(),
+                scraped_at: new Date().toISOString(),
+                source: `sv:fb:${group.name}`,
+                likes: item.reactionCount || 0,
+                comments: item.commentCount || 0,
+            })).filter(p => p.content && p.content.length > 15);
+
+            allPosts.push(...posts);
+            console.log(`[SV:FB] ✅ ${posts.length} posts from ${group.name}`);
+            await delay(2000);
+        } catch (err) {
+            console.warn(`[SV:FB] ⚠️ ${group.name}: ${err.message}`);
+        }
     }
 
     const result = allPosts.slice(0, maxPosts);
-    console.log(`[SV:FB] 📊 Total: ${result.length} posts from ${groups.length} groups`);
+    console.log(`[SV:FB] 📊 Total: ${result.length} posts`);
     return result;
 }
 
 // ═══════════════════════════════════════════════════════
-// INSTAGRAM — Hashtag Search
+// INSTAGRAM — Posts by Account
+// Endpoint: instagram/posts?handle=<username>
+// Scrapes posts from target seller/competitor accounts
 // ═══════════════════════════════════════════════════════
 
-/**
- * Scrape Instagram posts by hashtag
- * Endpoint: instagram/hashtag?name=<hashtag>
- */
 async function scrapeInstagram(maxPosts = 30) {
-    const hashtags = config.SEARCH_KEYWORDS?.instagram || [];
-    if (hashtags.length === 0) { console.log('[SV:IG] ⚠️ No hashtags configured'); return []; }
+    const accounts = config.IG_TARGET_ACCOUNTS || [];
+    if (accounts.length === 0) { console.log('[SV:IG] ⚠️ No IG accounts configured'); return []; }
     if (!SV_KEY) { console.warn('[SV:IG] ⚠️ No API key'); return []; }
 
-    console.log(`[SV:IG] 📷 Scraping ${hashtags.length} Instagram hashtags...`);
+    console.log(`[SV:IG] 📷 Scraping ${accounts.length} Instagram accounts...`);
     const allPosts = [];
 
-    for (const hashtag of hashtags.slice(0, 5)) { // Limit to save credits
+    for (const handle of accounts.slice(0, 5)) {
         try {
-            console.log(`[SV:IG] #${hashtag}...`);
-            const data = await svRequest('instagram/hashtag', { name: hashtag });
+            console.log(`[SV:IG] @${handle}...`);
+            const data = await svRequest('instagram/posts', { handle });
 
-            const posts = (data.posts || data.items || data.edge_hashtag_to_media?.edges || []).map(item => {
-                // Handle nested Instagram structure
+            const postsRaw = data.posts || data.items || data.edges || [];
+            const postsArr = Array.isArray(postsRaw) ? postsRaw : Object.values(postsRaw);
+
+            const posts = postsArr.map(item => {
                 const node = item.node || item;
                 return {
                     platform: 'instagram',
                     post_url: node.shortcode
                         ? `https://www.instagram.com/p/${node.shortcode}/`
-                        : (node.url || node.postUrl || ''),
-                    author_name: node.owner?.username || node.username || node.authorName || 'Unknown',
-                    author_url: node.owner?.username
-                        ? `https://www.instagram.com/${node.owner.username}/`
-                        : (node.profileUrl || ''),
+                        : (node.url || node.link || ''),
+                    author_name: handle,
+                    author_url: `https://www.instagram.com/${handle}/`,
                     content: node.caption || node.text || node.description ||
                         node.edge_media_to_caption?.edges?.[0]?.node?.text || '',
                     post_created_at: node.taken_at_timestamp
                         ? new Date(node.taken_at_timestamp * 1000).toISOString()
                         : (node.date || node.timestamp || new Date().toISOString()),
                     scraped_at: new Date().toISOString(),
-                    source: `sv:ig:#${hashtag}`,
-                    likes: node.edge_liked_by?.count || node.likeCount || node.likes || 0,
-                    comments: node.edge_media_to_comment?.count || node.commentCount || node.comments || 0,
+                    source: `sv:ig:@${handle}`,
+                    likes: node.edge_liked_by?.count || node.like_count || node.likes || 0,
+                    comments: node.edge_media_to_comment?.count || node.comment_count || node.comments || 0,
                 };
             }).filter(p => p.content && p.content.length > 10);
 
             allPosts.push(...posts);
-            console.log(`[SV:IG] ✅ ${posts.length} posts from #${hashtag}`);
+            console.log(`[SV:IG] ✅ ${posts.length} posts from @${handle}`);
             await delay(2000);
         } catch (err) {
-            console.warn(`[SV:IG] ⚠️ #${hashtag}: ${err.message}`);
+            console.warn(`[SV:IG] ⚠️ @${handle}: ${err.message}`);
         }
     }
 
@@ -160,51 +156,50 @@ async function scrapeInstagram(maxPosts = 30) {
 }
 
 // ═══════════════════════════════════════════════════════
-// TIKTOK — Keyword Search
+// TIKTOK — Videos by Account
+// Endpoint: tiktok/videos?handle=<username>
+// Scrapes videos from target seller/competitor accounts
 // ═══════════════════════════════════════════════════════
 
-/**
- * Scrape TikTok videos by keyword/hashtag search
- * Endpoint: tiktok/search?query=<keyword> or tiktok/hashtag?name=<hashtag>
- */
 async function scrapeTikTok(maxPosts = 20) {
-    const keywords = config.SEARCH_KEYWORDS?.tiktok || [];
-    if (keywords.length === 0) { console.log('[SV:TT] ⚠️ No keywords configured'); return []; }
+    const accounts = config.TT_TARGET_ACCOUNTS || [];
+    if (accounts.length === 0) { console.log('[SV:TT] ⚠️ No TT accounts configured'); return []; }
     if (!SV_KEY) { console.warn('[SV:TT] ⚠️ No API key'); return []; }
 
-    console.log(`[SV:TT] 🎵 Scraping ${keywords.length} TikTok keywords...`);
+    console.log(`[SV:TT] 🎵 Scraping ${accounts.length} TikTok accounts...`);
     const allPosts = [];
 
-    for (const keyword of keywords.slice(0, 4)) { // Limit to save credits
+    for (const handle of accounts.slice(0, 4)) {
         try {
-            console.log(`[SV:TT] 🔍 "${keyword}"...`);
-            const data = await svRequest('tiktok/search', { query: keyword });
+            console.log(`[SV:TT] @${handle}...`);
+            const data = await svRequest('tiktok/videos', { handle });
 
-            const videos = (data.videos || data.items || data.data || []).map(item => ({
+            const videosRaw = data.videos || data.items || data.itemList || [];
+            const videosArr = Array.isArray(videosRaw) ? videosRaw : Object.values(videosRaw);
+
+            const videos = videosArr.map(item => ({
                 platform: 'tiktok',
-                post_url: item.video_url || item.url || item.webVideoUrl ||
-                    (item.id ? `https://www.tiktok.com/@${item.author?.uniqueId || 'user'}/video/${item.id}` : ''),
-                author_name: item.author?.nickname || item.author?.uniqueId || item.username || item.authorName || 'Unknown',
-                author_url: item.author?.uniqueId
-                    ? `https://www.tiktok.com/@${item.author.uniqueId}`
-                    : (item.profileUrl || ''),
+                post_url: item.video_url || item.url ||
+                    (item.id ? `https://www.tiktok.com/@${handle}/video/${item.id}` : ''),
+                author_name: item.author?.nickname || item.author?.uniqueId || handle,
+                author_url: `https://www.tiktok.com/@${handle}`,
                 author_avatar: item.author?.avatarThumb || '',
                 content: item.desc || item.description || item.text || item.caption || '',
                 post_created_at: item.createTime
                     ? new Date(item.createTime * 1000).toISOString()
-                    : (item.date || item.timestamp || new Date().toISOString()),
+                    : (item.date || new Date().toISOString()),
                 scraped_at: new Date().toISOString(),
-                source: `sv:tt:${keyword}`,
+                source: `sv:tt:@${handle}`,
                 likes: item.stats?.diggCount || item.diggCount || item.likes || 0,
                 comments: item.stats?.commentCount || item.commentCount || item.comments || 0,
                 views: item.stats?.playCount || item.playCount || item.views || 0,
             })).filter(p => p.content && p.content.length > 10);
 
             allPosts.push(...videos);
-            console.log(`[SV:TT] ✅ ${videos.length} videos for "${keyword}"`);
+            console.log(`[SV:TT] ✅ ${videos.length} videos from @${handle}`);
             await delay(2000);
         } catch (err) {
-            console.warn(`[SV:TT] ⚠️ "${keyword}": ${err.message}`);
+            console.warn(`[SV:TT] ⚠️ @${handle}: ${err.message}`);
         }
     }
 
@@ -219,7 +214,6 @@ async function scrapeTikTok(maxPosts = 20) {
 async function testConnection() {
     if (!SV_KEY) return { ok: false, error: 'No SOCIAVAULT_API_KEY' };
     try {
-        // Simple test — scrape a known TikTok profile (1 credit)
         const resp = await axios.get(`${SV_API}/tiktok/profile`, {
             headers: headers(),
             params: { handle: 'tiktok' },
