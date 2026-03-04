@@ -123,15 +123,19 @@ async function scrapeInstagram(maxPosts = 30) {
 
             const posts = postsArr.map(item => {
                 const node = item.node || item;
+                const caption = node.caption
+                    || node.text
+                    || node.description
+                    || (node.edge_media_to_caption?.edges?.[0]?.node?.text)
+                    || '';
                 return {
                     platform: 'instagram',
-                    post_url: node.shortcode
-                        ? `https://www.instagram.com/p/${node.shortcode}/`
+                    post_url: (node.shortcode || node.code)
+                        ? `https://www.instagram.com/p/${node.shortcode || node.code}/`
                         : (node.url || node.link || ''),
                     author_name: handle,
                     author_url: `https://www.instagram.com/${handle}/`,
-                    content: node.caption || node.text || node.description ||
-                        node.edge_media_to_caption?.edges?.[0]?.node?.text || '',
+                    content: typeof caption === 'string' ? caption : String(caption || ''),
                     post_created_at: node.taken_at_timestamp
                         ? new Date(node.taken_at_timestamp * 1000).toISOString()
                         : (node.date || node.timestamp || new Date().toISOString()),
@@ -174,26 +178,27 @@ async function scrapeTikTok(maxPosts = 20) {
             console.log(`[SV:TT] @${handle}...`);
             const data = await svRequest('tiktok/videos', { handle });
 
-            const videosRaw = data.videos || data.items || data.itemList || [];
+            // SociaVault TikTok returns data in aweme_list (object indexed)
+            const videosRaw = data.aweme_list || data.videos || data.items || data.itemList || [];
             const videosArr = Array.isArray(videosRaw) ? videosRaw : Object.values(videosRaw);
 
             const videos = videosArr.map(item => ({
                 platform: 'tiktok',
-                post_url: item.video_url || item.url ||
-                    (item.id ? `https://www.tiktok.com/@${handle}/video/${item.id}` : ''),
-                author_name: item.author?.nickname || item.author?.uniqueId || handle,
-                author_url: `https://www.tiktok.com/@${handle}`,
-                author_avatar: item.author?.avatarThumb || '',
+                post_url: item.share_url || item.video_url || item.url ||
+                    (item.aweme_id ? `https://www.tiktok.com/@${handle}/video/${item.aweme_id}` : ''),
+                author_name: item.author?.nickname || item.author?.unique_id || handle,
+                author_url: `https://www.tiktok.com/@${item.author?.unique_id || handle}`,
+                author_avatar: item.author?.avatar_thumb?.url_list?.[0] || '',
                 content: item.desc || item.description || item.text || item.caption || '',
-                post_created_at: item.createTime
-                    ? new Date(item.createTime * 1000).toISOString()
+                post_created_at: item.create_time
+                    ? new Date(item.create_time * 1000).toISOString()
                     : (item.date || new Date().toISOString()),
                 scraped_at: new Date().toISOString(),
                 source: `sv:tt:@${handle}`,
-                likes: item.stats?.diggCount || item.diggCount || item.likes || 0,
-                comments: item.stats?.commentCount || item.commentCount || item.comments || 0,
-                views: item.stats?.playCount || item.playCount || item.views || 0,
-            })).filter(p => p.content && p.content.length > 10);
+                likes: item.statistics?.digg_count || item.stats?.diggCount || 0,
+                comments: item.statistics?.comment_count || item.stats?.commentCount || 0,
+                views: item.statistics?.play_count || item.stats?.playCount || 0,
+            })).filter(p => p.content && p.content.length > 5);
 
             allPosts.push(...videos);
             console.log(`[SV:TT] ✅ ${videos.length} videos from @${handle}`);

@@ -55,20 +55,19 @@ module.exports = {
 
   // --- Target accounts to scrape (SociaVault = profile-based) ---
   TT_TARGET_ACCOUNTS: [
-    'fulfillmentvietnam',
-    'podsellervn',
-    'kinhdoanhus',
-    'vietsellerus',
-    'shiphangdimi',
-    'tiktokshopsellervn',
+    'weshop.global',        // competitor - logistics VN
+    'printful',             // POD competitor
+    'tiktokshop_us',        // TikTok Shop official
+    'ecomvietnam',          // ecom community
+    'dropshippinglife',     // dropship niche
+    'amazonsellertips',     // amazon seller
   ],
   IG_TARGET_ACCOUNTS: [
-    'sellertiktokus',
-    'podvietnam',
-    'dropshipvietnam',
-    'kinhdoanhonlineus',
-    'fulfillmentvn',
-    'vncbiz',
+    'weshop.vn',            // competitor
+    'boxme.asia',           // competitor  
+    'printful',             // POD competitor
+    'shopify',              // ecom platform
+    'amazonfba',            // amazon seller community
   ],
 
   // --- Search keywords (kept for reference) ---
