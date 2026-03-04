@@ -10,6 +10,7 @@
 
 const axios = require('axios');
 const config = require('../config');
+const rotation = require('./rotation');
 
 const SV_API = 'https://api.sociavault.com/v1/scrape';
 const SV_KEY = process.env.SOCIAVAULT_API_KEY || config.SOCIAVAULT_API_KEY || '';
@@ -51,6 +52,14 @@ function toArr(raw) {
 }
 
 // ════════════════════════════════════════════════════════
+// ROTATION BATCH SIZES
+// ════════════════════════════════════════════════════════
+const FB_GROUPS_PER_SCAN = 4;
+const FB_COMPETITORS_PER_SCAN = 3;
+const TT_HASHTAGS_PER_SCAN = 4;
+const IG_ACCOUNTS_PER_SCAN = 3;
+
+// ════════════════════════════════════════════════════════
 // FACEBOOK
 // ════════════════════════════════════════════════════════
 
@@ -88,9 +97,12 @@ async function fbGetGroupPosts(groupUrl, groupName) {
 }
 
 async function scrapeFacebookGroups(maxPosts = 60) {
-    const groups = config.FB_TARGET_GROUPS || [];
-    if (!groups.length) return [];
-    console.log(`[SV:FB] 📘 ${groups.length} groups...`);
+    const allGroups = config.FB_TARGET_GROUPS || [];
+    if (!allGroups.length) return [];
+
+    // Rotation: lấy batch tiếp theo, không lặp lại
+    const groups = rotation.getNextBatch('fb_groups', allGroups, FB_GROUPS_PER_SCAN);
+    console.log(`[SV:FB] 📘 ${groups.length}/${allGroups.length} groups this scan (rotation)...`);
 
     const all = [];
 
@@ -144,9 +156,12 @@ async function scrapeFacebookGroups(maxPosts = 60) {
 }
 
 async function scrapeFBCompetitorComments() {
-    const pages = config.FB_COMPETITOR_PAGES || [];
-    if (!pages.length) return [];
-    console.log(`[SV:FB] 🏢 ${pages.length} competitor pages...`);
+    const allPages = config.FB_COMPETITOR_PAGES || [];
+    if (!allPages.length) return [];
+
+    // Rotation: 3 pages/scan thay vì tất cả
+    const pages = rotation.getNextBatch('fb_competitors', allPages, FB_COMPETITORS_PER_SCAN);
+    console.log(`[SV:FB] 🏢 ${pages.length}/${allPages.length} competitor pages this scan (rotation)...`);
 
     const all = [];
     for (const page of pages) {
@@ -181,14 +196,11 @@ async function scrapeFBCompetitorComments() {
 // TIKTOK
 // ════════════════════════════════════════════════════════
 
-// ⚠️ VERIFIED: endpoint là 'tiktok/comments' (không phải tiktok/video/comments)
-// ⚠️ VERIFIED: nhiều video trả về data.comments = null → cần handle
 async function ttGetVideoComments(videoUrl, source) {
     if (!canSpend()) return [];
     const data = await svGet('tiktok/comments', { url: videoUrl });
     spend();
 
-    // VERIFIED: TikTok hay trả comments = null, không phải lỗi
     const comments = toArr(data.comments);
     if (comments.length === 0) return [];
 
@@ -221,16 +233,19 @@ async function ttSearchHashtag(hashtag) {
 }
 
 async function scrapeTikTok(maxPosts = 30) {
-    const hashtags = config.TT_SEARCH_HASHTAGS || [];
-    if (!hashtags.length) {
+    const allHashtags = config.TT_SEARCH_HASHTAGS || [];
+    if (!allHashtags.length) {
         console.log('[SV:TT] ⚠️ No TT_SEARCH_HASHTAGS configured');
         return [];
     }
-    console.log(`[SV:TT] 🎵 ${hashtags.length} hashtags...`);
+
+    // Rotation: 4 hashtags/scan, xoay vòng qua 10 hashtags
+    const hashtags = rotation.getNextBatch('tt_hashtags', allHashtags, TT_HASHTAGS_PER_SCAN);
+    console.log(`[SV:TT] 🎵 ${hashtags.length}/${allHashtags.length} hashtags this scan (rotation)...`);
 
     const all = [];
 
-    for (const hashtag of hashtags.slice(0, 4)) {
+    for (const hashtag of hashtags) {
         try {
             console.log(`[SV:TT] #${hashtag}`);
             const videos = await ttSearchHashtag(hashtag);
@@ -238,7 +253,6 @@ async function scrapeTikTok(maxPosts = 30) {
             await delay(1500);
 
             for (const video of videos.slice(0, 3)) {
-                // Add video caption
                 if (video.content) {
                     all.push({
                         platform: 'tiktok',
@@ -252,7 +266,6 @@ async function scrapeTikTok(maxPosts = 30) {
                     });
                 }
 
-                // Get comments — nhiều video sẽ trả null, đó là bình thường
                 if (video.url) {
                     try {
                         await delay(1500);
@@ -282,7 +295,6 @@ async function scrapeTikTok(maxPosts = 30) {
 // INSTAGRAM
 // ════════════════════════════════════════════════════════
 
-// Response verified: data.comments.{0..n}.{text, created_at, user:{username, id}}
 async function igGetPostComments(postUrl, source) {
     if (!canSpend()) return [];
     const data = await svGet('instagram/comments', { url: postUrl });
@@ -321,16 +333,19 @@ async function igGetAccountPosts(handle) {
 }
 
 async function scrapeInstagram(maxPosts = 30) {
-    const accounts = config.IG_TARGET_ACCOUNTS || [];
-    if (!accounts.length) {
+    const allAccounts = config.IG_TARGET_ACCOUNTS || [];
+    if (!allAccounts.length) {
         console.log('[SV:IG] ⚠️ No IG_TARGET_ACCOUNTS configured');
         return [];
     }
-    console.log(`[SV:IG] 📷 ${accounts.length} accounts...`);
+
+    // Rotation: 3 accounts/scan, xoay vòng
+    const accounts = rotation.getNextBatch('ig_accounts', allAccounts, IG_ACCOUNTS_PER_SCAN);
+    console.log(`[SV:IG] 📷 ${accounts.length}/${allAccounts.length} accounts this scan (rotation)...`);
 
     const all = [];
 
-    for (const handle of accounts.slice(0, 4)) {
+    for (const handle of accounts) {
         try {
             console.log(`[SV:IG] @${handle}`);
             const posts = await igGetAccountPosts(handle);
