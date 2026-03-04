@@ -17,9 +17,8 @@ try {
 // Fallback models: try main model first, then smaller/cheaper models
 const AI_MODELS = [
     config.AI_MODEL || 'llama-3.3-70b-versatile',
-    'llama-3.3-70b-specdec',   // Fast speculative decoding variant
+    'meta-llama/llama-4-scout-17b-16e-instruct', // Llama 4 (fast, good quality)
     'llama-3.1-8b-instant',    // Smaller, uses fewer tokens
-    'meta-llama/llama-4-scout-17b-16e-instruct', // Llama 4
     'qwen-qwq-32b',           // Alibaba Qwen (good Vietnamese)
 ];
 
