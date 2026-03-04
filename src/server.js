@@ -615,8 +615,8 @@ app.post('/api/leads/:id/feedback', (req, res) => {
         const leadId = parseInt(req.params.id);
         const { type, correct_role, correct_score, note } = req.body;
 
-        if (!type || !['correct', 'wrong', 'upgrade', 'downgrade'].includes(type)) {
-            return res.status(400).json({ error: 'type must be: correct, wrong, upgrade, downgrade' });
+        if (!type || !['correct', 'wrong', 'upgrade', 'downgrade', 'text_feedback'].includes(type)) {
+            return res.status(400).json({ error: 'type must be: correct, wrong, upgrade, downgrade, text_feedback' });
         }
 
         const success = memoryStore.saveFeedback(leadId, {

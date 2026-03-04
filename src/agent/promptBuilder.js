@@ -69,24 +69,25 @@ score 0-39 = Không phải buyer HOẶC không liên quan
 }
 
 /**
- * Build feedback section from past human corrections
+ * Build feedback section from past human text corrections
  */
 function buildFeedbackSection() {
     const examples = getFeedbackExamples(5);
     if (examples.length === 0) return '';
 
     const lines = examples.map(ex => {
-        const originalLabel = `${ex.role} (score ${ex.score})`;
-        const feedbackLabel = ex.human_feedback === 'correct'
-            ? '✅ Đúng'
-            : `❌ Sai → đúng là ${ex.correct_role} (score ${ex.correct_score})`;
         const content = (ex.content || '').substring(0, 80);
-        return `- "${content}..." → AI: ${originalLabel} | Feedback: ${feedbackLabel}`;
+        const aiLabel = `${ex.role} (score ${ex.score})`;
+        const humanNote = ex.feedback_note || ex.human_feedback || 'n/a';
+        return `- Post: "${content}..."
+  AI đánh: ${aiLabel}
+  Sale feedback: ${humanNote}`;
     });
 
-    return `🔄 HỌC TỪ FEEDBACK (${examples.length} ví dụ gần đây):
+    return `🔄 HỌC TỪ FEEDBACK CỦA TEAM SALE (${examples.length} ví dụ gần nhất):
 ${lines.join('\n')}
-→ Hãy tham khảo feedback này để chấm điểm chính xác hơn.`;
+
+→ Hãy học từ feedback này. Nếu sale nói AI sai → điều chỉnh cách chấm.`;
 }
 
 /**

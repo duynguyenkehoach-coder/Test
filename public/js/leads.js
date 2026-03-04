@@ -193,14 +193,22 @@ function renderLeadCard(lead) {
         <!--Agent Feedback-->
         <div class="lead-feedback" id="feedback-${lead.id}">
           <div class="lead-response-header">
-            <span class="lead-response-label">🧠 Agent Feedback</span>
+            <span class="lead-response-label">🧠 Dạy Agent</span>
             <span class="feedback-status" id="feedback-status-${lead.id}"></span>
           </div>
-          <div class="feedback-buttons">
-            <button class="feedback-btn fb-correct" onclick="sendFeedback(${lead.id}, 'correct')" title="AI phân loại đúng">👍 Đúng</button>
-            <button class="feedback-btn fb-wrong" onclick="sendFeedback(${lead.id}, 'wrong')" title="AI phân loại sai">👎 Sai</button>
-            <button class="feedback-btn fb-upgrade" onclick="sendFeedback(${lead.id}, 'upgrade')" title="Lead tốt hơn AI nghĩ">⬆️ Nâng</button>
-            <button class="feedback-btn fb-downgrade" onclick="sendFeedback(${lead.id}, 'downgrade')" title="Lead kém hơn AI nghĩ">⬇️ Giảm</button>
+          <div class="feedback-quick-tags">
+            <button class="feedback-tag" onclick="insertTag(${lead.id}, '✅ Đúng rồi')">✅ Đúng</button>
+            <button class="feedback-tag" onclick="insertTag(${lead.id}, '❌ Sai — đây là buyer')">❌ Sai→Buyer</button>
+            <button class="feedback-tag" onclick="insertTag(${lead.id}, '❌ Sai — đây là provider/đối thủ')">❌ Sai→Provider</button>
+            <button class="feedback-tag" onclick="insertTag(${lead.id}, '⬆️ Score nên cao hơn, khoảng ')">⬆️ Nâng</button>
+            <button class="feedback-tag" onclick="insertTag(${lead.id}, '⬇️ Score nên thấp hơn, khoảng ')">⬇️ Giảm</button>
+          </div>
+          <div class="feedback-input-row">
+            <textarea class="feedback-textarea" id="feedback-text-${lead.id}" rows="2" 
+              placeholder="Nhập feedback: VD 'Post này là buyer rõ ràng, đang tìm kho US cho TikTok Shop, nên chấm 85-90'"></textarea>
+            <button class="feedback-send-btn" onclick="sendFeedback(${lead.id})">
+              📤 Gửi
+            </button>
           </div>
         </div>
 
@@ -222,11 +230,29 @@ function debounceSearch() {
 }
 
 // ═══════════════════════════════════════════════════════
-// Agent Feedback
+// Agent Feedback — Text-based learning
 // ═══════════════════════════════════════════════════════
-async function sendFeedback(leadId, type) {
+function insertTag(leadId, text) {
+  const textarea = document.getElementById(`feedback-text-${leadId}`);
+  if (!textarea) return;
+  textarea.value = text;
+  textarea.focus();
+  // Place cursor at end
+  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+}
+
+async function sendFeedback(leadId) {
+  const textarea = document.getElementById(`feedback-text-${leadId}`);
   const statusEl = document.getElementById(`feedback-status-${leadId}`);
-  const feedbackDiv = document.getElementById(`feedback-${leadId}`);
+  const feedbackText = (textarea?.value || '').trim();
+
+  if (!feedbackText) {
+    statusEl.textContent = '⚠️ Nhập feedback trước';
+    statusEl.style.color = '#f59e0b';
+    textarea?.focus();
+    setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 2000);
+    return;
+  }
 
   try {
     statusEl.textContent = '⏳ Đang gửi...';
@@ -235,21 +261,18 @@ async function sendFeedback(leadId, type) {
     const resp = await fetch(`/api/leads/${leadId}/feedback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type }),
+      body: JSON.stringify({
+        type: 'text_feedback',
+        note: feedbackText,
+      }),
     });
     const data = await resp.json();
 
     if (data.ok) {
       statusEl.textContent = '✅ Agent đã học!';
       statusEl.style.color = '#10b981';
-
-      // Highlight the clicked button
-      const btns = feedbackDiv.querySelectorAll('.feedback-btn');
-      btns.forEach(btn => btn.classList.remove('fb-active'));
-      const activeBtn = feedbackDiv.querySelector(`.fb-${type}`);
-      if (activeBtn) activeBtn.classList.add('fb-active');
-
-      // Refresh agent stats if visible
+      textarea.value = '';
+      textarea.placeholder = '✅ Đã gửi! Nhập thêm nếu cần...';
       loadAgentStats();
     } else {
       statusEl.textContent = '❌ ' + (data.error || 'Lỗi');
@@ -260,7 +283,6 @@ async function sendFeedback(leadId, type) {
     statusEl.style.color = '#ef4444';
   }
 
-  // Clear status after 3s
   setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000);
 }
 
@@ -304,4 +326,3 @@ async function loadAgentStats() {
 document.addEventListener('DOMContentLoaded', () => {
   setTimeout(loadAgentStats, 1000);
 });
-
