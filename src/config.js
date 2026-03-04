@@ -1,184 +1,120 @@
 require('dotenv').config();
 
 module.exports = {
-  // --- SociaVault ---
+  // ════════════════════════════════════════════════════
+  // API KEYS
+  // ════════════════════════════════════════════════════
   SOCIAVAULT_API_KEY: process.env.SOCIAVAULT_API_KEY,
-
-  // --- AI ---
   GROQ_API_KEY: process.env.GROQ_API_KEY,
   AI_MODEL: 'llama-3.3-70b-versatile',
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
   GEMINI_MODEL: 'gemini-2.0-flash',
-
-  // --- Telegram ---
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
 
-  // --- Lead scoring ---
+  // ════════════════════════════════════════════════════
+  // SYSTEM CONFIG
+  // ════════════════════════════════════════════════════
   LEAD_SCORE_THRESHOLD: 60,
-
-  // --- Cron ---
-  CRON_KEYWORD_SCAN: '*/30 * * * *',
-  CRON_GROUP_SCAN: '0 8,20 * * *',
-
-  // --- Server ---
   PORT: process.env.PORT || 3000,
-
-  // --- Platforms ---
   ENABLED_PLATFORMS: ['facebook', 'tiktok', 'instagram'],
+  CRON_KEYWORD_SCAN: '*/30 * * * *',   // TikTok + IG
+  CRON_GROUP_SCAN: '0 8,20 * * *',     // FB Groups: 8h sáng + 8h tối
 
-  // ================================================================
-  // FACEBOOK GROUPS — Nơi BUYER thật sự đang hỏi
-  // ================================================================
-  // Logic: Scrape post trong group → classifier lọc buyer
-  // KHÔNG scrape page của provider/đối thủ
+  // 6000 credits / 30 ngày = 200 credits/ngày
+  SV_DAILY_LIMIT: parseInt(process.env.SV_DAILY_LIMIT || '200'),
+
+  // ════════════════════════════════════════════════════
+  // FACEBOOK GROUPS — 12 groups
+  // ~4 credits/group × 12 × 2 lần/ngày = ~96 credits/ngày
+  // ════════════════════════════════════════════════════
   FB_TARGET_GROUPS: [
-    // ✅ Đang có data — giữ lại
     { name: 'Cộng đồng Etsy VN', url: 'https://www.facebook.com/groups/congdongetsyvietnam' },
     { name: 'TikTok Shop US Underground', url: 'https://www.facebook.com/groups/tiktokshopusunderground' },
-    { name: 'Tìm Supplier Fulfill POD/Drop VN-US-UK', url: 'https://www.facebook.com/groups/timsupplierfulfillpoddropvnusuk' },
-
-    // ✅ Thêm mới — cộng đồng seller chất lượng cao
+    { name: 'Tìm Supplier Fulfill POD/Drop', url: 'https://www.facebook.com/groups/timsupplierfulfillpoddropvnusuk' },
     { name: 'Dropship & Fulfill VN', url: 'https://www.facebook.com/groups/646444174604027' },
     { name: 'Seller E-commerce VN', url: 'https://www.facebook.com/groups/494286704652111' },
     { name: 'E-commerce Sellers VN', url: 'https://www.facebook.com/groups/437505323460908' },
     { name: 'Cộng đồng Amazon VN', url: 'https://www.facebook.com/groups/congdongamazonvn' },
-    { name: 'Vận chuyển Quốc tế', url: 'https://www.facebook.com/groups/914341367037223' },
-    { name: 'Shipping & Logistics VN', url: 'https://www.facebook.com/groups/229053812104553' },
-
-    // ❌ Đã bỏ: THG Fulfill US (400 error), MMO Darkness (0 posts)
+    { name: 'Vận chuyển Quốc tế VN', url: 'https://www.facebook.com/groups/914341367037223' },
+    { name: 'POD & Print on Demand VN', url: 'https://www.facebook.com/groups/podvietnam' },
+    { name: 'Dropship Vietnam', url: 'https://www.facebook.com/groups/dropshipvietnam' },
+    { name: 'Hỏi đáp Fulfillment & Logistics', url: 'https://www.facebook.com/groups/fulfillmentlogisticsvn' },
+    { name: 'Seller TikTok Shop Vietnam', url: 'https://www.facebook.com/groups/sellertiktokshopvietnam' },
   ],
 
-  // ================================================================
-  // FB COMPETITOR PAGES — Scrape COMMENTS (buyer hỏi dưới post)
-  // ================================================================
-  // Logic: Dưới post của đối thủ, buyer hay comment hỏi giá/dịch vụ
-  // → Đó là lead tiềm năng cho THG
+  // ════════════════════════════════════════════════════
+  // FACEBOOK COMPETITOR PAGES — 6 pages
+  // ~5 credits/page × 6 × 2 lần/ngày = ~60 credits/ngày
+  // ════════════════════════════════════════════════════
   FB_COMPETITOR_PAGES: [
     { name: 'Boxme Global', url: 'https://www.facebook.com/boxme.asia' },
     { name: 'SuperShip', url: 'https://www.facebook.com/supership.vn' },
     { name: 'Weshop VN', url: 'https://www.facebook.com/weshopvn' },
-    // Thêm: đối thủ POD trực tiếp
-    { name: 'Fulfillment Việt Nam', url: 'https://www.facebook.com/fulfillmentvietnam' },
+    { name: 'Merchize', url: 'https://www.facebook.com/merchize' },
+    { name: 'Bestexpress VN', url: 'https://www.facebook.com/bestexpressvn' },
+    { name: 'Ninja Van Vietnam', url: 'https://www.facebook.com/ninjavan.vn' },
   ],
 
-  // ================================================================
-  // TIKTOK — Dùng KEYWORD SEARCH, không scrape account provider
-  // ================================================================
-  //
-  // SAI (cũ): Scrape @merchize → toàn post quảng cáo của đối thủ
-  // ĐÚNG (mới): Search keyword → tìm video của seller đang hỏi/chia sẻ
-  //
-  // Cách hoạt động: SociaVault search keyword trên TikTok
-  // → Tìm video có caption/hashtag chứa keyword
-  // → Caption của seller = content để classify
-  //
-  TT_SEARCH_KEYWORDS: [
-    // Seller đang hỏi/tìm dịch vụ
-    'tìm xưởng POD Việt Nam',
-    'tìm fulfill TikTok US',
-    'cần kho Mỹ fulfill',
-    'ship hàng Mỹ review',
-    'dropship Taobao sang Mỹ',
-    'bán hàng TikTok US từ Việt Nam',
-    'kho US giá rẻ',
-    'tìm 3PL Mỹ',
-    // English buyer intent
-    'looking for POD supplier Vietnam',
-    'need fulfillment center US',
-    'dropship from Vietnam to US',
-  ],
-
-  // Fallback: nếu SociaVault chỉ hỗ trợ scrape account
-  TT_TARGET_ACCOUNTS: [
-    // ❌ ĐÃ XÓA: @bestexpressvn, @boxmeglobal, @merchize → đối thủ
-    // ❌ ĐÃ XÓA: @tartecosmetics, @halara_us, @microingredients → brand Mỹ
-    // ❌ ĐÃ XÓA: @findniche → tool, không phải buyer
-  ],
-
-  // ================================================================
-  // INSTAGRAM — Dùng HASHTAG, không scrape account provider
-  // ================================================================
-  //
-  // SAI (cũ): Scrape @printify, @shopify, @amzprep → toàn provider
-  // ĐÚNG (mới): Search hashtag → tìm post của seller đang chia sẻ
-  //
-  IG_SEARCH_HASHTAGS: [
-    // Hashtag của seller VN bán quốc tế
+  // ════════════════════════════════════════════════════
+  // TIKTOK — 10 hashtags (scraper xoay vòng 4/scan)
+  // ~4 credits × 4 hashtag × vài scan/ngày = ~16-20 credits/ngày
+  // ════════════════════════════════════════════════════
+  TT_SEARCH_HASHTAGS: [
     'podvietnam',
     'dropshipvietnam',
     'sellervietnam',
     'fulfillvietnam',
     'shiphangmy',
-    // Hashtag tiếng Anh có buyer VN
-    'vietnamseller',
-    'vietnamdropship',
-    'podvietnamese',
-    'tiktokshopvietnam',
-    // Hashtag buyer tìm dịch vụ
-    'fulfillmentpartner',
-    'dropshipsupplier',
-    'podpartner',
+    'tiktokshopus',
+    'dropshipping',
+    'fulfillment',
+    'ecommercevietnam',
+    'xuongpod',
   ],
 
-  // Fallback: nếu SociaVault chỉ hỗ trợ scrape account
+  // ════════════════════════════════════════════════════
+  // INSTAGRAM — 6 accounts (scraper dùng 4/scan)
+  // ~4 credits × 4 account × 3 scan/ngày = ~48 credits/ngày
+  // ════════════════════════════════════════════════════
   IG_TARGET_ACCOUNTS: [
-    // ❌ ĐÃ XÓA: tất cả provider accounts
+    'boxme.global',    // đối thủ fulfillment SEA
+    'merchize_pod',    // đối thủ POD
+    'bestexpressvn',   // đối thủ logistics VN
+    'printify',        // POD lớn — buyer hay than về giá/support
+    'shiphype',        // fulfillment — buyer so sánh
+    'zendrop',         // dropship — buyer tìm supplier VN
   ],
 
-  // ================================================================
-  // SEARCH KEYWORDS — Dùng cho keyword search (nếu SV hỗ trợ)
-  // ================================================================
-  SEARCH_KEYWORDS: {
-    facebook: [
-      'ship hàng Mỹ bị delay',
-      'ai dùng fulfill nào ổn không',
-      'kho Mỹ giá bao nhiêu',
-      'TikTok shop US tracking không active',
-      'POD basecost rẻ',
-      'recommend đơn vị ship',
-      'cần tìm 3PL',
-      'tìm xưởng POD',
-    ],
-    instagram: [
-      'podvietnam',
-      'dropshipvietnam',
-      'sellervietnam',
-      'fulfillvietnam',
-      'shiphangmy',
-    ],
-    tiktok: [
-      'tìm xưởng POD Việt Nam',
-      'ship hàng Mỹ review',
-      'fulfill TikTok US',
-    ],
-  },
+  // ════════════════════════════════════════════════════
+  // TỔNG KẾT CREDIT/NGÀY
+  //   FB Groups:      ~96 cr
+  //   FB Competitors: ~60 cr
+  //   TikTok:         ~20 cr
+  //   Instagram:      ~24 cr
+  //   TỔNG:          ~200 cr ✅ (= 6000 / 30 ngày)
+  // ════════════════════════════════════════════════════
 
-  // ================================================================
-  // THG CONTEXT cho AI Classifier
-  // ================================================================
   THG_CONTEXT: `
-THG là công ty logistics, express, fulfillment và warehouse phục vụ seller e-commerce VẬN CHUYỂN TOÀN CẦU (không chỉ Mỹ).
+THG là công ty logistics, express, fulfillment và warehouse phục vụ seller e-commerce VẬN CHUYỂN TOÀN CẦU.
 
-Dịch vụ THG cung cấp:
-1. THG Express: Vận chuyển hàng từ VN/CN đi TOÀN THẾ GIỚI (Mỹ, Úc, UK, UAE, Đài Loan, Saudi, Chile, Colombia, Mexico…) — tuyến bay riêng, giá rẻ, tracking real-time
-2. THG Fulfill (POD): Seller gửi file thiết kế → THG in ấn tại xưởng VN/CN/US → đóng gói → ship tới khách hàng
-3. THG Fulfill (Dropship): Seller gửi link sản phẩm → THG mua hộ → ship quốc tế
-4. THG Warehouse/3PL: Kho kép tại Mỹ (Pennsylvania + Texas) — fulfill nội địa từ $1.2/đơn, giao 2-5 ngày toàn US, miễn phí lưu kho 90 ngày
-5. E-packet lines: Chile, Colombia, Mexico, Saudi, UAE, Úc, Đài Loan...
+Dịch vụ THG:
+1. THG Express: VN/CN → Mỹ, Úc, UK, UAE, Đài Loan, Saudi, Chile, Colombia, Mexico — tuyến bay riêng, rẻ hơn DHL/FedEx
+2. THG Fulfill (POD): Seller gửi thiết kế → THG in tại xưởng VN/CN/US → đóng gói → ship
+3. THG Fulfill (Dropship): Seller gửi link Taobao/1688 → THG mua hộ → ship quốc tế
+4. THG Warehouse/3PL: Kho Mỹ (PA + TX) — fulfill từ $1.2/đơn, 2-5 ngày, free lưu kho 90 ngày
+5. E-packet: Chile, Colombia, Mexico, Saudi, UAE, Úc, Đài Loan
 
-MẪU BÀI VIẾT CỦA KHÁCH HÀNG TIỀM NĂNG (BUYER INTENT):
-- "tìm đối tác POD/dropship giá tốt hơn Ali, có kho US càng tốt"
-- "cần tìm đơn vị vận chuyển Trung Quốc - Saudi"
-- "Tìm DVVC EPK VN-Đài Loan"
-- "em tha thiết tìm bên dịch vụ 3PL"
-- "tìm đơn vị vận chuyển sang UAE và Ai Cập"
-- "cần tìm dịch vụ kho bên US"
-- "cần Sup ff sản phẩm Car Air Freshener, ship đi US/UK"
-- "Cần line E-packet: Chile, Colombia, Mexico"
-- "khách hủy đơn vì giao lâu quá, cần kho US"
-- "phí fulfill đắt, tìm alternative rẻ hơn"
+BUYER INTENT — score cao:
+- "tìm đối tác POD/dropship", "cần kho US", "tìm 3PL", "tìm supplier fulfill"
+- "ship VN→Mỹ giá rẻ", "cần đơn vị vận chuyển", "recommend đơn vị ship"
+- "TikTok tracking không active", "khách hủy đơn vì giao lâu", "phí fulfill đắt quá"
+- "cần line epacket Chile/Colombia/Mexico/UAE/Saudi"
+- Comment ngắn dưới post đối thủ: "giá bao nhiêu?", "ship mấy ngày?", "có kho US không?", "inbox em"
 
-Khi gặp bài viết tương tự → BUYER (score cao). Nếu là bài quảng cáo dịch vụ → PROVIDER (bỏ qua).
+PROVIDER — bỏ qua (score = 0):
+- Bài quảng cáo: "bên em nhận ship", "chúng tôi cung cấp", "lh em"
+- Post tự quảng cáo của Boxme/Merchize/Printify/Shopify
+- Comment vô nghĩa: "🔥🔥", "Let's go", "Yayyyy", "Ayyyyyye", "One can't succeed alone"
   `.trim(),
 };
