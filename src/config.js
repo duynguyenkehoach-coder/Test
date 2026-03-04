@@ -1,10 +1,10 @@
 require('dotenv').config();
 
 module.exports = {
-  // --- Apify (fallback only) ---
+  // --- Apify (primary scraping) ---
   APIFY_TOKEN: process.env.APIFY_TOKEN,
 
-  // --- RapidAPI (primary scraping) ---
+  // --- RapidAPI (fallback for TikTok/IG) ---
   RAPIDAPI_KEY: process.env.RAPIDAPI_KEY,
 
   // --- AI (Groq — scan & classify) ---
@@ -22,15 +22,17 @@ module.exports = {
   // --- Lead scoring ---
   LEAD_SCORE_THRESHOLD: 60,
 
-  // --- Cron schedule (every 30 minutes) ---
-  CRON_SCHEDULE: '*/30 * * * *',
+  // --- Cron schedule ---
+  CRON_KEYWORD_SCAN: '*/30 * * * *',  // TikTok + IG: mỗi 30 phút
+  CRON_GROUP_SCAN: '0 8,20 * * *',     // FB Groups: 2 lần/ngày (8h sáng, 8h tối)
 
   // --- Server ---
   PORT: process.env.PORT || 3000,
 
   // --- Apify Actor IDs ---
   APIFY_ACTORS: {
-    FB_SEARCH: 'apify/facebook-search-scraper',
+    FB_GROUP: 'apify/facebook-groups-scraper',
+    FB_PAGE_COMMENTS: 'apify/facebook-comments-scraper',
     IG_HASHTAG: 'apify/instagram-hashtag-scraper',
     TIKTOK_SEARCH: 'clockworks/tiktok-scraper',
   },
@@ -38,24 +40,25 @@ module.exports = {
   // --- Platforms to enable ---
   ENABLED_PLATFORMS: ['facebook', 'tiktok', 'instagram'],
 
-  // --- Search keywords per platform ---
-  // QUAN TRỌNG: Keywords phải tập trung vào BUYER INTENT (người ĐANG TÌM dịch vụ)
-  // KHÔNG phải keywords của người CUNG CẤP dịch vụ (đối thủ)
+  // --- Facebook Groups to scrape (TOP 5 seller communities) ---
+  FB_TARGET_GROUPS: [
+    { name: 'THG Fulfill US', url: 'https://www.facebook.com/groups/thgfulfillus' },
+    { name: 'Cộng đồng Etsy VN', url: 'https://www.facebook.com/groups/congdongetsyvietnam' },
+    { name: 'TikTok Shop US Underground', url: 'https://www.facebook.com/groups/tiktokshopusunderground' },
+    { name: 'Tìm Supplier Fulfill POD/Drop', url: 'https://www.facebook.com/groups/timsupplierfulfillpoddropvnusuk' },
+    { name: 'MMO Darkness', url: 'https://www.facebook.com/groups/mmo.darkness' },
+  ],
+
+  // --- FB Competitor Pages (scrape comments = buyer leads) ---
+  FB_COMPETITOR_PAGES: [
+    { name: 'Weshop VN', url: 'https://www.facebook.com/weshopvn' },
+    { name: 'SuperShip', url: 'https://www.facebook.com/supership.vn' },
+    { name: 'Boxme Global', url: 'https://www.facebook.com/boxme.asia' },
+  ],
+
+  // --- Search keywords per platform (TikTok + IG only) ---
   SEARCH_KEYWORDS: {
-    facebook: [
-      // Seller đang than thở / hỏi
-      'ship hàng Mỹ bị delay',
-      'ai dùng fulfill nào ổn không',
-      'kho Mỹ giá bao nhiêu',
-      'TikTok shop US tracking không active',
-      'POD basecost rẻ',
-      'đơn hàng Mỹ bị stuck',
-      // Câu hỏi thực tế
-      'recommend đơn vị ship',
-      'ai đang dùng THG',
-    ],
     instagram: [
-      // Hashtag của SELLER, không phải provider
       'sellertiktokus',
       'podvietnam',
       'dropshipvietnam',

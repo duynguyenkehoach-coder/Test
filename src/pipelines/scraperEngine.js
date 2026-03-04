@@ -15,7 +15,7 @@ const config = require('../config');
 // ╔══════════════════════════════════════════════════════╗
 // ║  CREDIT BUDGET GUARD                                 ║
 // ╚══════════════════════════════════════════════════════╝
-const DAILY_APIFY_BUDGET_USD = 0.15; // ~$4.5/month, để dư margin
+const DAILY_APIFY_BUDGET_USD = 0.50; // ~$15/month, enough for groups + TT + IG
 let apifySpentToday = 0;
 const APIFY_COST_PER_RUN = 0.04; // conservative estimate per actor run
 
@@ -373,106 +373,119 @@ function extractFBFields(item) {
     return { authorName, rawDate, content, postUrl };
 }
 
-const FB_API_HOSTS = [
-    { host: 'facebook-scraper3.p.rapidapi.com', path: '/search/posts', paramKey: 'query' },
-    { host: 'facebook-pages-scraper2.p.rapidapi.com', path: '/search_facebook_posts', paramKey: 'query' },
-];
-
-async function fbFromRapidAPI(keywords, maxPosts) {
-    const apiKey = getActiveRapidKey();
-    if (!apiKey) throw new Error('No RAPIDAPI_KEY');
-    const allPosts = [];
-    for (const api of FB_API_HOSTS) {
-        try {
-            // FIX: Chỉ lấy 2 keyword, 10 posts mỗi keyword
-            for (const keyword of keywords.slice(0, 2)) {
-                console.log(`[FB:RapidAPI] → "${keyword}" via ${api.host}`);
-                const resp = await axios.get(`https://${api.host}${api.path}`, {
-                    headers: { 'x-rapidapi-host': api.host, 'x-rapidapi-key': apiKey },
-                    params: { [api.paramKey]: keyword, page: 1, limit: 10 },
-                    timeout: 30000,
-                });
-                const data = resp.data?.results || resp.data?.data || resp.data?.posts || [];
-                const posts = (Array.isArray(data) ? data : []).slice(0, 10).map(item => {
-                    const e = extractFBFields(item);
-                    return {
-                        platform: 'facebook',
-                        post_url: e.postUrl,
-                        author_name: e.authorName,
-                        content: e.content,
-                        post_created_at: parseTimestamp(e.rawDate),
-                        scraped_at: new Date().toISOString(),
-                    };
-                }).filter(p => p.content && p.content.length > 15);
-                allPosts.push(...posts);
-                console.log(`[FB:RapidAPI] ✓ ${posts.length} posts`);
-                await delay(1500);
-            }
-            return allPosts;
-        } catch (err) {
-            if (isRateLimited(err)) { console.log(`[FB:RapidAPI] ❌ ${api.host} → 429`); continue; }
-            console.log(`[FB:RapidAPI] ⚠️ ${api.host} → ${err.message}`); continue;
-        }
+// ╔══════════════════════════════════════════════════════╗
+// ║  FACEBOOK: GROUP SCRAPER (PRIMARY)                    ║
+// ╚══════════════════════════════════════════════════════╝
+async function fbFromGroups(maxPosts = 20) {
+    const groups = config.FB_TARGET_GROUPS || [];
+    if (groups.length === 0) {
+        console.log('[FB:Groups] ⚠️ No groups configured');
+        return [];
     }
-    throw new Error('All FB RapidAPI hosts exhausted');
-}
-
-async function fbFromApify(keywords, maxPosts) {
     if (!canSpendApify()) throw new Error('Daily Apify budget reached');
     let apify = getActiveApifyClient();
     if (!apify) throw new Error('No active Apify tokens');
+
     const allPosts = [];
-    for (const keyword of keywords.slice(0, 2)) {
-        console.log(`[FB:Apify] → "${keyword}"`);
+    const postsPerGroup = Math.ceil(maxPosts / groups.length);
+
+    for (const group of groups) {
+        if (!canSpendApify()) break;
+        console.log(`[FB:Groups] 📌 ${group.name}...`);
         try {
             if (!apify) { apify = getActiveApifyClient(); if (!apify) break; }
             recordApifySpend();
-            const run = await apify.client.actor('apify/facebook-search-scraper').call({
-                searchQueries: [keyword],
-                maxPosts: 10,
-                searchType: 'posts',
-            });
+            const run = await apify.client.actor(config.APIFY_ACTORS.FB_GROUP).call({
+                startUrls: [{ url: group.url }],
+                maxPosts: postsPerGroup,
+                maxComments: 0,
+                resultsLimit: postsPerGroup,
+            }, { waitSecs: 120 });
             const { items } = await apify.client.dataset(run.defaultDatasetId).listItems();
-            const posts = items.map(item => ({
-                platform: 'facebook',
-                post_url: item.url || item.postUrl || '',
-                author_name: item.authorName || item.userName || 'Unknown',
-                content: item.text || item.postText || item.message || '',
-                post_created_at: parseTimestamp(item.time || item.date || item.createdAt),
-                scraped_at: new Date().toISOString(),
-            })).filter(p => p.content && p.content.length > 15);
+            const posts = items.map(item => {
+                const content = item.text || item.postText || item.message || '';
+                return {
+                    platform: 'facebook',
+                    post_url: item.url || item.postUrl || item.permalink || '',
+                    author_name: item.userName || item.authorName || item.user?.name || 'Unknown',
+                    author_url: item.userUrl || item.user?.url || '',
+                    content,
+                    post_created_at: parseTimestamp(item.time || item.date || item.timestamp || item.createdAt),
+                    scraped_at: new Date().toISOString(),
+                    source: `group:${group.name}`,
+                };
+            }).filter(p => p.content && p.content.length > 15);
             allPosts.push(...posts);
-            console.log(`[FB:Apify] ✓ ${posts.length} posts`);
+            console.log(`[FB:Groups] ✓ ${posts.length} posts from ${group.name}`);
             await delay(2000);
         } catch (err) {
             if (isApifyExhausted(err.message)) {
                 markApifyTokenExhausted(apify.token);
                 apify = getActiveApifyClient();
-                if (apify) { console.log(`[FB:Apify] 🔄 Switching to next Apify token...`); continue; }
+                if (apify) { console.log('[FB:Groups] 🔄 Switching Apify token...'); continue; }
             }
-            console.log(`[FB:Apify] ❌ ${err.message}`);
+            console.log(`[FB:Groups] ⚠️ ${group.name}: ${err.message}`);
+        }
+    }
+    console.log(`[FB:Groups] 📊 Total: ${allPosts.length} posts from ${groups.length} groups`);
+    return allPosts;
+}
+
+// ╔══════════════════════════════════════════════════════╗
+// ║  FACEBOOK: COMPETITOR PAGE COMMENTS (BONUS)           ║
+// ╚══════════════════════════════════════════════════════╝
+async function fbFromPageComments(maxPosts = 10) {
+    const pages = config.FB_COMPETITOR_PAGES || [];
+    if (pages.length === 0) return [];
+    if (!canSpendApify()) return [];
+    let apify = getActiveApifyClient();
+    if (!apify) return [];
+
+    const allPosts = [];
+    for (const page of pages.slice(0, 3)) {
+        if (!canSpendApify()) break;
+        console.log(`[FB:PageComments] 💬 ${page.name}...`);
+        try {
+            if (!apify) { apify = getActiveApifyClient(); if (!apify) break; }
+            recordApifySpend();
+            const run = await apify.client.actor(config.APIFY_ACTORS.FB_PAGE_COMMENTS).call({
+                startUrls: [{ url: page.url }],
+                maxComments: maxPosts,
+                resultsLimit: maxPosts,
+            }, { waitSecs: 120 });
+            const { items } = await apify.client.dataset(run.defaultDatasetId).listItems();
+            const comments = items.map(item => ({
+                platform: 'facebook',
+                post_url: item.postUrl || item.url || page.url,
+                author_name: item.profileName || item.authorName || 'Unknown',
+                author_url: item.profileUrl || '',
+                content: item.text || item.comment || '',
+                post_created_at: parseTimestamp(item.date || item.timestamp),
+                scraped_at: new Date().toISOString(),
+                source: `page_comment:${page.name}`,
+            })).filter(c => c.content && c.content.length > 10);
+            allPosts.push(...comments);
+            console.log(`[FB:PageComments] ✓ ${comments.length} comments from ${page.name}`);
+            await delay(2000);
+        } catch (err) {
+            if (isApifyExhausted(err.message)) {
+                markApifyTokenExhausted(apify.token);
+                apify = getActiveApifyClient();
+                if (apify) continue;
+            }
+            console.log(`[FB:PageComments] ⚠️ ${page.name}: ${err.message}`);
         }
     }
     return allPosts;
 }
 
-// FIX: DISABLED Facebook Groups scraper
-// Lý do: 22 groups × apify cost = credit hết trong 1-2 ngày
-// Thay thế: Dùng keyword search targeting đúng group content
-async function fbGroupsDisabled() {
-    console.log('[FB:Groups] ⏭️  Group scraper disabled — quá tốn credit ($X × 22 groups).');
-    console.log('[FB:Groups] 💡 Thay thế: Keyword search đã include các group-specific terms.');
-    return [];
-}
-
-async function scrapeFacebook(keywords, maxPosts = 20) {
-    console.log(`[Scraper:FB] 📘 ${keywords.length} keywords...`);
-    // FIX: Không chạy group scraper nữa
-    const posts = await fetchWithFallback('Facebook',
-        () => fbFromRapidAPI(keywords, maxPosts),
-        () => fbFromApify(keywords, maxPosts),
-    );
-    return posts;
+async function scrapeFacebook(_keywords, maxPosts = 20) {
+    console.log(`[Scraper:FB] 📘 Scraping ${(config.FB_TARGET_GROUPS || []).length} groups + ${(config.FB_COMPETITOR_PAGES || []).length} competitor pages...`);
+    const groupPosts = await fbFromGroups(maxPosts);
+    const commentPosts = await fbFromPageComments(Math.ceil(maxPosts / 2));
+    const all = [...groupPosts, ...commentPosts];
+    console.log(`[Scraper:FB] 📊 Total FB: ${all.length} posts (${groupPosts.length} from groups, ${commentPosts.length} from page comments)`);
+    return all;
 }
 
 // ╔══════════════════════════════════════════════════════╗
@@ -512,7 +525,7 @@ function dedup(posts) {
 // ║  FULL SCAN                                           ║
 // ╚══════════════════════════════════════════════════════╝
 const SCRAPERS = {
-    facebook: { fn: scrapeFacebook, getKeywords: () => config.SEARCH_KEYWORDS.facebook },
+    facebook: { fn: scrapeFacebook, getKeywords: () => [] }, // FB uses groups, not keywords
     instagram: { fn: scrapeInstagram, getKeywords: () => config.SEARCH_KEYWORDS.instagram },
     tiktok: { fn: scrapeTikTok, getKeywords: () => config.SEARCH_KEYWORDS.tiktok },
 };
@@ -554,5 +567,5 @@ async function runFullScan(options = {}) {
 module.exports = {
     scrapeFacebook, scrapeInstagram,
     scrapeTikTok, runFullScan,
-    fbFromGroups: fbGroupsDisabled,
+    fbFromGroups, fbFromPageComments,
 };

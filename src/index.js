@@ -302,8 +302,8 @@ async function main() {
     const args = process.argv.slice(2);
 
     console.log('╔══════════════════════════════════════════════════════╗');
-    console.log('║  🔍 THG Lead Detection Tool v3.0                    ║');
-    console.log('║  FB • IG • TikTok                                   ║');
+    console.log('║  🔍 THG Lead Detection Tool v4.0                    ║');
+    console.log('║  FB Groups • IG • TikTok • Page Comments            ║');
     console.log('║  Powered by Apify + Groq/Gemini + Telegram          ║');
     console.log('╚══════════════════════════════════════════════════════╝');
     console.log('');
@@ -324,25 +324,35 @@ async function main() {
     // Start dashboard server
     startServer();
 
-    // Schedule periodic scans (keywords only — every 30 min)
-    console.log(`[Main] ⏰ Keyword scan: ${config.CRON_SCHEDULE}`);
-    const scanJob = cron.schedule(config.CRON_SCHEDULE, async () => {
-        console.log('[Cron] Triggered keyword scan...');
-        await runPipeline();
+    // Schedule 1: Keyword scan (TikTok + IG) — every 30 min
+    const keywordCron = config.CRON_KEYWORD_SCAN || '*/30 * * * *';
+    console.log(`[Main] ⏰ Keyword scan (TikTok+IG): ${keywordCron}`);
+    const scanJob = cron.schedule(keywordCron, async () => {
+        console.log('[Cron] Triggered keyword scan (TikTok + IG)...');
+        await runPipeline({ platforms: ['tiktok', 'instagram'] });
     });
 
+    // Schedule 2: FB Group scan — 2×/day (saves Apify credits)
+    const groupCron = config.CRON_GROUP_SCAN || '0 8,20 * * *';
+    console.log(`[Main] ⏰ FB Group scan: ${groupCron}`);
+    cron.schedule(groupCron, async () => {
+        console.log('[Cron] Triggered FB Group scan...');
+        await runPipeline({ platforms: ['facebook'] });
+    });
 
     global.getNextScanTime = () => {
         if (!scanJob) return null;
-        // Depending on node-cron version, there might be ways to get next date, or we compute it.
-        // Quickest way for node-cron is using the cron date parser, but since it's "every 30 mins":
-        return null; // Will calculate in server.js instead to avoid node-cron internals
+        return null;
     };
 
     console.log(`[Main] 🟢 System ready! Platforms: ${config.ENABLED_PLATFORMS.join(', ')}`);
     console.log(`[Main] Dashboard: http://localhost:${config.PORT}`);
     console.log('[Main] Use --scan-once to run immediately');
     console.log('[Main] Use --platform=facebook to scan single platform');
+
+    // Run initial keyword scan on startup
+    console.log('[Main] 🚀 Running initial keyword scan...');
+    await runPipeline({ platforms: ['tiktok', 'instagram'] });
 }
 
 main().catch(err => {
