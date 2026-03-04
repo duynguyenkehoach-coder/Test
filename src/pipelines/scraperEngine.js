@@ -1,16 +1,16 @@
 /**
- * THG Lead Gen — Multi-Platform Scraper v6 (PhantomBuster Only)
+ * THG Lead Gen — Multi-Platform Scraper v7 (SociaVault)
  * 
- * All scraping powered by PhantomBuster:
- * - Facebook: Group Posts Extractor
- * - Instagram: Hashtag Search Export
- * - TikTok: Search Export
+ * All scraping powered by SociaVault REST API:
+ * - Facebook: Group Posts scraping
+ * - Instagram: Hashtag search
+ * - TikTok: Keyword search
  * 
- * No more Apify or RapidAPI — clean, single-source pipeline.
+ * Clean single-source pipeline. No more Apify/RapidAPI/PhantomBuster.
  */
 
 const config = require('../config');
-const pb = require('./phantomBuster');
+const sv = require('./sociaVault');
 
 const delay = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -27,13 +27,13 @@ function dedup(posts) {
 }
 
 // ═══════════════════════════════════════════════════════
-// Platform scrapers — all PhantomBuster
+// Platform scrapers — all SociaVault
 // ═══════════════════════════════════════════════════════
 
 async function scrapeFacebook(_keywords, maxPosts = 20) {
-    console.log('[Scraper:FB] 📘 Scraping Facebook via PhantomBuster...');
+    console.log('[Scraper:FB] 📘 Scraping Facebook via SociaVault...');
     try {
-        const posts = await pb.scrapeFacebookGroups(maxPosts);
+        const posts = await sv.scrapeFacebookGroups(maxPosts);
         console.log(`[Scraper:FB] ✅ ${posts.length} posts`);
         return dedup(posts);
     } catch (err) {
@@ -43,9 +43,9 @@ async function scrapeFacebook(_keywords, maxPosts = 20) {
 }
 
 async function scrapeInstagram(_hashtags, maxPosts = 30) {
-    console.log('[Scraper:IG] 📷 Scraping Instagram via PhantomBuster...');
+    console.log('[Scraper:IG] 📷 Scraping Instagram via SociaVault...');
     try {
-        const posts = await pb.scrapeInstagram(maxPosts);
+        const posts = await sv.scrapeInstagram(maxPosts);
         console.log(`[Scraper:IG] ✅ ${posts.length} posts`);
         return dedup(posts);
     } catch (err) {
@@ -55,9 +55,9 @@ async function scrapeInstagram(_hashtags, maxPosts = 30) {
 }
 
 async function scrapeTikTok(_keywords, maxPosts = 20) {
-    console.log('[Scraper:TT] 🎵 Scraping TikTok via PhantomBuster...');
+    console.log('[Scraper:TT] 🎵 Scraping TikTok via SociaVault...');
     try {
-        const posts = await pb.scrapeTikTok(maxPosts);
+        const posts = await sv.scrapeTikTok(maxPosts);
         console.log(`[Scraper:TT] ✅ ${posts.length} posts`);
         return dedup(posts);
     } catch (err) {
@@ -80,7 +80,7 @@ async function runFullScan(options = {}) {
     const maxPerPlatform = options.maxPosts || 20;
 
     console.log(`\n${'═'.repeat(55)}`);
-    console.log(`  🟣 PhantomBuster — All platforms`);
+    console.log(`  🔵 SociaVault API — All platforms`);
     console.log(`  📊 Max per platform: ${maxPerPlatform} posts`);
     console.log(`${'═'.repeat(55)}\n`);
 
