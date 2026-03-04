@@ -80,6 +80,131 @@ let currentModelIndex = 0;
 let consecutiveErrors = 0;
 
 /**
+ * Classify a BATCH of posts in one AI call (5x faster)
+ */
+async function classifyBatch(posts) {
+    // Build batch prompt
+    const postsList = posts.map((p, i) =>
+        `[POST ${i + 1}] Platform: ${p.platform}\nContent: ${(p.content || '').substring(0, 800)}`
+    ).join('\n\n');
+
+    const batchUserPrompt = `Phân tích ${posts.length} bài đăng sau. Trả về JSON ARRAY với ${posts.length} phần tử:
+
+${postsList}
+
+Trả về DUY NHẤT JSON array, mỗi phần tử theo format:
+[
+  {"author_role": "...", "intent": "...", "is_potential": boolean, "score": number, "service_match": "...", "reasoning": "...", "urgency": "..."},
+  ...
+]`;
+
+    // Try each model
+    for (let i = currentModelIndex; i < AI_MODELS.length; i++) {
+        try {
+            const model = AI_MODELS[i];
+            const response = await groq.chat.completions.create({
+                model,
+                messages: [
+                    { role: 'system', content: SYSTEM_PROMPT },
+                    { role: 'user', content: batchUserPrompt },
+                ],
+                temperature: 0.1,
+                max_tokens: 400 * posts.length,
+                response_format: { type: 'json_object' },
+            });
+
+            const raw = JSON.parse(response.choices[0].message.content);
+            // Handle both array and object-with-array responses
+            const arr = Array.isArray(raw) ? raw : (raw.results || raw.posts || raw.data || Object.values(raw));
+
+            if (!Array.isArray(arr) || arr.length === 0) {
+                throw new Error('AI did not return valid array');
+            }
+
+            consecutiveErrors = 0;
+            if (i !== currentModelIndex) {
+                currentModelIndex = i;
+                console.log(`[Classifier] 🔄 Switched to model: ${model}`);
+            }
+
+            // Parse each result
+            return arr.map(result => {
+                const role = result.author_role || 'unknown';
+                const isProvider = role === 'logistics_agency' || role === 'spammer';
+                const isPotential = result.is_potential === true && !isProvider;
+                return {
+                    isLead: isPotential,
+                    role: isPotential ? 'buyer' : (isProvider ? 'provider' : 'irrelevant'),
+                    score: isPotential ? Math.min(100, Math.max(0, result.score || 0)) : 0,
+                    category: result.service_match === 'None' ? 'NotRelevant' : (result.service_match || 'General'),
+                    summary: result.reasoning || '',
+                    urgency: isPotential ? (result.urgency || 'low') : 'low',
+                    buyerSignals: isPotential ? (result.reasoning || '') : '',
+                };
+            });
+        } catch (err) {
+            const isLimit = err.message?.includes('429') || err.message?.includes('rate_limit');
+            if (isLimit && i < AI_MODELS.length - 1) {
+                console.warn(`[Classifier] ⚠️ ${AI_MODELS[i]} hết limit → thử ${AI_MODELS[i + 1]}...`);
+                continue;
+            }
+            if (isLimit) {
+                consecutiveErrors++;
+                // Try Gemini for the whole batch
+                const geminiResults = await classifyBatchWithGemini(posts);
+                if (geminiResults) return geminiResults;
+            }
+            // Fall back to individual classification
+            console.warn(`[Classifier] ⚠️ Batch failed, falling back to individual: ${err.message}`);
+            const individual = [];
+            for (const post of posts) {
+                individual.push(await classifyPost(post));
+            }
+            return individual;
+        }
+    }
+    return posts.map(() => makeFallback());
+}
+
+/**
+ * Batch classify via Gemini (fallback)
+ */
+async function classifyBatchWithGemini(posts) {
+    if (!geminiModel) return null;
+    try {
+        console.log('[Classifier] 🔄 Batch Groq exhausted — trying Gemini batch...');
+        const postsList = posts.map((p, i) =>
+            `[POST ${i + 1}] Platform: ${p.platform}\nContent: ${(p.content || '').substring(0, 800)}`
+        ).join('\n\n');
+
+        const prompt = SYSTEM_PROMPT + `\n\nPhân tích ${posts.length} bài:\n\n${postsList}\n\nTrả về JSON array:`;
+        const result = await geminiModel.generateContent(prompt);
+        const text = result.response.text();
+        const jsonMatch = text.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) return null;
+
+        const arr = JSON.parse(jsonMatch[0]);
+        return arr.map(r => {
+            const role = r.author_role || 'unknown';
+            const isProvider = role === 'logistics_agency' || role === 'spammer';
+            const isPotential = r.is_potential === true && !isProvider;
+            return {
+                isLead: isPotential,
+                role: isPotential ? 'buyer' : (isProvider ? 'provider' : 'irrelevant'),
+                score: isPotential ? Math.min(100, Math.max(0, r.score || 0)) : 0,
+                category: r.service_match === 'None' ? 'NotRelevant' : (r.service_match || 'General'),
+                summary: r.reasoning || '',
+                urgency: isPotential ? (r.urgency || 'low') : 'low',
+                buyerSignals: isPotential ? (r.reasoning || '') : '',
+            };
+        });
+    } catch (err) {
+        console.error('[Classifier] ❌ Gemini batch also failed:', err.message);
+        return null;
+    }
+}
+
+/**
  * Classify a single post — tries multiple models on rate limit
  */
 async function classifyPost(post) {
@@ -272,31 +397,41 @@ async function classifyPosts(posts) {
     console.log(`[Classifier] 🔍 Pre-filter: ${preFiltered.length} posts skipped locally, ${toClassify.length} posts → AI`);
 
     // ═══════════════════════════════════════════════════
-    // STEP 2: SEQUENTIAL AI CLASSIFICATION — One post at a time with 2s delay
+    // STEP 2: BATCH AI CLASSIFICATION — 5 posts per call (5x faster)
     // ═══════════════════════════════════════════════════
+    const BATCH_SIZE = 5;
     const results = [...preFiltered];
     currentModelIndex = 0;
     consecutiveErrors = 0;
     let stopEarly = false;
 
-    for (let i = 0; i < toClassify.length && !stopEarly; i++) {
-        const post = toClassify[i];
-        const classification = await classifyPost(post);
+    for (let i = 0; i < toClassify.length && !stopEarly; i += BATCH_SIZE) {
+        const batch = toClassify.slice(i, i + BATCH_SIZE);
 
-        if (consecutiveErrors >= 5) {
-            stopEarly = true;
+        try {
+            const batchResults = await classifyBatch(batch);
+
+            if (consecutiveErrors >= 5) {
+                stopEarly = true;
+            }
+
+            for (let j = 0; j < batch.length; j++) {
+                results.push({ ...batch[j], ...(batchResults[j] || makeFallback()) });
+            }
+        } catch (err) {
+            // Fallback: classify individually
+            for (const post of batch) {
+                results.push({ ...post, ...makeFallback() });
+            }
         }
 
-        results.push({ ...post, ...classification });
+        // Progress log
+        const done = Math.min(i + BATCH_SIZE, toClassify.length);
+        console.log(`[Classifier]   → ${done}/${toClassify.length} classified (batch ${Math.ceil(done / BATCH_SIZE)}/${Math.ceil(toClassify.length / BATCH_SIZE)}, model: ${AI_MODELS[currentModelIndex]})`);
 
-        // Progress log every 5 posts
-        if ((i + 1) % 5 === 0 || i === toClassify.length - 1) {
-            console.log(`[Classifier]   → ${i + 1}/${toClassify.length} classified (model: ${AI_MODELS[currentModelIndex]})`);
-        }
-
-        // 🛑 THROTTLE: Wait 2 seconds between each AI call to respect Groq free tier RPM
-        if (i < toClassify.length - 1 && !stopEarly) {
-            await delay(2000);
+        // 🛑 THROTTLE: 1s between batches (less delay needed since fewer calls)
+        if (i + BATCH_SIZE < toClassify.length && !stopEarly) {
+            await delay(1000);
         }
     }
 
