@@ -1,6 +1,6 @@
 const cron = require('node-cron');
 const config = require('./config');
-const { runFullScan } = require('./scraper');
+const { runFullScan, fbFromGroups } = require('./scraper');
 const { classifyPosts } = require('./classifier');
 const { generateResponses } = require('./responder');
 const { sendMessage, notifyAlert } = require('./notifier');
@@ -283,11 +283,39 @@ async function main() {
     // Start dashboard server
     startServer();
 
-    // Schedule periodic scans
-    console.log(`[Main] ⏰ Scheduling scans: ${config.CRON_SCHEDULE}`);
+    // Schedule periodic scans (keywords only — every 30 min)
+    console.log(`[Main] ⏰ Keyword scan: ${config.CRON_SCHEDULE}`);
     const scanJob = cron.schedule(config.CRON_SCHEDULE, async () => {
-        console.log('[Cron] Triggered scheduled scan...');
+        console.log('[Cron] Triggered keyword scan...');
         await runPipeline();
+    });
+
+    // Schedule group scraping separately (every 6 hours — saves Apify credit)
+    const GROUP_CRON = '0 */6 * * *'; // Every 6 hours
+    console.log(`[Main] ⏰ Group scan (Apify): ${GROUP_CRON}`);
+    cron.schedule(GROUP_CRON, async () => {
+        console.log('[Cron:Groups] 📋 Running 6-hourly group scan via Apify...');
+        try {
+            const groupPosts = await fbFromGroups(5);
+            if (groupPosts.length > 0) {
+                console.log(`[Cron:Groups] 📥 ${groupPosts.length} posts from groups — classifying...`);
+                const { classifyPosts: classify } = require('./classifier');
+                const classified = await classify(groupPosts);
+                const leads = classified.filter(c => c.isLead && c.score >= config.LEAD_SCORE_THRESHOLD);
+                if (leads.length > 0) {
+                    for (const lead of leads) {
+                        database.insertLead(lead);
+                    }
+                    console.log(`[Cron:Groups] ✅ ${leads.length} new leads from groups!`);
+                } else {
+                    console.log(`[Cron:Groups] ⚠️ 0 qualified leads from groups this cycle`);
+                }
+            } else {
+                console.log(`[Cron:Groups] ⚠️ 0 posts returned from groups`);
+            }
+        } catch (err) {
+            console.error(`[Cron:Groups] ❌ Error:`, err.message);
+        }
     });
 
     global.getNextScanTime = () => {

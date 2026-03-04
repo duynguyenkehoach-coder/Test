@@ -907,15 +907,19 @@ async function fbFromGroups(maxPostsPerGroup = 5) {
 }
 
 // --- Orchestrator ---
-async function scrapeFacebook(keywords, maxPosts = 50) {
-    console.log(`[Scraper:FB] 📘 Searching Facebook (${keywords.length} keywords + ${(config.FB_TARGET_GROUPS || []).length} groups)...`);
+async function scrapeFacebook(keywords, maxPosts = 50, { skipGroups = false } = {}) {
+    console.log(`[Scraper:FB] 📘 Searching Facebook (${keywords.length} keywords${skipGroups ? '' : ` + ${(config.FB_TARGET_GROUPS || []).length} groups`})...`);
 
-    // Step 1: Scrape target groups FIRST (high priority)
+    // Step 1: Scrape target groups FIRST (high priority) — only if not skipped
     let groupPosts = [];
-    try {
-        groupPosts = await fbFromGroups(5);
-    } catch (err) {
-        console.log(`[Scraper:FB] ⚠️ Group scraping failed: ${err.message}`);
+    if (!skipGroups) {
+        try {
+            groupPosts = await fbFromGroups(5);
+        } catch (err) {
+            console.log(`[Scraper:FB] ⚠️ Group scraping failed: ${err.message}`);
+        }
+    } else {
+        console.log(`[Scraper:FB] ⏭️ Skipping group scan (runs on separate 6h schedule)`);
     }
 
     // Step 2: Keyword search (existing flow)
@@ -989,7 +993,7 @@ const SCRAPERS = {
     tiktok: { fn: scrapeTikTok, getKeywords: () => config.SEARCH_KEYWORDS.tiktok },
     reddit: { fn: scrapeReddit, getKeywords: () => config.SEARCH_KEYWORDS.reddit },
     twitter: { fn: scrapeTwitter, getKeywords: () => config.SEARCH_KEYWORDS.twitter },
-    facebook: { fn: scrapeFacebook, getKeywords: () => config.SEARCH_KEYWORDS.facebook },
+    facebook: { fn: (kw, max) => scrapeFacebook(kw, max, { skipGroups: true }), getKeywords: () => config.SEARCH_KEYWORDS.facebook },
 };
 
 async function runFullScan(options = {}) {
@@ -1025,5 +1029,5 @@ async function runFullScan(options = {}) {
 }
 
 module.exports = {
-    scrapeFacebook, scrapeInstagram, scrapeReddit, scrapeTwitter, scrapeTikTok, runFullScan,
+    scrapeFacebook, scrapeInstagram, scrapeReddit, scrapeTwitter, scrapeTikTok, runFullScan, fbFromGroups,
 };
