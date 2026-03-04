@@ -189,6 +189,21 @@ function renderLeadCard(lead) {
           </div>
           <textarea class="notes-textarea" id="notes-${lead.id}" rows="2" placeholder="Ghi chú: giá đã báo, deal progress...">${lead.notes || ''}</textarea>
         </div>
+
+        <!--Agent Feedback-->
+        <div class="lead-feedback" id="feedback-${lead.id}">
+          <div class="lead-response-header">
+            <span class="lead-response-label">🧠 Agent Feedback</span>
+            <span class="feedback-status" id="feedback-status-${lead.id}"></span>
+          </div>
+          <div class="feedback-buttons">
+            <button class="feedback-btn fb-correct" onclick="sendFeedback(${lead.id}, 'correct')" title="AI phân loại đúng">👍 Đúng</button>
+            <button class="feedback-btn fb-wrong" onclick="sendFeedback(${lead.id}, 'wrong')" title="AI phân loại sai">👎 Sai</button>
+            <button class="feedback-btn fb-upgrade" onclick="sendFeedback(${lead.id}, 'upgrade')" title="Lead tốt hơn AI nghĩ">⬆️ Nâng</button>
+            <button class="feedback-btn fb-downgrade" onclick="sendFeedback(${lead.id}, 'downgrade')" title="Lead kém hơn AI nghĩ">⬇️ Giảm</button>
+          </div>
+        </div>
+
       </div>
       <div class="lead-actions">
         ${lead.post_url ? `<a href="${lead.post_url}" target="_blank" rel="noopener" class="action-btn view-post-btn">🔗 View Post</a>` : ''}
@@ -205,3 +220,88 @@ function debounceSearch() {
   clearTimeout(AppState.searchTimeout);
   AppState.searchTimeout = setTimeout(() => loadLeads(), 400);
 }
+
+// ═══════════════════════════════════════════════════════
+// Agent Feedback
+// ═══════════════════════════════════════════════════════
+async function sendFeedback(leadId, type) {
+  const statusEl = document.getElementById(`feedback-status-${leadId}`);
+  const feedbackDiv = document.getElementById(`feedback-${leadId}`);
+
+  try {
+    statusEl.textContent = '⏳ Đang gửi...';
+    statusEl.style.color = '#f59e0b';
+
+    const resp = await fetch(`/api/leads/${leadId}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type }),
+    });
+    const data = await resp.json();
+
+    if (data.ok) {
+      statusEl.textContent = '✅ Agent đã học!';
+      statusEl.style.color = '#10b981';
+
+      // Highlight the clicked button
+      const btns = feedbackDiv.querySelectorAll('.feedback-btn');
+      btns.forEach(btn => btn.classList.remove('fb-active'));
+      const activeBtn = feedbackDiv.querySelector(`.fb-${type}`);
+      if (activeBtn) activeBtn.classList.add('fb-active');
+
+      // Refresh agent stats if visible
+      loadAgentStats();
+    } else {
+      statusEl.textContent = '❌ ' + (data.error || 'Lỗi');
+      statusEl.style.color = '#ef4444';
+    }
+  } catch (err) {
+    statusEl.textContent = '❌ Network error';
+    statusEl.style.color = '#ef4444';
+  }
+
+  // Clear status after 3s
+  setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000);
+}
+
+async function loadAgentStats() {
+  const el = document.getElementById('agent-stats');
+  if (!el) return;
+
+  try {
+    const resp = await fetch('/api/agent/stats');
+    const data = await resp.json();
+    const a = data.agent || {};
+    const kb = a.knowledgeBase || {};
+    const mem = a.memory || {};
+
+    el.innerHTML = `
+      <div class="agent-stats-grid">
+        <div class="agent-stat">
+          <span class="agent-stat-value">${kb.chunks || 0}</span>
+          <span class="agent-stat-label">📚 KB Chunks</span>
+        </div>
+        <div class="agent-stat">
+          <span class="agent-stat-value">${mem.total || 0}</span>
+          <span class="agent-stat-label">💾 Memory</span>
+        </div>
+        <div class="agent-stat">
+          <span class="agent-stat-value">${mem.withFeedback || 0}</span>
+          <span class="agent-stat-label">🎓 Trained</span>
+        </div>
+        <div class="agent-stat">
+          <span class="agent-stat-value">${mem.buyers || 0}</span>
+          <span class="agent-stat-label">🎯 Buyers</span>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    el.innerHTML = '<span style="color:#94a3b8;">Agent stats unavailable</span>';
+  }
+}
+
+// Load agent stats on page load
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(loadAgentStats, 1000);
+});
+

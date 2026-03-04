@@ -1514,3 +1514,144 @@ body.light-mode .lead-response {
   background: rgba(0, 0, 0, 0.02);
   border-color: rgba(0, 0, 0, 0.06);
 }
+
+/* ═══════════════════════════════════════════════════════ */
+/* Agent Feedback Buttons                                  */
+/* ═══════════════════════════════════════════════════════ */
+.lead-feedback {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+}
+
+.feedback-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.feedback-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: var(--glass);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.feedback-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.fb-correct:hover,
+.fb-correct.fb-active {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.fb-wrong:hover,
+.fb-wrong.fb-active {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.fb-upgrade:hover,
+.fb-upgrade.fb-active {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.fb-downgrade:hover,
+.fb-downgrade.fb-active {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+.fb-active {
+  font-weight: 600;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.1);
+}
+
+.feedback-status {
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+/* ═══════════════════════════════════════════════════════ */
+/* Agent Brain Panel (Sidebar)                             */
+/* ═══════════════════════════════════════════════════════ */
+.agent-panel {
+  margin: 16px 16px 8px;
+  padding: 14px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(59, 130, 246, 0.08));
+  border: 1px solid rgba(139, 92, 246, 0.15);
+  border-radius: var(--radius-sm);
+}
+
+.agent-panel-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #a78bfa;
+  margin-bottom: 10px;
+  letter-spacing: 0.3px;
+}
+
+.agent-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.agent-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 4px;
+  background: var(--glass);
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+}
+
+.agent-stat-value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.agent-stat-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Light mode overrides */
+body.light-mode .agent-panel {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.05), rgba(59, 130, 246, 0.05));
+  border-color: rgba(139, 92, 246, 0.12);
+}
+
+body.light-mode .lead-feedback {
+  background: rgba(0, 0, 0, 0.02);
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+body.light-mode .feedback-btn {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #475569;
+}
