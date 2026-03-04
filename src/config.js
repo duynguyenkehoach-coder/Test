@@ -102,6 +102,11 @@ module.exports = {
       'fulfillment warehouse',
       'ship hàng quốc tế',
     ],
+    reddit: [
+      'need fulfillment center USA',
+      'looking for 3PL warehouse',
+      'POD supplier Vietnam',
+    ],
   },
 
   // --- Reddit subreddits where BUYERS ask questions ---

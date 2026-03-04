@@ -73,7 +73,15 @@ function getActiveApifyClient() {
 }
 function markApifyTokenExhausted(token) {
     exhaustedApifyTokens.add(token);
-    console.log(`[KeyPool] ❌ Apify ...${token.slice(-6)} exhausted`);
+    const remaining = APIFY_TOKENS.filter(t => !exhaustedApifyTokens.has(t)).length;
+    console.log(`[KeyPool] ❌ Apify ...${token.slice(-6)} exhausted. ${remaining}/${APIFY_TOKENS.length} tokens remaining`);
+}
+
+// Check if error means token is out of credit
+function isApifyExhausted(errMsg) {
+    const msg = (errMsg || '').toLowerCase();
+    return msg.includes('exceed') || msg.includes('remaining usage')
+        || msg.includes('hard limit') || msg.includes('upgrade');
 }
 
 console.log(`[KeyPool] Loaded: ${RAPIDAPI_KEYS.length} RapidAPI keys, ${APIFY_TOKENS.length} Apify tokens`);
@@ -177,22 +185,20 @@ async function igFromRapidAPI(hashtags, maxPosts) {
 }
 
 async function igFromApify(hashtags, maxPosts) {
-    // FIX: Check budget trước khi chạy
     if (!canSpendApify()) throw new Error('Daily Apify budget reached');
-    const apify = getActiveApifyClient();
-    if (!apify) throw new Error('No Apify tokens');
-    const { client, token } = apify;
+    let apify = getActiveApifyClient();
+    if (!apify) throw new Error('No active Apify tokens');
     const allPosts = [];
-    // FIX: Chỉ chạy 2 hashtag qua Apify, không phải 5
     for (const hashtag of hashtags.slice(0, 2)) {
         console.log(`[IG:Apify] → #${hashtag}`);
         try {
+            if (!apify) { apify = getActiveApifyClient(); if (!apify) break; }
             recordApifySpend();
-            const run = await client.actor('apify/instagram-hashtag-scraper').call({
+            const run = await apify.client.actor('apify/instagram-hashtag-scraper').call({
                 hashtags: [hashtag],
-                resultsLimit: 20, // FIX: Hard limit
+                resultsLimit: 20,
             });
-            const { items } = await client.dataset(run.defaultDatasetId).listItems();
+            const { items } = await apify.client.dataset(run.defaultDatasetId).listItems();
             const posts = items.map(item => ({
                 platform: 'instagram',
                 post_url: item.url || (item.shortCode ? `https://www.instagram.com/p/${item.shortCode}/` : ''),
@@ -204,10 +210,12 @@ async function igFromApify(hashtags, maxPosts) {
             })).filter(p => p.content && p.content.length > 15);
             allPosts.push(...posts);
             console.log(`[IG:Apify] ✓ ${posts.length} posts`);
-            await delay(2000); // FIX: delay giữa các Apify calls
+            await delay(2000);
         } catch (err) {
-            if (err.message?.includes('limit') || err.message?.includes('usage')) {
-                markApifyTokenExhausted(token);
+            if (isApifyExhausted(err.message)) {
+                markApifyTokenExhausted(apify.token);
+                apify = getActiveApifyClient(); // Try next token
+                if (apify) { console.log(`[IG:Apify] 🔄 Switching to next Apify token...`); continue; }
             }
             console.log(`[IG:Apify] ❌ ${err.message}`);
         }
@@ -278,27 +286,24 @@ async function ttFromRapidAPI(keywords, maxPosts) {
 }
 
 async function ttFromApify(keywords, maxPosts) {
-    // FIX: Budget check
     if (!canSpendApify()) throw new Error('Daily Apify budget reached');
-    const apify = getActiveApifyClient();
-    if (!apify) throw new Error('No Apify tokens');
-    const { client, token } = apify;
+    let apify = getActiveApifyClient();
+    if (!apify) throw new Error('No active Apify tokens');
     const allPosts = [];
 
-    // FIX: Chỉ dùng 1 actor (search) thay vì 2 actor (search + comments)
-    // Lấy caption video thay vì comments — ít tốn credit hơn
     for (const keyword of keywords.slice(0, 2)) {
         console.log(`[TT:Apify] → "${keyword}"`);
         try {
+            if (!apify) { apify = getActiveApifyClient(); if (!apify) break; }
             recordApifySpend();
-            const run = await client.actor('clockworks/tiktok-scraper').call({
+            const run = await apify.client.actor('clockworks/tiktok-scraper').call({
                 searchQueries: [keyword],
                 resultsPerPage: 10,
                 maxItems: 10,
                 shouldDownloadVideos: false,
                 shouldDownloadCovers: false,
             });
-            const { items } = await client.dataset(run.defaultDatasetId).listItems();
+            const { items } = await apify.client.dataset(run.defaultDatasetId).listItems();
             const posts = items
                 .filter(v => v.text && v.text.length > 10)
                 .map(v => ({
@@ -314,7 +319,11 @@ async function ttFromApify(keywords, maxPosts) {
             console.log(`[TT:Apify] ✓ ${posts.length} posts`);
             await delay(2000);
         } catch (err) {
-            if (err.message?.includes('limit')) markApifyTokenExhausted(token);
+            if (isApifyExhausted(err.message)) {
+                markApifyTokenExhausted(apify.token);
+                apify = getActiveApifyClient();
+                if (apify) { console.log(`[TT:Apify] 🔄 Switching to next Apify token...`); continue; }
+            }
             console.log(`[TT:Apify] ❌ ${err.message}`);
         }
     }
@@ -440,21 +449,20 @@ async function fbFromRapidAPI(keywords, maxPosts) {
 
 async function fbFromApify(keywords, maxPosts) {
     if (!canSpendApify()) throw new Error('Daily Apify budget reached');
-    const apify = getActiveApifyClient();
-    if (!apify) throw new Error('No Apify tokens');
-    const { client, token } = apify;
+    let apify = getActiveApifyClient();
+    if (!apify) throw new Error('No active Apify tokens');
     const allPosts = [];
-    // FIX: 2 keyword, 10 posts mỗi keyword
     for (const keyword of keywords.slice(0, 2)) {
         console.log(`[FB:Apify] → "${keyword}"`);
         try {
+            if (!apify) { apify = getActiveApifyClient(); if (!apify) break; }
             recordApifySpend();
-            const run = await client.actor('apify/facebook-search-scraper').call({
+            const run = await apify.client.actor('apify/facebook-search-scraper').call({
                 searchQueries: [keyword],
-                maxPosts: 10, // FIX: hard limit
+                maxPosts: 10,
                 searchType: 'posts',
             });
-            const { items } = await client.dataset(run.defaultDatasetId).listItems();
+            const { items } = await apify.client.dataset(run.defaultDatasetId).listItems();
             const posts = items.map(item => ({
                 platform: 'facebook',
                 post_url: item.url || item.postUrl || '',
@@ -465,9 +473,13 @@ async function fbFromApify(keywords, maxPosts) {
             })).filter(p => p.content && p.content.length > 15);
             allPosts.push(...posts);
             console.log(`[FB:Apify] ✓ ${posts.length} posts`);
-            await delay(2000); // FIX: delay giữa các Apify calls
+            await delay(2000);
         } catch (err) {
-            if (err.message?.includes('limit')) markApifyTokenExhausted(token);
+            if (isApifyExhausted(err.message)) {
+                markApifyTokenExhausted(apify.token);
+                apify = getActiveApifyClient();
+                if (apify) { console.log(`[FB:Apify] 🔄 Switching to next Apify token...`); continue; }
+            }
             console.log(`[FB:Apify] ❌ ${err.message}`);
         }
     }
