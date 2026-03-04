@@ -24,6 +24,21 @@ function headers() {
 
 const delay = (ms) => new Promise(r => setTimeout(r, ms));
 
+// 404 health tracking — warn after 3 consecutive failures
+const accountHealth = {};
+function track404(handle, is404) {
+    if (!accountHealth[handle]) accountHealth[handle] = { fails: 0, lastOk: null };
+    if (is404) {
+        accountHealth[handle].fails++;
+        if (accountHealth[handle].fails >= 3) {
+            console.warn(`[SV] ⚠️ @${handle} has failed ${accountHealth[handle].fails}x — consider removing or updating this account`);
+        }
+    } else {
+        accountHealth[handle].fails = 0;
+        accountHealth[handle].lastOk = new Date().toISOString();
+    }
+}
+
 /**
  * Generic SociaVault API call
  */
@@ -150,9 +165,11 @@ async function scrapeInstagram(maxPosts = 30) {
 
             allPosts.push(...posts);
             console.log(`[SV:IG] ✅ ${posts.length} posts from @${handle}`);
+            track404(handle, false);
             await delay(2000);
         } catch (err) {
             console.warn(`[SV:IG] ⚠️ @${handle}: ${err.message}`);
+            if (err.message?.includes('404')) track404(handle, true);
         }
     }
 
@@ -204,9 +221,11 @@ async function scrapeTikTok(maxPosts = 20) {
 
             allPosts.push(...videos);
             console.log(`[SV:TT] ✅ ${videos.length} videos from @${handle}`);
+            track404(handle, false);
             await delay(2000);
         } catch (err) {
             console.warn(`[SV:TT] ⚠️ @${handle}: ${err.message}`);
+            if (err.message?.includes('404')) track404(handle, true);
         }
     }
 
