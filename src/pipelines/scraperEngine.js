@@ -374,7 +374,7 @@ function extractFBFields(item) {
 }
 
 // ╔══════════════════════════════════════════════════════╗
-// ║  FACEBOOK: GROUP SCRAPER (PRIMARY)                    ║
+// ║  FACEBOOK: GROUP SCRAPER (PhantomBuster → Apify)      ║
 // ╚══════════════════════════════════════════════════════╝
 async function fbFromGroups(maxPosts = 20) {
     const groups = config.FB_TARGET_GROUPS || [];
@@ -382,10 +382,57 @@ async function fbFromGroups(maxPosts = 20) {
         console.log('[FB:Groups] ⚠️ No groups configured');
         return [];
     }
+
+    // Try PhantomBuster first (better for FB — session cookies, private groups)
+    if (config.PHANTOMBUSTER_API_KEY) {
+        try {
+            const pb = require('./phantomBuster');
+
+            // If we have a specific phantom agent ID, use it
+            if (config.PB_FB_GROUP_AGENT_ID) {
+                console.log('[FB:Groups] 🟣 Using PhantomBuster (agent mode)...');
+                const posts = await pb.scrapeMultipleGroups(
+                    config.PB_FB_GROUP_AGENT_ID, groups, maxPosts
+                );
+                if (posts.length > 0) {
+                    console.log(`[FB:Groups] ✅ PhantomBuster: ${posts.length} posts`);
+                    return posts;
+                }
+            }
+
+            // Fallback: try each group URL directly
+            console.log('[FB:Groups] 🟣 PhantomBuster: fetching latest outputs...');
+            const results = await pb.fetchResults(config.PB_FB_GROUP_AGENT_ID || 'latest');
+            if (results.length > 0) {
+                const posts = results.map(item => ({
+                    platform: 'facebook',
+                    post_url: item.postUrl || item.url || item.permalink || '',
+                    author_name: item.profileName || item.name || item.authorName || item.userName || 'Unknown',
+                    author_url: item.profileUrl || item.profileLink || '',
+                    content: item.message || item.postContent || item.text || item.postText || '',
+                    post_created_at: parseTimestamp(item.date || item.timestamp || item.postedAt),
+                    scraped_at: new Date().toISOString(),
+                    source: 'phantombuster',
+                })).filter(p => p.content && p.content.length > 15);
+
+                if (posts.length > 0) {
+                    console.log(`[FB:Groups] ✅ PhantomBuster: ${posts.length} posts (from latest run)`);
+                    return posts;
+                }
+            }
+
+            console.log('[FB:Groups] ⚠️ PhantomBuster returned 0 posts, falling back to Apify...');
+        } catch (err) {
+            console.warn(`[FB:Groups] ⚠️ PhantomBuster error: ${err.message}, falling back to Apify...`);
+        }
+    }
+
+    // Fallback: Apify
     if (!canSpendApify()) throw new Error('Daily Apify budget reached');
     let apify = getActiveApifyClient();
     if (!apify) throw new Error('No active Apify tokens');
 
+    console.log('[FB:Groups] 🟠 Using Apify fallback...');
     const allPosts = [];
     const postsPerGroup = Math.ceil(maxPosts / groups.length);
 
