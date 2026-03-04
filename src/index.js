@@ -9,7 +9,7 @@ const { startServer } = require('./server');
 const { cleanOldData, saveLeadsToFile } = require('./data_store/fileManager');
 
 // ═══ Daily Digest Accumulator ═══
-// Leads are buffered here. Digest is sent when: ≥15 leads OR new day starts.
+// Leads are buffered here. Digest is sent when: ≥3 leads OR new day starts.
 let pendingLeads = [];
 let lastDigestDate = new Date().toISOString().slice(0, 10);
 
@@ -263,7 +263,7 @@ async function runPipeline(options = {}) {
         pendingLeads.push(...qualifiedForTelegram);
 
         const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-        const shouldSendDigest = pendingLeads.length >= 15 || (lastDigestDate !== today && pendingLeads.length > 0);
+        const shouldSendDigest = pendingLeads.length >= 3 || (lastDigestDate !== today && pendingLeads.length > 0);
 
         if (shouldSendDigest) {
             console.log(`\n[Pipeline] 📲 Step 6: Sending Telegram DIGEST (${pendingLeads.length} leads accumulated)...`);
@@ -271,7 +271,7 @@ async function runPipeline(options = {}) {
             pendingLeads.length = 0; // Clear after sending
             lastDigestDate = today;
         } else {
-            console.log(`[Pipeline] 📲 Digest pending: ${pendingLeads.length}/15 leads accumulated (send khi đủ 15 hoặc cuối ngày)`);
+            console.log(`[Pipeline] 📲 Digest pending: ${pendingLeads.length}/3 leads accumulated (send khi đủ 3 hoặc cuối ngày)`);
         }
 
         database.updateScanLog.run({ id: scanId, posts_found: allPosts.length, leads_detected: totalLeads, status: 'completed', error: null });
