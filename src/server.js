@@ -3,10 +3,10 @@ const path = require('path');
 const axios = require('axios');
 const rateLimit = require('express-rate-limit');
 const config = require('./config');
-const database = require('./database');
+const database = require('./data_store/database');
 const logger = require('./logger');
-const { generateCopilotReply, classifyIntent } = require('./copilot');
-const { listDataFiles, readDataFile, cleanOldData, saveConversationToFile } = require('./dataManager');
+const { generateCopilotReply, classifyIntent } = require('./prompts/salesCopilot');
+const { listDataFiles, readDataFile, cleanOldData, saveConversationToFile } = require('./data_store/fileManager');
 
 // ╔═══════════════════════════════════════════════════════════╗
 // ║  IN-MEMORY LOG CAPTURE (for Dev Dashboard)                ║
@@ -295,8 +295,8 @@ app.post('/api/scan', async (req, res) => {
 
 app.post('/api/scan/groups', async (req, res) => {
     try {
-        const { fbFromGroups } = require('./scraper');
-        const { classifyPosts } = require('./classifier');
+        const { fbFromGroups } = require('./pipelines/scraperEngine');
+        const { classifyPosts } = require('./prompts/leadQualifier');
         const config = require('./config');
         res.json({ success: true, message: 'Group scan started in background (Apify)' });
 

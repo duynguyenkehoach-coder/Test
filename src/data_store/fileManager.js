@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const database = require('./database');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
+const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const RETENTION_DAYS = 7;
 
 // ═══════════════════════════════════════════════════════════

@@ -1,12 +1,12 @@
 const cron = require('node-cron');
 const config = require('./config');
-const { runFullScan, fbFromGroups } = require('./scraper');
-const { classifyPosts } = require('./classifier');
-const { generateResponses } = require('./responder');
-const { sendMessage, notifyAlert } = require('./notifier');
-const database = require('./database');
+const { runFullScan, fbFromGroups } = require('./pipelines/scraperEngine');
+const { classifyPosts } = require('./prompts/leadQualifier');
+const { generateResponses } = require('./prompts/salesCopilot');
+const { sendMessage, notifyAlert } = require('./integrations/telegramBot');
+const database = require('./data_store/database');
 const { startServer } = require('./server');
-const { cleanOldData, saveLeadsToFile } = require('./dataManager');
+const { cleanOldData, saveLeadsToFile } = require('./data_store/fileManager');
 
 // ═══ Daily Digest Accumulator ═══
 // Leads are buffered here. Digest is sent when: ≥15 leads OR new day starts.
@@ -299,7 +299,7 @@ async function main() {
             const groupPosts = await fbFromGroups(5);
             if (groupPosts.length > 0) {
                 console.log(`[Cron:Groups] 📥 ${groupPosts.length} posts from groups — classifying...`);
-                const { classifyPosts: classify } = require('./classifier');
+                const { classifyPosts: classify } = require('./prompts/leadQualifier');
                 const classified = await classify(groupPosts);
                 const leads = classified.filter(c => c.isLead && c.score >= config.LEAD_SCORE_THRESHOLD);
                 if (leads.length > 0) {
