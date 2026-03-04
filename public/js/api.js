@@ -202,11 +202,11 @@ async function triggerScan() {
     const statusEl = document.getElementById('scanStatus');
     btn.disabled = true;
     btn.innerHTML = '⏳ Scanning...';
-    statusEl.textContent = 'Scanning...';
+    statusEl.textContent = 'Keyword scanning...';
 
     try {
         await fetch('/api/scan', { method: 'POST' });
-        showToast('Scan started! Results will appear shortly.', 'info');
+        showToast('Keyword scan started! Results will appear shortly.', 'info');
         let pollCount = 0;
         const poll = setInterval(async () => {
             pollCount++;
@@ -214,13 +214,40 @@ async function triggerScan() {
             await loadLeads();
             if (pollCount >= 60) {
                 clearInterval(poll);
-                btn.disabled = false; btn.innerHTML = '⚡ Scan Now'; statusEl.textContent = 'Ready';
+                btn.disabled = false; btn.innerHTML = '🔍 Keyword Scan'; statusEl.textContent = 'Ready';
             }
         }, 5000);
-        setTimeout(() => { btn.disabled = false; btn.innerHTML = '⚡ Scan Now'; statusEl.textContent = 'Ready'; }, 30000);
+        setTimeout(() => { btn.disabled = false; btn.innerHTML = '🔍 Keyword Scan'; statusEl.textContent = 'Ready'; }, 30000);
     } catch (err) {
         showToast('Failed to start scan', 'error');
-        btn.disabled = false; btn.innerHTML = '⚡ Scan Now'; statusEl.textContent = 'Ready';
+        btn.disabled = false; btn.innerHTML = '🔍 Keyword Scan'; statusEl.textContent = 'Ready';
+    }
+}
+
+async function triggerGroupScan() {
+    const btn = document.getElementById('groupScanBtn');
+    const statusEl = document.getElementById('scanStatus');
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Scanning groups...';
+    statusEl.textContent = 'Group scanning (Apify)...';
+
+    try {
+        await fetch('/api/scan/groups', { method: 'POST' });
+        showToast('Group scan started via Apify! This may take 1-2 minutes.', 'info');
+        let pollCount = 0;
+        const poll = setInterval(async () => {
+            pollCount++;
+            await loadStats();
+            await loadLeads();
+            if (pollCount >= 60) {
+                clearInterval(poll);
+                btn.disabled = false; btn.innerHTML = '📋 Group Scan'; statusEl.textContent = 'Ready';
+            }
+        }, 5000);
+        setTimeout(() => { btn.disabled = false; btn.innerHTML = '📋 Group Scan'; statusEl.textContent = 'Ready'; }, 120000);
+    } catch (err) {
+        showToast('Failed to start group scan', 'error');
+        btn.disabled = false; btn.innerHTML = '📋 Group Scan'; statusEl.textContent = 'Ready';
     }
 }
 

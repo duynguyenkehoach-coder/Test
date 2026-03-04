@@ -67,8 +67,12 @@
           <small>Next auto-scan in:</small>
           <strong id="scanCountdownTime">--:--</strong>
         </div>
-        <button class="btn btn-primary btn-scan" id="scanBtn" onclick="triggerScan()">
-          ⚡ Start Scan
+        <button class="btn btn-primary btn-scan" id="scanBtn" onclick="triggerScan()" title="RapidAPI keyword search">
+          🔍 Keyword Scan
+        </button>
+        <button class="btn btn-scan" id="groupScanBtn" onclick="triggerGroupScan()"
+          style="background:#7c3aed;color:#fff;margin-top:6px;" title="Apify group scraper (22 groups)">
+          📋 Group Scan
         </button>
       </div>
     </aside>

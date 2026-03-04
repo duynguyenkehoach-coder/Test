@@ -283,9 +283,45 @@ app.post('/api/scan', async (req, res) => {
     try {
         const { runPipeline } = require('./index');
         runPipeline().catch(console.error); // Run async
-        res.json({ success: true, message: 'Scan started in background' });
+        res.json({ success: true, message: 'Keyword scan started in background' });
     } catch (err) {
         logger.error('Server', 'Manual scan trigger failed', { error: err.message });
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.post('/api/scan/groups', async (req, res) => {
+    try {
+        const { fbFromGroups } = require('./scraper');
+        const { classifyPosts } = require('./classifier');
+        const config = require('./config');
+        res.json({ success: true, message: 'Group scan started in background (Apify)' });
+
+        // Run async in background
+        (async () => {
+            try {
+                console.log('[Manual] 📋 Manual group scan triggered...');
+                const groupPosts = await fbFromGroups(5);
+                if (groupPosts.length > 0) {
+                    console.log(`[Manual] 📥 ${groupPosts.length} posts from groups — classifying...`);
+                    const classified = await classifyPosts(groupPosts);
+                    const leads = classified.filter(c => c.isLead && c.score >= (config.LEAD_SCORE_THRESHOLD || 60));
+                    if (leads.length > 0) {
+                        for (const lead of leads) {
+                            database.insertLead(lead);
+                        }
+                        console.log(`[Manual] ✅ ${leads.length} new leads from groups!`);
+                    } else {
+                        console.log(`[Manual] ⚠️ 0 qualified leads from groups`);
+                    }
+                } else {
+                    console.log(`[Manual] ⚠️ 0 posts returned from groups`);
+                }
+            } catch (err) {
+                console.error(`[Manual] ❌ Group scan error:`, err.message);
+            }
+        })();
+    } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
 });
