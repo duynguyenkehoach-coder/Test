@@ -603,4 +603,54 @@ if (require.main === module) {
     startServer();
 }
 
+// ╔══════════════════════════════════════════════════════╗
+// ║  AGENT FEEDBACK API                                   ║
+// ╚══════════════════════════════════════════════════════╝
+const memoryStore = require('./agent/memoryStore');
+const knowledgeBase = require('./agent/knowledgeBase');
+
+// POST /api/leads/:id/feedback — Human feedback on lead classification
+app.post('/api/leads/:id/feedback', (req, res) => {
+    try {
+        const leadId = parseInt(req.params.id);
+        const { type, correct_role, correct_score, note } = req.body;
+
+        if (!type || !['correct', 'wrong', 'upgrade', 'downgrade'].includes(type)) {
+            return res.status(400).json({ error: 'type must be: correct, wrong, upgrade, downgrade' });
+        }
+
+        const success = memoryStore.saveFeedback(leadId, {
+            type,
+            correct_role: correct_role || null,
+            correct_score: correct_score || null,
+            note: note || null,
+        });
+
+        if (success) {
+            logger.info('Agent', `Feedback saved for lead #${leadId}: ${type}`);
+            res.json({ ok: true, message: `Feedback '${type}' saved for lead #${leadId}` });
+        } else {
+            res.status(500).json({ error: 'Failed to save feedback' });
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/agent/stats — Agent memory statistics
+app.get('/api/agent/stats', (req, res) => {
+    try {
+        const memoryStats = memoryStore.getMemoryStats();
+        const kbChunks = knowledgeBase.getChunkCount();
+        res.json({
+            agent: {
+                knowledgeBase: { chunks: kbChunks },
+                memory: memoryStats,
+            },
+        });
+    } catch (err) {
+        res.json({ agent: { error: err.message } });
+    }
+});
+
 module.exports = { app, startServer };
