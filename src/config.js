@@ -17,7 +17,7 @@ module.exports = {
   // ════════════════════════════════════════════════════
   LEAD_SCORE_THRESHOLD: 60,
   PORT: process.env.PORT || 3000,
-  ENABLED_PLATFORMS: ['facebook'],  // FB-only mode — TikTok paused
+  ENABLED_PLATFORMS: (process.env.ENABLED_PLATFORMS || 'facebook').split(',').map(s => s.trim()),  // FB-only — override via env var
 
   // ════════════════════════════════════════════════════
   // SCAN SCHEDULE — "Bắn tỉa" strategy
@@ -25,7 +25,7 @@ module.exports = {
   // TikTok + Facebook mỗi lần, max 30 posts
   // ════════════════════════════════════════════════════
   CRON_UNIFIED_SCAN: '0 8-22 * * *',     // Mỗi giờ từ 8h-22h
-  MAX_POSTS_PER_SCAN: 60,  // FB-only: tăng max vì không share budget TikTok
+  MAX_POSTS_PER_SCAN: parseInt(process.env.MAX_POSTS_PER_SCAN || '60'),  // FB-only: 60 max
 
   // 5212 credits / 14 days = 372/day → budget 370/day
   SV_DAILY_LIMIT: parseInt(process.env.SV_DAILY_LIMIT || '370'),

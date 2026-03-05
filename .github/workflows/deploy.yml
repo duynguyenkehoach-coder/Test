@@ -24,7 +24,12 @@ jobs:
             npm install --production
             echo "🛑 Stopping all PM2 processes..."
             pm2 delete all 2>/dev/null || true
-            echo "🔄 Starting fresh..."
+            echo "📝 Setting FB-only mode in .env..."
+            grep -v "^ENABLED_PLATFORMS=" .env > .env.tmp && mv .env.tmp .env
+            echo "ENABLED_PLATFORMS=facebook" >> .env
+            grep -v "^MAX_POSTS_PER_SCAN=" .env > .env.tmp && mv .env.tmp .env
+            echo "MAX_POSTS_PER_SCAN=60" >> .env
+            echo "🔄 Starting fresh (FB-only mode)..."
             pm2 start src/index.js --name thg-lead-gen --time
             pm2 save
             echo "✅ Deploy complete!"
