@@ -87,7 +87,7 @@ const SCRAPERS = {
 };
 
 async function runFullScan(options = {}) {
-    const platforms = options.platforms || ['facebook', 'tiktok', 'instagram'];
+    const platforms = options.platforms || ['facebook', 'tiktok'];
     const maxPerPlatform = options.maxPosts || 20;
 
     console.log(`\n${'═'.repeat(55)}`);

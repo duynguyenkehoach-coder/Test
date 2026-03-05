@@ -299,8 +299,9 @@ app.get('/api/scans', (req, res) => {
 app.post('/api/scan', async (req, res) => {
     try {
         const { runPipeline } = require('./index');
-        runPipeline().catch(console.error); // Run async
-        res.json({ success: true, message: 'Keyword scan started in background' });
+        // TikTok + Facebook only (IG disabled — low ROI)
+        runPipeline({ platforms: ['tiktok', 'facebook'] }).catch(console.error);
+        res.json({ success: true, message: 'Scan started (TikTok + Facebook)' });
     } catch (err) {
         logger.error('Server', 'Manual scan trigger failed', { error: err.message });
         res.status(500).json({ success: false, error: err.message });

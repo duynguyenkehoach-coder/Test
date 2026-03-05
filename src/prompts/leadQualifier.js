@@ -27,19 +27,20 @@ try {
 const AI_MODELS = [
     config.AI_MODEL || 'llama-3.3-70b-versatile',
     'meta-llama/llama-4-scout-17b-16e-instruct',
+    'llama-3.1-70b-versatile',
     'llama-3.1-8b-instant',
     'qwen-qwq-32b',
 ];
 
 const PROVIDER_REGEX = /(chúng tôi nhận gửi|quy trình gửi hàng|lợi ích khi gửi hàng với chúng tôi|nhận gửi hàng đi|chuyên tuyến việt|cước phí cạnh tranh|cam kết giao tận tay|hỗ trợ tư vấn, chăm sóc khách hàng 24\/7|we offer fulfillment|shipping services from us|dịch vụ vận chuyển uy tín|không phát sinh chi phí|bao thuế bao luật|nhận pick up|đóng gói miễn phí|hút chân không|lh em ngay|lh em|liên hệ em|ib em ngay|ib em|inbox em|cmt em|chấm em|check ib|check inbox|dạ em nhận|em chuyên nhận|gửi hàng đi mỹ inbox|nhận vận chuyển|zalo: 0)/i;
-const IRRELEVANT_REGEX = /(recipe|cooking|football|soccer|gaming|movie|trailer|music video|crypto airdrop|token launch|weight loss|diet pill)/i;
+const IRRELEVANT_REGEX = /(recipe|cooking|football|soccer|gaming|movie|trailer|music video|crypto airdrop|token launch|weight loss|diet pill|korean bbq|beef|chicken|salad|mushroom|makeup|skincare|nail art|hair style|workout|gym|fitness|bible verse|prayer|astrology|horoscope)/i;
 const MARKETING_REGEX = /(link in bio|tap to shop|shop now|save for later|#ad\b|#sponsored|swipe up|limited time offer|use code|promo code|giveaway alert|we're hiring)/i;
 
 // Blacklist: posts from these accounts are NEVER leads (they're competitors/providers)
 const BLACKLIST_AUTHORS = ['merchize', 'bestexpressvn', 'boxmeglobal', 'printify', 'shopify', 'printful', 'amzprep', 'shiphype', 'salesupply'];
 
 // Must-have: posts without ANY business keyword are skipped (saves AI credits)
-const MUST_HAVE_KEYWORDS = /(ship|vận chuyển|fulfillment|fulfill|pod|dropship|gửi hàng|tuyến|kho|warehouse|giá|báo giá|tìm đơn vị|logistics|3pl|fba|ecommerce|e-commerce|seller|bán hàng|order|đơn hàng|tracking|inventory|supplier|basecost|print on demand|freight|cargo|express|đóng gói|cần tìm)/i;
+const MUST_HAVE_KEYWORDS = /(ship|vận chuyển|fulfillment|fulfill|pod|dropship|gửi hàng|tuyến|kho|warehouse|giá|báo giá|tìm đơn vị|logistics|3pl|fba|ecommerce|e-commerce|seller|bán hàng|order|đơn hàng|tracking|inventory|supplier|basecost|print on demand|freight|cargo|express|đóng gói|cần tìm|xưởng|prep|xin|nhờ|hỏi|tìm|cần|review|recommend|line us|ddp|forwarder|thông quan|customs|lcl|fcl|cbm|pallet|container|amazon|tiktok shop|etsy|shopify)/i;
 
 // US-route boost: THG's primary market (VN/CN → US)
 const US_ROUTE_REGEX = /(mỹ|\bus\b|\busa\b|america|amazon|tiktok shop us|fba|đi mỹ|ship mỹ|kho mỹ|warehouse us|pennsylvania|texas|fulfill us|line us|美国|发美国)/i;
@@ -64,7 +65,7 @@ const THG_INTENT_PATTERNS = {
     },
     THG_WAREHOUSE: {
         // Kho bãi, SKU, inventory, FBA prep
-        regex: /(wrong product|inventory|stock issue|sku management|warehouse|FBA prep|3PL|fulfillment center|tồn kho|hết hàng|sai sản phẩm|quản lý đơn|OMS|WMS|kho bãi|cần kho|nhập kho|库存|仓库|发错货|SKU管理|入仓)/i,
+        regex: /(wrong product|inventory|stock issue|sku management|warehouse|FBA prep|3PL|fulfillment center|tồn kho|hết hàng|sai sản phẩm|quản lý đơn|OMS|WMS|kho bãi|cần kho|nhập kho|tìm kho|có kho|kho nào|xưởng|xưởng us|xưởng mỹ|factory|库存|仓库|发错货|SKU管理|入仓)/i,
         solution: 'THG Warehouse — Kho kép PA+TX, OMS/WMS real-time, miễn phí 90 ngày',
         boost: 15,
     },
@@ -390,7 +391,7 @@ async function classifyPosts(posts) {
                     merged.buyerSignals = `${merged.buyerSignals || ''} [Intent: ${intent.categories.join('+')}]`.trim();
                 }
                 // US-route boost: THG's priority market (VN/CN → US)
-                if (merged.role === 'buyer' && US_ROUTE_REGEX.test(content || '')) {
+                if (merged.role === 'buyer' && US_ROUTE_REGEX.test(batch[j].content || '')) {
                     merged.score = Math.min(100, (merged.score || 0) + US_ROUTE_BOOST);
                     merged.buyerSignals = `${merged.buyerSignals || ''} [US-Route +${US_ROUTE_BOOST}]`.trim();
                     merged.isUSRoute = true;

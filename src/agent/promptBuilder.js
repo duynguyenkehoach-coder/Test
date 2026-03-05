@@ -64,7 +64,12 @@ score 0-39 = Không phải buyer HOẶC không liên quan
 - "bên m nhận đi hàng lẻ từ kho tân bình ko ad?" → is_potential:true, score:80, THG Express
 - "Cần kho Mỹ fulfill cho TikTok Shop, đồng thời cũng cần line VN→US cho hàng mới" → is_potential:true, score:90, Both
 - [COMMENT] "xin giá" (parent: bài về fulfillment) → is_potential:true, score:70, THG Fulfillment
-- [COMMENT] "rate?" (parent: bài về ship hàng Mỹ) → is_potential:true, score:65, THG Express`;
+- [COMMENT] "rate?" (parent: bài về ship hàng Mỹ) → is_potential:true, score:65, THG Express
+- "bác nào có xưởng US k ạ" → is_potential:true, score:70, THG Warehouse (đang tìm xưởng ở Mỹ)
+- "có xưởng US k b" → is_potential:true, score:65, THG Warehouse (câu hỏi ngắn tìm xưởng)
+- "ai biết chỗ nào ship hàng đi Mỹ không" → is_potential:true, score:75, THG Express
+- "cần kho ở PA hoặc TX để fulfill" → is_potential:true, score:85, THG Warehouse
+- [COMMENT] "Avail pa?" (parent: bài về logistics dịch vụ) → is_potential:true, score:60, None (cần thêm context)`;
 
     // Combine all parts
     return [base, kbContext, feedbackSection, rules, examples,

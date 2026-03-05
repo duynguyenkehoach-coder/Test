@@ -468,20 +468,26 @@ async function scrapeTikTok(maxPosts = 30) {
             console.log(`[SV:TT]   ${videos.length} videos`);
             await delay(1500);
 
-            for (const video of videos.slice(0, 3)) {
-                if (video.content) {
-                    all.push({
-                        platform: 'tiktok',
-                        item_type: 'post',
-                        post_url: video.url,
-                        author_name: video.author_name,
-                        author_url: video.author_url,
-                        content: video.content,
-                        post_created_at: video.created_at || new Date().toISOString(),
-                        scraped_at: new Date().toISOString(),
-                        source: `sv:tt:kw:${q}`,
-                    });
-                }
+            // Filter by relevance FIRST — skip noise (Korean BBQ, emojis, etc.)
+            const relevant = videos.filter(v => {
+                if (!v.content || v.content.length < 20) return false; // too short / emoji
+                const sig = signalScores(v.content);
+                return sig.any > 0 || sig.buyer || sig.providerLogistics;
+            });
+            console.log(`[SV:TT]   ${relevant.length}/${videos.length} relevant after signal filter`);
+
+            for (const video of relevant.slice(0, 5)) {
+                all.push({
+                    platform: 'tiktok',
+                    item_type: 'post',
+                    post_url: video.url,
+                    author_name: video.author_name,
+                    author_url: video.author_url,
+                    content: video.content,
+                    post_created_at: video.created_at || new Date().toISOString(),
+                    scraped_at: new Date().toISOString(),
+                    source: `sv:tt:kw:${q}`,
+                });
 
                 // Hydrate comments ONLY if fresh + strong signal
                 const sig = signalScores(video.content || '');
