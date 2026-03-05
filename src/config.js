@@ -55,20 +55,16 @@ module.exports = {
   ],
 
   // ════════════════════════════════════════════════════
-  // TIKTOK — 10 hashtags (scraper xoay vòng 4/scan)
-  // ~4 credits × 4 hashtag × vài scan/ngày = ~16-20 credits/ngày
+  // TIKTOK — keyword queries (date_posted=this-week)
+  // ~1 credit/query × 4 queries/scan = ~4 credits/scan
   // ════════════════════════════════════════════════════
-  TT_SEARCH_HASHTAGS: [
-    'podvietnam',
-    'dropshipvietnam',
-    'fulfillvietnam',
-    'shiphangmy',
-    'tiktokshopus',
-    'ddptous',
-    'forwarder',
-    'fbaprep',
-    'warehouseus',
-    'shiphangtrungquoc',
+  TT_SEARCH_QUERIES: [
+    // Express VN/CN → US
+    'ddp to us', 'ddp shipping usa', 'line us ddp', 'ship hàng đi mỹ ddp',
+    'gửi hàng từ trung quốc đi mỹ', 'forwarder vn to us', 'air freight to us', 'lcl to us',
+    // Warehouse/3PL
+    '3pl warehouse texas', 'warehouse pa fulfillment', 'tiktok shop us fulfillment',
+    'ship to amazon fba prep', 'fba prep center', 'returns processing 3pl',
   ],
 
   // ════════════════════════════════════════════════════

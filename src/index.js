@@ -337,12 +337,12 @@ async function main() {
         finally { scanRunning = false; }
     }
 
-    // Schedule 1: Keyword scan (TikTok + IG) — every 30 min
+    // Schedule 1: Keyword scan (TikTok only — IG disabled, low ROI)
     const keywordCron = config.CRON_KEYWORD_SCAN || '*/30 * * * *';
-    console.log(`[Main] ⏰ Keyword scan (TikTok+IG): ${keywordCron}`);
+    console.log(`[Main] ⏰ Keyword scan (TikTok): ${keywordCron}`);
     const scanJob = cron.schedule(keywordCron, () => {
-        console.log('[Cron] Triggered keyword scan (TikTok + IG)...');
-        safeRunScan(() => runPipeline({ platforms: ['tiktok', 'instagram'] }));
+        console.log('[Cron] Triggered keyword scan (TikTok)...');
+        safeRunScan(() => runPipeline({ platforms: ['tiktok'] }));
     });
 
     // Schedule 2: FB Group scan — 2×/day (saves Apify credits)
@@ -363,9 +363,9 @@ async function main() {
     console.log('[Main] Use --scan-once to run immediately');
     console.log('[Main] Use --platform=facebook to scan single platform');
 
-    // Run initial keyword scan on startup
+    // Run initial keyword scan on startup (TikTok only)
     console.log('[Main] 🚀 Running initial keyword scan...');
-    await safeRunScan(() => runPipeline({ platforms: ['tiktok', 'instagram'] }));
+    await safeRunScan(() => runPipeline({ platforms: ['tiktok'] }));
 }
 
 main().catch(err => {

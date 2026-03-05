@@ -186,14 +186,22 @@ async function fbGetPostComments(postUrl, source) {
 
 async function fbGetGroupPosts(groupUrl, groupName) {
     if (!canSpend()) return [];
-    const data = await svGet('facebook/group/posts', { url: groupUrl });
+    const data = await svGet('facebook/group/posts', { url: groupUrl, sort_by: 'CHRONOLOGICAL' });
     logCredit('facebook/group/posts', 'facebook', groupName);
 
-    return toArr(data.posts || data).map(item => ({
+    const postsArr = toArr(data.posts || data);
+    return postsArr.map(item => ({
         url: item.url || item.post_url || '',
         content: (item.text || item.message || '').trim(),
         author_name: item.author?.name || item.author?.short_name || 'Unknown',
         created_at: item.publishTime ? new Date(item.publishTime * 1000).toISOString() : null,
+        commentCount: item.commentCount || 0,
+        topComments: toArr(item.topComments).map(c => ({
+            text: (c.text || '').trim(),
+            publishTime: c.publishTime ? new Date(c.publishTime * 1000).toISOString() : null,
+            author_name: c.author?.name || 'Unknown',
+            author_url: c.author?.url || '',
+        })),
     })).filter(p => p.content.length > 15);
 }
 
@@ -211,7 +219,7 @@ async function scrapeFacebookGroups(maxPosts = 60) {
         try {
             console.log(`[SV:FB] 📌 ${group.name}`);
             const posts = await fbGetGroupPosts(group.url, group.name);
-            console.log(`[SV:FB]   ${posts.length} posts`);
+            console.log(`[SV:FB]   ${posts.length} posts (CHRONOLOGICAL)`);
             await delay(1500);
 
             for (const post of posts.slice(0, 3)) {
@@ -219,6 +227,7 @@ async function scrapeFacebookGroups(maxPosts = 60) {
                 if (post.content) {
                     all.push({
                         platform: 'facebook',
+                        item_type: 'post',
                         post_url: post.url,
                         author_name: post.author_name,
                         author_url: '',
@@ -229,25 +238,47 @@ async function scrapeFacebookGroups(maxPosts = 60) {
                     });
                 }
 
-                // Get comments — ONLY if post is fresh + has strong buyer signal
-                const sig = signalScores(post.content);
-                if (post.url && sig.any >= 20 && isFresh(post.created_at, 10)) {
+                // Use FREE topComments (no extra credit cost)
+                for (const tc of (post.topComments || []).slice(0, 3)) {
+                    if (tc.text && tc.text.length > 3) {
+                        all.push({
+                            platform: 'facebook',
+                            item_type: 'comment',
+                            post_url: post.url,
+                            author_name: tc.author_name,
+                            author_url: tc.author_url,
+                            content: tc.text,
+                            post_created_at: tc.publishTime || new Date().toISOString(),
+                            parent_created_at: post.created_at,
+                            parent_excerpt: (post.content || '').slice(0, 300),
+                            scraped_at: new Date().toISOString(),
+                            source: `sv:fb:topComments:${group.name}`,
+                        });
+                    }
+                }
+
+                // PAID comments — ONLY when: commentCount>0, fresh, strong signal
+                const sig = signalScores(post.content || '');
+                if (post.url && post.commentCount > 0 && sig.any >= 25 && isFresh(post.created_at, 14)) {
                     try {
                         await delay(1500);
                         const comments = await fbGetPostComments(post.url, `sv:fb:comments:${group.name}`);
                         all.push(...comments.slice(0, 5).map(c => ({
                             ...c,
                             item_type: 'comment',
-                            parent_excerpt: post.content?.slice(0, 300) || '',
+                            parent_excerpt: (post.content || '').slice(0, 300),
                             parent_created_at: post.created_at || null,
                         })));
-                        console.log(`[SV:FB]   ↳ ${comments.length} comments (signal=${sig.any}, buyer=${sig.buyer})`);
+                        console.log(`[SV:FB]   ↳ ${comments.length} paid comments (commentCount=${post.commentCount}, signal=${sig.any})`);
                     } catch (e) {
                         console.warn(`[SV:FB]   ↳ comments err: ${e.message}`);
                     }
                 } else if (post.url) {
-                    const reason = sig.any < 20 ? 'weak signal' : 'old post';
-                    console.log(`[SV:FB]   ↳ skip comments (${reason})`);
+                    const reasons = [];
+                    if (post.commentCount === 0) reasons.push('0 comments');
+                    if (sig.any < 25) reasons.push('weak signal');
+                    if (!isFresh(post.created_at, 14)) reasons.push('old');
+                    console.log(`[SV:FB]   ↳ skip paid comments (${reasons.join(', ')})`);
                 }
             }
         } catch (err) {
@@ -333,10 +364,14 @@ async function ttGetVideoComments(videoUrl, source) {
     })).filter(p => p.content.length > 3);
 }
 
-async function ttSearchHashtag(hashtag) {
+async function ttSearchKeyword(query) {
     if (!canSpend()) return [];
-    const data = await svGet('tiktok/search/hashtag', { hashtag });
-    logCredit('tiktok/search/hashtag', 'tiktok', hashtag);
+    const data = await svGet('tiktok/search/keyword', {
+        query,
+        date_posted: 'this-week',
+        sort_by: 'date-posted',
+    });
+    logCredit('tiktok/search/keyword', 'tiktok', query);
 
     const videos = toArr(data.videos || data.items || data.aweme_list || data);
     return videos.map(item => ({
@@ -350,22 +385,22 @@ async function ttSearchHashtag(hashtag) {
 }
 
 async function scrapeTikTok(maxPosts = 30) {
-    const allHashtags = config.TT_SEARCH_HASHTAGS || [];
-    if (!allHashtags.length) {
-        console.log('[SV:TT] ⚠️ No TT_SEARCH_HASHTAGS configured');
+    const allQueries = config.TT_SEARCH_QUERIES || [];
+    if (!allQueries.length) {
+        console.log('[SV:TT] ⚠️ No TT_SEARCH_QUERIES configured');
         return [];
     }
 
-    // Rotation: 4 hashtags/scan, xoay vòng qua 10 hashtags
-    const hashtags = rotation.getNextBatch('tt_hashtags', allHashtags, TT_HASHTAGS_PER_SCAN);
-    console.log(`[SV:TT] 🎵 ${hashtags.length}/${allHashtags.length} hashtags this scan (rotation)...`);
+    // Rotation: 4 queries/scan
+    const queries = rotation.getNextBatch('tt_queries', allQueries, TT_HASHTAGS_PER_SCAN);
+    console.log(`[SV:TT] 🔎 ${queries.length}/${allQueries.length} queries this scan (rotation)...`);
 
     const all = [];
 
-    for (const hashtag of hashtags) {
+    for (const q of queries) {
         try {
-            console.log(`[SV:TT] #${hashtag}`);
-            const videos = await ttSearchHashtag(hashtag);
+            console.log(`[SV:TT] q="${q}"`);
+            const videos = await ttSearchKeyword(q);
             console.log(`[SV:TT]   ${videos.length} videos`);
             await delay(1500);
 
@@ -373,42 +408,42 @@ async function scrapeTikTok(maxPosts = 30) {
                 if (video.content) {
                     all.push({
                         platform: 'tiktok',
+                        item_type: 'post',
                         post_url: video.url,
                         author_name: video.author_name,
                         author_url: video.author_url,
                         content: video.content,
                         post_created_at: video.created_at || new Date().toISOString(),
                         scraped_at: new Date().toISOString(),
-                        source: `sv:tt:hashtag:${hashtag}`,
+                        source: `sv:tt:kw:${q}`,
                     });
                 }
 
-                // Get comments — only if fresh + strong buyer signal
-                const sig = signalScores(video.content);
+                // Hydrate comments ONLY if fresh + strong signal
+                const sig = signalScores(video.content || '');
                 if (video.url && sig.any >= 20 && isFresh(video.created_at, 10)) {
                     try {
                         await delay(1500);
-                        const comments = await ttGetVideoComments(video.url, `sv:tt:comments:${hashtag}`);
+                        const comments = await ttGetVideoComments(video.url, `sv:tt:comments:${q}`);
                         if (comments.length > 0) {
                             all.push(...comments.slice(0, 8).map(c => ({
                                 ...c,
                                 item_type: 'comment',
-                                parent_excerpt: video.content?.slice(0, 300) || '',
+                                parent_excerpt: (video.content || '').slice(0, 300),
                                 parent_created_at: video.created_at || null,
                             })));
-                            console.log(`[SV:TT]   ↳ ${comments.length} comments (signal=${sig.any}, buyer=${sig.buyer})`);
+                            console.log(`[SV:TT]   ↳ ${comments.length} comments (signal=${sig.any})`);
                         }
                     } catch (e) {
                         console.warn(`[SV:TT]   ↳ comments err: ${e.message}`);
                     }
                 } else if (video.url) {
-                    const reason = sig.any < 20 ? 'weak signal' : 'old video';
-                    console.log(`[SV:TT]   ↳ skip comments (${reason})`);
+                    console.log(`[SV:TT]   ↳ skip comments (${sig.any < 20 ? 'weak signal' : 'old video'})`);
                 }
                 await delay(1000);
             }
         } catch (err) {
-            console.warn(`[SV:TT] ⚠️ #${hashtag}: ${err.message}`);
+            console.warn(`[SV:TT] ⚠️ q="${q}": ${err.message}`);
         }
         await delay(2000);
     }
