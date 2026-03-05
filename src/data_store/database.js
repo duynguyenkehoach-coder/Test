@@ -92,6 +92,29 @@ try {
   db.exec(`ALTER TABLE leads ADD COLUMN author_avatar TEXT DEFAULT ''`);
 } catch { /* column already exists */ }
 
+// --- Lead Bank columns (Phase: Data Collection) ---
+try {
+  db.exec(`ALTER TABLE leads ADD COLUMN pain_point TEXT DEFAULT ''`);
+} catch { /* column already exists */ }
+try {
+  db.exec(`ALTER TABLE leads ADD COLUMN service_match TEXT DEFAULT 'None'`);
+} catch { /* column already exists */ }
+try {
+  db.exec(`ALTER TABLE leads ADD COLUMN verification_status TEXT DEFAULT 'waiting'`);
+} catch { /* column already exists */ }
+try {
+  db.exec(`ALTER TABLE leads ADD COLUMN original_post TEXT DEFAULT ''`);
+} catch { /* column already exists */ }
+try {
+  db.exec(`ALTER TABLE leads ADD COLUMN source_group TEXT DEFAULT ''`);
+} catch { /* column already exists */ }
+try {
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_verification ON leads(verification_status)`);
+} catch { /* ignore */ }
+try {
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_service ON leads(service_match)`);
+} catch { /* ignore */ }
+
 // --- Prepared statements ---
 
 const insertLead = db.prepare(`

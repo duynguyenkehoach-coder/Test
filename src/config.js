@@ -17,12 +17,18 @@ module.exports = {
   // ════════════════════════════════════════════════════
   LEAD_SCORE_THRESHOLD: 60,
   PORT: process.env.PORT || 3000,
-  ENABLED_PLATFORMS: ['facebook', 'tiktok', 'instagram'],
-  CRON_KEYWORD_SCAN: '*/30 * * * *',   // TikTok + IG
-  CRON_GROUP_SCAN: '0 8,20 * * *',     // FB Groups: 8h sáng + 8h tối
+  ENABLED_PLATFORMS: ['facebook', 'tiktok'],
 
-  // 6000 credits / 30 ngày = 200 credits/ngày
-  SV_DAILY_LIMIT: parseInt(process.env.SV_DAILY_LIMIT || '200'),
+  // ════════════════════════════════════════════════════
+  // SCAN SCHEDULE — "Bắn tỉa" strategy
+  // Unified hourly scan 8:00-22:00 (14 scans/day)
+  // TikTok + Facebook mỗi lần, max 30 posts
+  // ════════════════════════════════════════════════════
+  CRON_UNIFIED_SCAN: '0 8-22 * * *',     // Mỗi giờ từ 8h-22h
+  MAX_POSTS_PER_SCAN: 30,
+
+  // 5212 credits / 14 days = 372/day → budget 370/day
+  SV_DAILY_LIMIT: parseInt(process.env.SV_DAILY_LIMIT || '370'),
 
   // ════════════════════════════════════════════════════
   // FACEBOOK GROUPS — logistics-focused (buyer intent)
@@ -40,17 +46,10 @@ module.exports = {
   ],
 
   // ════════════════════════════════════════════════════
-  // FACEBOOK COMPETITOR PAGES — 6 pages
-  // ~5 credits/page × 6 × 2 lần/ngày = ~60 credits/ngày
+  // FACEBOOK COMPETITOR PAGES — disabled to save credits
+  // Comments under competitor pages are 99% provider, not buyer
   // ════════════════════════════════════════════════════
-  FB_COMPETITOR_PAGES: [
-    { name: 'Boxme Global', url: 'https://www.facebook.com/boxme.asia' },
-    { name: 'SuperShip', url: 'https://www.facebook.com/supership.vn' },
-    { name: 'Weshop VN', url: 'https://www.facebook.com/weshopvn' },
-    { name: 'Merchize', url: 'https://www.facebook.com/merchize' },
-    { name: 'Bestexpress VN', url: 'https://www.facebook.com/bestexpressvn' },
-    { name: 'Ninja Van Vietnam', url: 'https://www.facebook.com/ninjavan.vn' },
-  ],
+  FB_COMPETITOR_PAGES: [],  // Disabled — waste credits
 
   // ════════════════════════════════════════════════════
   // TIKTOK — keyword queries (date_posted=this-week)

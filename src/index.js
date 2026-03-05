@@ -356,20 +356,27 @@ async function main() {
         }
     }
 
-    // Schedule 1: Keyword scan (TikTok only — IG disabled, low ROI)
-    const keywordCron = config.CRON_KEYWORD_SCAN || '*/30 * * * *';
-    console.log(`[Main] ⏰ Keyword scan (TikTok): ${keywordCron}`);
-    const scanJob = cron.schedule(keywordCron, () => {
-        console.log('[Cron] Triggered keyword scan (TikTok)...');
-        safeRunScan(() => runPipeline({ platforms: ['tiktok'] }), 'tiktok-keyword');
-    });
-
-    // Schedule 2: FB Group scan — 2×/day (saves Apify credits)
-    const groupCron = config.CRON_GROUP_SCAN || '0 8,20 * * *';
-    console.log(`[Main] ⏰ FB Group scan: ${groupCron}`);
-    cron.schedule(groupCron, () => {
-        console.log('[Cron] Triggered FB Group scan...');
-        safeRunScan(() => runPipeline({ platforms: ['facebook'] }), 'fb-group');
+    // Schedule: Unified hourly scan 8:00-22:00 (TikTok + Facebook)
+    const unifiedCron = config.CRON_UNIFIED_SCAN || '0 8-22 * * *';
+    console.log(`[Main] ⏰ Unified scan (TikTok + Facebook): ${unifiedCron}`);
+    const scanJob = cron.schedule(unifiedCron, () => {
+        // Check credit budget before scanning
+        try {
+            const sv = require('./pipelines/sociaVault');
+            if (typeof sv.getBudgetInfo === 'function') {
+                const budget = sv.getBudgetInfo();
+                if (budget.remaining <= 0) {
+                    console.log(`[Main] 🛑 Budget exhausted (${budget.used}/${budget.limit}). Skipping scan.`);
+                    return;
+                }
+                console.log(`[Cron] 💰 Budget: ${budget.remaining}/${budget.limit} credits remaining`);
+            }
+        } catch { }
+        console.log('[Cron] Triggered unified scan (TikTok + Facebook)...');
+        safeRunScan(() => runPipeline({
+            platforms: ['tiktok', 'facebook'],
+            maxPosts: config.MAX_POSTS_PER_SCAN || 30,
+        }), 'unified-hourly');
     });
 
     global.getNextScanTime = () => {
@@ -379,12 +386,16 @@ async function main() {
 
     console.log(`[Main] 🟢 System ready! Platforms: ${config.ENABLED_PLATFORMS.join(', ')}`);
     console.log(`[Main] Dashboard: http://localhost:${config.PORT}`);
+    console.log(`[Main] 💰 Daily budget: ${config.SV_DAILY_LIMIT} credits`);
     console.log('[Main] Use --scan-once to run immediately');
     console.log('[Main] Use --platform=facebook to scan single platform');
 
-    // Run initial keyword scan on startup (TikTok only)
-    console.log('[Main] 🚀 Running initial keyword scan...');
-    await safeRunScan(() => runPipeline({ platforms: ['tiktok'] }), 'initial');
+    // Run initial scan on startup (TikTok + Facebook)
+    console.log('[Main] 🚀 Running initial scan...');
+    await safeRunScan(() => runPipeline({
+        platforms: ['tiktok', 'facebook'],
+        maxPosts: config.MAX_POSTS_PER_SCAN || 30,
+    }), 'initial');
 }
 
 main().catch(err => {
