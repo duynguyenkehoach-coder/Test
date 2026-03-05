@@ -61,14 +61,14 @@ module.exports = {
   TT_SEARCH_HASHTAGS: [
     'podvietnam',
     'dropshipvietnam',
-    'sellervietnam',
     'fulfillvietnam',
     'shiphangmy',
     'tiktokshopus',
-    'dropshipping',
-    'fulfillment',
-    'ecommercevietnam',
-    'xuongpod',
+    'ddptous',
+    'forwarder',
+    'fbaprep',
+    'warehouseus',
+    'shiphangtrungquoc',
   ],
 
   // ════════════════════════════════════════════════════

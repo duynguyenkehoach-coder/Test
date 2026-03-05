@@ -50,6 +50,11 @@
           <span class="nav-icon">📈</span>
           <span class="nav-text">Analytics</span>
         </button>
+        <button class="nav-item" id="tabCredits" onclick="switchTab('credits')">
+          <span class="nav-icon">💳</span>
+          <span class="nav-text">Credits</span>
+          <span class="nav-badge" id="tabCreditsCount">0</span>
+        </button>
 
         <div class="nav-divider"></div>
         <button class="nav-item" onclick="toggleTheme()">
@@ -258,6 +263,25 @@
           </div>
         </div>
 
+        <!-- ========== CREDITS TAB ========== -->
+        <div id="creditsTab" style="display:none;">
+          <div class="filter-bar">
+            <label>💳 SociaVault Credits</label>
+            <div class="filter-spacer"></div>
+            <button class="btn" onclick="loadCredits()" style="font-size:0.85rem;padding:8px 14px;">🔄 Refresh</button>
+          </div>
+          <div id="creditsSummary"
+            style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:20px;">
+          </div>
+          <div id="creditsLog">
+            <div class="empty-state">
+              <div class="empty-state-icon">💳</div>
+              <h3>No credit usage yet</h3>
+              <p>Credits will be logged here when scans run</p>
+            </div>
+          </div>
+        </div>
+
       </main>
     </div>
   </div>
@@ -290,6 +314,7 @@
   <script src="js/inbox.js"></script>
   <script src="js/dataFiles.js"></script>
   <script src="js/analytics.js"></script>
+  <script src="js/credits.js"></script>
   <script src="js/api.js"></script>
   <script src="js/app.js"></script>
 

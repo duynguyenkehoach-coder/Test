@@ -18,14 +18,31 @@ const SV_KEY = process.env.SOCIAVAULT_API_KEY || config.SOCIAVAULT_API_KEY || ''
 const headers = () => ({ 'X-API-Key': SV_KEY });
 const delay = (ms) => new Promise(r => setTimeout(r, ms));
 
-// Credit tracking (monitoring only, no limit)
+// Credit tracking (monitoring + logging for dashboard)
 let creditsUsedToday = 0;
+const creditLog = [];  // {timestamp, endpoint, platform, source}
+const MAX_LOG_SIZE = 500;
+
 function canSpend() { return true; }
-function spend() {
+function logCredit(endpoint, platform, source) {
     creditsUsedToday++;
-    console.log(`[SV] 💳 Credits used today: ${creditsUsedToday}`);
+    creditLog.push({
+        id: creditsUsedToday,
+        timestamp: new Date().toISOString(),
+        endpoint,
+        platform: platform || 'unknown',
+        source: source || '',
+    });
+    if (creditLog.length > MAX_LOG_SIZE) creditLog.shift();
+    console.log(`[SV] 💳 Credits used today: ${creditsUsedToday} (${endpoint})`);
 }
-setInterval(() => { creditsUsedToday = 0; }, 24 * 60 * 60 * 1000);
+function spend() { logCredit('unknown', 'unknown', ''); }
+setInterval(() => {
+    if (creditsUsedToday > 0) {
+        console.log(`[SV] 🔄 Daily reset — used ${creditsUsedToday} credits today`);
+    }
+    creditsUsedToday = 0;
+}, 24 * 60 * 60 * 1000);
 
 async function svGet(endpoint, params = {}) {
     if (!SV_KEY) throw new Error('SOCIAVAULT_API_KEY not set');
@@ -48,9 +65,49 @@ function toArr(raw) {
 // ROTATION BATCH SIZES
 // ════════════════════════════════════════════════════════
 const FB_GROUPS_PER_SCAN = 4;
-const FB_COMPETITORS_PER_SCAN = 3;
+const FB_COMPETITORS_PER_SCAN = 1;  // reduced: competitor pages mostly provider content
 const TT_HASHTAGS_PER_SCAN = 4;
 const IG_ACCOUNTS_PER_SCAN = 3;
+
+// ════════════════════════════════════════════════════════
+// SIGNAL GATING — local pre-filter before hydrating comments
+// ════════════════════════════════════════════════════════
+function signalScores(text = '') {
+    const s = text.toLowerCase();
+
+    // Negative: skip irrelevant content
+    const neg = ['tuyển dụng', 'job', 'giveaway', 'minigame', 'order walmart', 'jammed kitchen', 'hiring', 'intern'];
+    if (neg.some(x => s.includes(x))) return { express: 0, wh: 0, any: 0 };
+
+    // Funnel A — Express (VN/CN → US)
+    const expressTerms = ['ddp', 'line us', 'ship mỹ', 'ship to us', 'đi mỹ', 'báo giá', 'rate',
+        'air', 'sea', 'lcl', 'fcl', 'thông quan', 'custom', 'isf', 'hs code',
+        'gửi hàng', 'xuất hàng', 'battery', 'liquid', 'magnet', 'epacket',
+        'ship quốc tế', 'vận chuyển', 'door to door', 'forwarder'];
+
+    // Funnel B — Warehouse/3PL (PA/TX)
+    const whTerms = ['3pl', 'warehouse', 'kho pa', 'kho tx', 'fulfill', 'fulfillment',
+        'pick pack', 'prep', 'fba prep', 'fba', 'ship to amazon', 'returns',
+        'cross-dock', 'tiktok shop us', 'shopify', 'wms', 'oms',
+        'kho mỹ', 'kho us', 'lưu kho', 'pod', 'print on demand', 'dropship'];
+
+    let express = expressTerms.filter(t => s.includes(t)).length * 10;
+    let wh = whTerms.filter(t => s.includes(t)).length * 10;
+
+    // Volume signals boost
+    if (/\b(\d+(\.\d+)?)\s?(kg|cbm|m3|pallet|carton|container)\b/.test(s)) express += 15;
+
+    // Short buyer signals (comments)
+    const shortBuyer = ['xin giá', 'ib', 'inbox', 'giá bao nhiêu', 'check inbox', 'rate?',
+        'có kho', 'ship mấy ngày', 'bao lâu', 'nhận hàng'];
+    if (shortBuyer.some(x => s.includes(x))) {
+        express = Math.max(express, 10);
+        wh = Math.max(wh, 10);
+    }
+
+    const any = Math.max(express, wh);
+    return { express, wh, any };
+}
 
 // ════════════════════════════════════════════════════════
 // FACEBOOK
@@ -60,7 +117,7 @@ const IG_ACCOUNTS_PER_SCAN = 3;
 async function fbGetPostComments(postUrl, source) {
     if (!canSpend()) return [];
     const data = await svGet('facebook/post/comments', { url: postUrl });
-    spend();
+    logCredit('facebook/post/comments', 'facebook', source);
 
     return toArr(data.comments).map(item => ({
         platform: 'facebook',
@@ -79,7 +136,7 @@ async function fbGetPostComments(postUrl, source) {
 async function fbGetGroupPosts(groupUrl, groupName) {
     if (!canSpend()) return [];
     const data = await svGet('facebook/group/posts', { url: groupUrl });
-    spend();
+    logCredit('facebook/group/posts', 'facebook', groupName);
 
     return toArr(data.posts || data).map(item => ({
         url: item.url || item.post_url || '',
@@ -121,16 +178,22 @@ async function scrapeFacebookGroups(maxPosts = 60) {
                     });
                 }
 
-                // Get comments on this post
-                if (post.url) {
+                // Get comments — ONLY if post has buyer signal (save credits)
+                if (post.url && signalScores(post.content).any >= 10) {
                     try {
                         await delay(1500);
                         const comments = await fbGetPostComments(post.url, `sv:fb:comments:${group.name}`);
-                        all.push(...comments.slice(0, 5));
-                        console.log(`[SV:FB]   ↳ ${comments.length} comments`);
+                        all.push(...comments.slice(0, 5).map(c => ({
+                            ...c,
+                            item_type: 'comment',
+                            parent_excerpt: post.content?.slice(0, 300) || '',
+                        })));
+                        console.log(`[SV:FB]   ↳ ${comments.length} comments (signal hit)`);
                     } catch (e) {
                         console.warn(`[SV:FB]   ↳ comments err: ${e.message}`);
                     }
+                } else if (post.url) {
+                    console.log(`[SV:FB]   ↳ skip comments (no signal)`);
                 }
             }
         } catch (err) {
@@ -161,7 +224,7 @@ async function scrapeFBCompetitorComments() {
         try {
             if (!canSpend()) break;
             const data = await svGet('facebook/profile/posts', { url: page.url });
-            spend();
+            logCredit('facebook/profile/posts', 'facebook', page.name);
             await delay(1500);
 
             const posts = toArr(data.posts || data).slice(0, 2);
@@ -170,9 +233,16 @@ async function scrapeFBCompetitorComments() {
                 if (!postUrl) continue;
                 try {
                     await delay(1500);
+                    const postContent = post.text || post.message || '';
                     const comments = await fbGetPostComments(postUrl, `sv:fb:competitor:${page.name}`);
-                    all.push(...comments.slice(0, 8));
-                    console.log(`[SV:FB]   🏢 ${page.name}: ${comments.length} comments`);
+                    // Only keep comments that match trigger signals
+                    const filtered = comments.filter(c => signalScores(c.content).any >= 10);
+                    all.push(...filtered.slice(0, 8).map(c => ({
+                        ...c,
+                        item_type: 'comment',
+                        parent_excerpt: postContent.slice(0, 300) || `[${page.name} post]`,
+                    })));
+                    console.log(`[SV:FB]   🏢 ${page.name}: ${comments.length} comments, ${filtered.length} w/ signal`);
                 } catch (e) {
                     console.warn(`[SV:FB]   🏢 ${page.name} err: ${e.message}`);
                 }
@@ -192,7 +262,7 @@ async function scrapeFBCompetitorComments() {
 async function ttGetVideoComments(videoUrl, source) {
     if (!canSpend()) return [];
     const data = await svGet('tiktok/comments', { url: videoUrl });
-    spend();
+    logCredit('tiktok/comments', 'tiktok', source);
 
     const comments = toArr(data.comments);
     if (comments.length === 0) return [];
@@ -212,7 +282,7 @@ async function ttGetVideoComments(videoUrl, source) {
 async function ttSearchHashtag(hashtag) {
     if (!canSpend()) return [];
     const data = await svGet('tiktok/search/hashtag', { hashtag });
-    spend();
+    logCredit('tiktok/search/hashtag', 'tiktok', hashtag);
 
     const videos = toArr(data.videos || data.items || data.aweme_list || data);
     return videos.map(item => ({
@@ -259,13 +329,18 @@ async function scrapeTikTok(maxPosts = 30) {
                     });
                 }
 
-                if (video.url) {
+                // Get comments — only if video caption has signal
+                if (video.url && signalScores(video.content).any >= 10) {
                     try {
                         await delay(1500);
                         const comments = await ttGetVideoComments(video.url, `sv:tt:comments:${hashtag}`);
                         if (comments.length > 0) {
-                            all.push(...comments.slice(0, 8));
-                            console.log(`[SV:TT]   ↳ ${comments.length} comments`);
+                            all.push(...comments.slice(0, 8).map(c => ({
+                                ...c,
+                                item_type: 'comment',
+                                parent_excerpt: video.content?.slice(0, 300) || '',
+                            })));
+                            console.log(`[SV:TT]   ↳ ${comments.length} comments (signal hit)`);
                         }
                     } catch (e) {
                         console.warn(`[SV:TT]   ↳ comments err: ${e.message}`);
@@ -291,7 +366,7 @@ async function scrapeTikTok(maxPosts = 30) {
 async function igGetPostComments(postUrl, source) {
     if (!canSpend()) return [];
     const data = await svGet('instagram/comments', { url: postUrl });
-    spend();
+    logCredit('instagram/comments', 'instagram', source);
 
     return toArr(data.comments).map(item => ({
         platform: 'instagram',
@@ -308,7 +383,7 @@ async function igGetPostComments(postUrl, source) {
 async function igGetAccountPosts(handle) {
     if (!canSpend()) return [];
     const data = await svGet('instagram/posts', { handle });
-    spend();
+    logCredit('instagram/posts', 'instagram', handle);
 
     const postsRaw = toArr(data.posts || data.items || data.edges || data);
     return postsRaw.map(item => {
@@ -350,7 +425,11 @@ async function scrapeInstagram(maxPosts = 30) {
                 try {
                     await delay(1500);
                     const comments = await igGetPostComments(post.url, `sv:ig:comments:@${handle}`);
-                    all.push(...comments.slice(0, 8));
+                    all.push(...comments.slice(0, 8).map(c => ({
+                        ...c,
+                        item_type: 'comment',
+                        parent_excerpt: post.content?.slice(0, 300) || '',
+                    })));
                     console.log(`[SV:IG]   ↳ @${handle}: ${comments.length} comments`);
                 } catch (e) {
                     console.warn(`[SV:IG]   ↳ @${handle} err: ${e.message}`);
@@ -386,4 +465,21 @@ module.exports = {
     testConnection,
     svGet,
     getCreditsUsed: () => creditsUsedToday,
+    getCreditLog: () => [...creditLog],
+    getCreditStats: () => {
+        const byPlatform = {};
+        const byEndpoint = {};
+        for (const entry of creditLog) {
+            byPlatform[entry.platform] = (byPlatform[entry.platform] || 0) + 1;
+            byEndpoint[entry.endpoint] = (byEndpoint[entry.endpoint] || 0) + 1;
+        }
+        return {
+            today: creditsUsedToday,
+            total_logged: creditLog.length,
+            by_platform: byPlatform,
+            by_endpoint: byEndpoint,
+            first_call: creditLog[0]?.timestamp || null,
+            last_call: creditLog[creditLog.length - 1]?.timestamp || null,
+        };
+    },
 };

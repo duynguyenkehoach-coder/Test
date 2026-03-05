@@ -14,15 +14,26 @@ const sv = require('./sociaVault');
 
 const delay = (ms) => new Promise(r => setTimeout(r, ms));
 
+const { contentHash } = require('../agent/memoryStore');
+
 // ═══════════════════════════════════════════════════════
-// Dedup helper
+// Dedup helper — compound key to preserve comments
 // ═══════════════════════════════════════════════════════
 function dedup(posts) {
     const seen = new Set();
     return posts.filter(p => {
-        const key = p.post_url || p.content?.substring(0, 100);
-        if (!key || seen.has(key)) return false;
-        seen.add(key); return true;
+        const h = contentHash((p.content || '').slice(0, 500));
+        const key = [
+            p.platform,
+            p.item_type || 'post',
+            p.post_url || '',
+            p.author_name || '',
+            p.post_created_at || '',
+            h
+        ].join('|');
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
     });
 }
 

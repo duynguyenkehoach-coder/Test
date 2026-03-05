@@ -28,18 +28,19 @@ ${config.THG_CONTEXT}`;
     // 3. Past feedback examples (learned from human corrections)
     const feedbackSection = buildFeedbackSection();
 
-    // 4. Classification rules + scoring rubric (kept from original)
+    // 4. Classification rules + scoring rubric + 2-funnel routing
     const rules = `
 🚨 QUY TẮC SỐNG CÒN (LOẠI BỎ FALSE POSITIVE):
 1. NẾU bài viết mang tính chất QUẢNG CÁO, CHÀO MỜI dịch vụ từ các công ty vận chuyển, xưởng in, kho bãi khác -> "author_role": "logistics_agency", "intent": "offering_service", "is_potential": false.
 2. NẾU bài viết chỉ chia sẻ kiến thức, khoe đơn, không hỏi tìm đối tác -> "is_potential": false.
 3. CHỈ chọn "is_potential": true khi TÁC GIẢ là người ĐANG TÌM KIẾM giải pháp hoặc ĐANG HỎI/CẦN GIÚP ĐỖ.
-4. ĐẶC THÙ TIKTOK COMMENT: Nếu nội dung rất ngắn như "xin giá", "check ib", "đi line us bao lâu", "có kho PA không" => "is_potential": true, đây là tín hiệu mua hàng rõ ràng.
+4. ĐẶC THÙ COMMENT NGẮN: Nếu nội dung là comment ngắn dưới post logistics/fulfillment như "xin giá", "check ib", "đi line us bao lâu", "có kho PA không", "rate?", "ib em", "giá bao nhiêu?" => "is_potential": true. Đây là tín hiệu mua hàng rõ ràng, ĐẶC BIỆT khi Parent context liên quan logistics/shipping.
 
-🎯 PHÂN LOẠI DỊCH VỤ THG (Nếu is_potential = true):
+🎯 PHÂN LUỒNG 2 DỊCH VỤ THG:
+- "THG Express": DDP/line US/air/sea/LCL/FCL/kg/cbm/customs/thông quan/ISF/HS code/ship VN-CN→Mỹ → Express
+- "THG Warehouse": 3PL/warehouse/kho PA-TX/fulfill/fulfillment/FBA prep/ship to Amazon/returns/cross-dock → Warehouse
 - "THG Fulfillment": POD/Dropship chưa có hàng, cần xưởng in/mua hộ và ship.
-- "THG Express": Có sẵn hàng ở VN/CN, cần book chuyến ship đi US/CA nhanh.
-- "THG Warehouse": Cần thuê kho tại Mỹ để stock hàng và ship nội địa.
+- "Both": Có cả tín hiệu Express + Warehouse/Fulfillment
 - "None": Không khớp hoặc là bài quảng cáo.
 
 📊 THANG ĐIỂM SCORE (0-100):
@@ -60,7 +61,10 @@ score 0-39 = Không phải buyer HOẶC không liên quan
 - "Mới tập tành làm POD, cho hỏi app nào in áo rẻ ship US?" → is_potential:true, score:75, THG Fulfillment
 - "Mình đang muốn bắt đầu POD trên TikTok Shop US mà chưa chọn xưởng nào" → is_potential:true, score:88, THG Fulfillment
 - "Có 2 tạ hàng cần ship sang Mỹ trong tuần, ai nhận inbox" → is_potential:true, score:95, THG Express
-- "bên m nhận đi hàng lẻ từ kho tân bình ko ad?" → is_potential:true, score:80, THG Express`;
+- "bên m nhận đi hàng lẻ từ kho tân bình ko ad?" → is_potential:true, score:80, THG Express
+- "Cần kho Mỹ fulfill cho TikTok Shop, đồng thời cũng cần line VN→US cho hàng mới" → is_potential:true, score:90, Both
+- [COMMENT] "xin giá" (parent: bài về fulfillment) → is_potential:true, score:70, THG Fulfillment
+- [COMMENT] "rate?" (parent: bài về ship hàng Mỹ) → is_potential:true, score:65, THG Express`;
 
     // Combine all parts
     return [base, kbContext, feedbackSection, rules, examples,
@@ -94,9 +98,15 @@ ${lines.join('\n')}
  * Build the user prompt for a single post
  */
 function buildUserPrompt(post) {
-    return `Phân tích bài đăng/comment sau:
+    const typeLabel = post.item_type === 'comment' ? 'COMMENT' : 'POST';
+    const parentCtx = post.parent_excerpt
+        ? `\nParent post context: ${post.parent_excerpt}`
+        : '';
+
+    return `Phân tích ${typeLabel} sau:
 
 Platform: ${post.platform}
+Type: ${post.item_type || 'post'}${parentCtx}
 Nội dung: ${(post.content || '').substring(0, 1500)}
 
 Trả về JSON (object đơn, không phải array):
@@ -105,7 +115,7 @@ Trả về JSON (object đơn, không phải array):
   "intent": "seeking_service" | "offering_service" | "sharing_knowledge" | "other",
   "is_potential": boolean,
   "score": number (NẾU is_potential=true thì PHẢI >= 60, NẾU false thì = 0),
-  "service_match": "THG Fulfillment" | "THG Express" | "THG Warehouse" | "None",
+  "service_match": "THG Fulfillment" | "THG Express" | "THG Warehouse" | "Both" | "None",
   "reasoning": "Giải thích ngắn gọn",
   "urgency": "low" | "medium" | "high"
 }`;
@@ -115,15 +125,19 @@ Trả về JSON (object đơn, không phải array):
  * Build the batch prompt for multiple posts
  */
 function buildBatchPrompt(posts) {
-    const postsList = posts.map((p, i) =>
-        `[POST ${i + 1}] Platform: ${p.platform}\nContent: ${(p.content || '').substring(0, 600)}`
-    ).join('\n\n---\n\n');
+    const postsList = posts.map((p, i) => {
+        const typeLabel = p.item_type === 'comment' ? 'COMMENT' : 'POST';
+        const parentCtx = p.parent_excerpt
+            ? `\nParent: ${p.parent_excerpt.substring(0, 200)}`
+            : '';
+        return `[${typeLabel} ${i + 1}] Platform: ${p.platform}${parentCtx}\nContent: ${(p.content || '').substring(0, 600)}`;
+    }).join('\n\n---\n\n');
 
-    return `Phân tích ${posts.length} bài đăng dưới đây. 
+    return `Phân tích ${posts.length} bài đăng/comment dưới đây. 
 
 ${postsList}
 
-Trả về JSON object với key "results" là array ${posts.length} phần tử, theo đúng thứ tự POST 1, 2, 3...:
+Trả về JSON object với key "results" là array ${posts.length} phần tử, theo đúng thứ tự:
 {
   "results": [
     {"author_role":"...","intent":"...","is_potential":bool,"score":number,"service_match":"...","reasoning":"...","urgency":"..."},
@@ -131,7 +145,9 @@ Trả về JSON object với key "results" là array ${posts.length} phần tử
   ]
 }
 
-Nhớ: is_potential=true → score PHẢI >= 60. is_potential=false → score = 0.`;
+service_match có thể là: "THG Fulfillment" | "THG Express" | "THG Warehouse" | "Both" | "None"
+Nớng: is_potential=true → score PHẢI >= 60. is_potential=false → score = 0.
+Nếu là COMMENT ngắn nhưng rõ buyer intent ("xin giá", "ib", "rate?") + Parent context liên quan logistics → is_potential=true.`;
 }
 
 module.exports = {

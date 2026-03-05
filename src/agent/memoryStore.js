@@ -81,9 +81,9 @@ function saveClassification(post, result) {
             content, hash,
             post.platform || 'unknown',
             result.score || 0,
-            result.role || 'unknown',
-            result.category || 'None',
-            result.summary || ''
+            result.role || result.author_role || 'unknown',
+            result.category || result.service_match || 'None',
+            result.summary || result.reasoning || ''
         );
         return info.lastInsertRowid;
     } catch (err) {
@@ -144,8 +144,8 @@ function getMemoryStats() {
     try {
         const total = getDb().prepare('SELECT COUNT(*) as count FROM classification_memory').get();
         const withFeedback = getDb().prepare('SELECT COUNT(*) as count FROM classification_memory WHERE human_feedback IS NOT NULL').get();
-        const buyers = getDb().prepare('SELECT COUNT(*) as count FROM classification_memory WHERE role = ?').get('buyer');
-        const providers = getDb().prepare('SELECT COUNT(*) as count FROM classification_memory WHERE role = ?').get('provider');
+        const buyers = getDb().prepare('SELECT COUNT(*) as count FROM classification_memory WHERE score >= 60').get();
+        const providers = getDb().prepare('SELECT COUNT(*) as count FROM classification_memory WHERE score = 0').get();
         return {
             total: total.count,
             withFeedback: withFeedback.count,
@@ -165,7 +165,7 @@ function getRecentBuyers(limit = 5) {
         return getDb().prepare(`
             SELECT content, score, service_match, reasoning
             FROM classification_memory
-            WHERE role = 'buyer' AND score >= 60
+            WHERE score >= 60 AND role IN ('seller_ecom', 'buyer', 'unknown')
             ORDER BY created_at DESC
             LIMIT ?
         `).all(limit);

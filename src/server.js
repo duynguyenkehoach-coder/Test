@@ -264,6 +264,20 @@ app.get('/api/stats', (req, res) => {
     }
 });
 
+// ╔═══════════════════════════════════════════════════════════╗
+// ║  CREDITS TRACKING                                         ║
+// ╚═══════════════════════════════════════════════════════════╝
+app.get('/api/credits', (req, res) => {
+    try {
+        const sv = require('./pipelines/sociaVault');
+        const log = sv.getCreditLog();
+        const stats = sv.getCreditStats();
+        res.json({ success: true, data: { stats, log } });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 app.get('/api/analytics', (req, res) => {
     try {
         const data = database.getAnalytics();
