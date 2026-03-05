@@ -18,19 +18,12 @@ const SV_KEY = process.env.SOCIAVAULT_API_KEY || config.SOCIAVAULT_API_KEY || ''
 const headers = () => ({ 'X-API-Key': SV_KEY });
 const delay = (ms) => new Promise(r => setTimeout(r, ms));
 
-// Credit tracking
+// Credit tracking (monitoring only, no limit)
 let creditsUsedToday = 0;
-const DAILY_CREDIT_LIMIT = parseInt(process.env.SV_DAILY_LIMIT || config.SV_DAILY_LIMIT || '200');
-function canSpend() {
-    if (creditsUsedToday >= DAILY_CREDIT_LIMIT) {
-        console.warn(`[SV] 🚫 Daily limit ${DAILY_CREDIT_LIMIT} reached`);
-        return false;
-    }
-    return true;
-}
+function canSpend() { return true; }
 function spend() {
     creditsUsedToday++;
-    console.log(`[SV] 💳 Credits: ${creditsUsedToday}/${DAILY_CREDIT_LIMIT}`);
+    console.log(`[SV] 💳 Credits used today: ${creditsUsedToday}`);
 }
 setInterval(() => { creditsUsedToday = 0; }, 24 * 60 * 60 * 1000);
 
