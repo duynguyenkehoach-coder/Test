@@ -70,43 +70,94 @@ const TT_HASHTAGS_PER_SCAN = 4;
 const IG_ACCOUNTS_PER_SCAN = 3;
 
 // ════════════════════════════════════════════════════════
-// SIGNAL GATING — local pre-filter before hydrating comments
+// SIGNAL GATING — buyer vs provider detection
 // ════════════════════════════════════════════════════════
+
+function isProviderText(s) {
+    const providerHints = [
+        'bên em', 'bên mình', 'chúng tôi', 'nhận vận chuyển', 'nhận ship', 'nhận gửi',
+        'dịch vụ', 'cam kết', 'giá rẻ', 'hotline', 'liên hệ', 'lh', 'zalo', 'call', 'inbox em',
+        'nhận sll', 'bao thuế', 'tuyến bay riêng'
+    ];
+    if (providerHints.some(x => s.includes(x))) return true;
+    if (/\b(0\d{8,10})\b/.test(s)) return true;         // phone VN
+    if (/(https?:\/\/|\.com|\.vn|wa\.me)/.test(s)) return true;
+    return false;
+}
+
+function isBuyerText(s) {
+    const buyerHints = [
+        'cần', 'tìm', 'xin', 'nhờ', 'hỏi', 'ai biết', 'recommend', 'review',
+        'báo giá', 'rate', 'quote', 'giá bao nhiêu', 'bao lâu', 'ship mấy ngày',
+        'ddp', 'door to door', 'line us', 'ship to us', 'ship mỹ', 'kho', '3pl', 'fulfillment',
+        'fba', 'ship to amazon', 'prep'
+    ];
+    if (buyerHints.some(x => s.includes(x))) return true;
+    if (/\?\s*$/.test(s)) return true; // ends with question mark
+    return false;
+}
+
 function signalScores(text = '') {
     const s = text.toLowerCase();
 
-    // Negative: skip irrelevant content
-    const neg = ['tuyển dụng', 'job', 'giveaway', 'minigame', 'order walmart', 'jammed kitchen', 'hiring', 'intern'];
-    if (neg.some(x => s.includes(x))) return { express: 0, wh: 0, any: 0 };
+    // Hard negatives
+    const neg = [
+        'tuyển dụng', 'job', 'giveaway', 'minigame', 'order walmart', 'jammed kitchen',
+        'hiring', 'intern', 'printer', 'labels', 'canvas', 'thêu', 'embroidery',
+        'coaching', 'coach', 'site down', 'support no response'
+    ];
+    if (neg.some(x => s.includes(x))) return { express: 0, wh: 0, any: 0, buyer: 0, provider: 0 };
 
-    // Funnel A — Express (VN/CN → US)
-    const expressTerms = ['ddp', 'line us', 'ship mỹ', 'ship to us', 'đi mỹ', 'báo giá', 'rate',
+    const provider = isProviderText(s) ? 1 : 0;
+    const buyer = isBuyerText(s) ? 1 : 0;
+
+    // Provider without buyer intent → noise
+    if (provider && !buyer) return { express: 0, wh: 0, any: 0, buyer: 0, provider: 1 };
+
+    // Express triggers
+    const expressTerms = [
+        'ddp', 'line us', 'ship mỹ', 'ship to us', 'đi mỹ', 'báo giá', 'rate', 'quote',
         'air', 'sea', 'lcl', 'fcl', 'thông quan', 'custom', 'isf', 'hs code',
         'gửi hàng', 'xuất hàng', 'battery', 'liquid', 'magnet', 'epacket',
-        'ship quốc tế', 'vận chuyển', 'door to door', 'forwarder'];
+        'ship quốc tế', 'vận chuyển', 'door to door', 'forwarder'
+    ];
 
-    // Funnel B — Warehouse/3PL (PA/TX)
-    const whTerms = ['3pl', 'warehouse', 'kho pa', 'kho tx', 'fulfill', 'fulfillment',
-        'pick pack', 'prep', 'fba prep', 'fba', 'ship to amazon', 'returns',
-        'cross-dock', 'tiktok shop us', 'shopify', 'wms', 'oms',
-        'kho mỹ', 'kho us', 'lưu kho', 'pod', 'print on demand', 'dropship'];
+    // Warehouse triggers (POD/dropship removed — too noisy)
+    const whTerms = [
+        '3pl', 'warehouse', 'kho pa', 'kho tx', 'pick pack', 'prep', 'fba prep', 'fba',
+        'ship to amazon', 'returns', 'cross-dock', 'tiktok shop us', 'shopify', 'wms', 'oms',
+        'kho mỹ', 'kho us', 'lưu kho', 'fulfill', 'fulfillment'
+    ];
 
-    let express = expressTerms.filter(t => s.includes(t)).length * 10;
-    let wh = whTerms.filter(t => s.includes(t)).length * 10;
+    let express = expressTerms.filter(t => s.includes(t)).length * 12;
+    let wh = whTerms.filter(t => s.includes(t)).length * 12;
 
-    // Volume signals boost
-    if (/\b(\d+(\.\d+)?)\s?(kg|cbm|m3|pallet|carton|container)\b/.test(s)) express += 15;
+    // Volume boost (meaningful for express)
+    if (/\b(\d+(\.\d+)?)\s?(kg|cbm|m3|pallet|carton|container)\b/.test(s)) express += 20;
 
-    // Short buyer signals (comments)
-    const shortBuyer = ['xin giá', 'ib', 'inbox', 'giá bao nhiêu', 'check inbox', 'rate?',
-        'có kho', 'ship mấy ngày', 'bao lâu', 'nhận hàng'];
-    if (shortBuyer.some(x => s.includes(x))) {
-        express = Math.max(express, 10);
-        wh = Math.max(wh, 10);
+    // Short buyer signals — only if NOT provider
+    const shortBuyer = ['xin giá', 'báo giá', 'rate', 'quote', 'giá bao nhiêu', 'bao lâu',
+        'ship mấy ngày', 'có kho', 'có line'];
+    if (!provider && shortBuyer.some(x => s.includes(x))) {
+        express = Math.max(express, 25);
+        wh = Math.max(wh, 25);
     }
 
     const any = Math.max(express, wh);
-    return { express, wh, any };
+    // If no buyer signal detected, reduce score to avoid false hits
+    const anyFinal = buyer ? any : Math.max(0, any - 15);
+
+    return { express, wh, any: anyFinal, buyer, provider };
+}
+
+// ════════════════════════════════════════════════════════
+// FRESHNESS CHECK — filter BEFORE hydrating comments
+// ════════════════════════════════════════════════════════
+function isFresh(isoOrNull, maxDays = 10) {
+    if (!isoOrNull) return false;
+    const t = new Date(isoOrNull).getTime();
+    if (isNaN(t)) return false;
+    return (Date.now() - t) <= maxDays * 24 * 60 * 60 * 1000;
 }
 
 // ════════════════════════════════════════════════════════
@@ -178,8 +229,9 @@ async function scrapeFacebookGroups(maxPosts = 60) {
                     });
                 }
 
-                // Get comments — ONLY if post has buyer signal (save credits)
-                if (post.url && signalScores(post.content).any >= 10) {
+                // Get comments — ONLY if post is fresh + has strong buyer signal
+                const sig = signalScores(post.content);
+                if (post.url && sig.any >= 20 && isFresh(post.created_at, 10)) {
                     try {
                         await delay(1500);
                         const comments = await fbGetPostComments(post.url, `sv:fb:comments:${group.name}`);
@@ -187,13 +239,15 @@ async function scrapeFacebookGroups(maxPosts = 60) {
                             ...c,
                             item_type: 'comment',
                             parent_excerpt: post.content?.slice(0, 300) || '',
+                            parent_created_at: post.created_at || null,
                         })));
-                        console.log(`[SV:FB]   ↳ ${comments.length} comments (signal hit)`);
+                        console.log(`[SV:FB]   ↳ ${comments.length} comments (signal=${sig.any}, buyer=${sig.buyer})`);
                     } catch (e) {
                         console.warn(`[SV:FB]   ↳ comments err: ${e.message}`);
                     }
                 } else if (post.url) {
-                    console.log(`[SV:FB]   ↳ skip comments (no signal)`);
+                    const reason = sig.any < 20 ? 'weak signal' : 'old post';
+                    console.log(`[SV:FB]   ↳ skip comments (${reason})`);
                 }
             }
         } catch (err) {
@@ -329,8 +383,9 @@ async function scrapeTikTok(maxPosts = 30) {
                     });
                 }
 
-                // Get comments — only if video caption has signal
-                if (video.url && signalScores(video.content).any >= 10) {
+                // Get comments — only if fresh + strong buyer signal
+                const sig = signalScores(video.content);
+                if (video.url && sig.any >= 20 && isFresh(video.created_at, 10)) {
                     try {
                         await delay(1500);
                         const comments = await ttGetVideoComments(video.url, `sv:tt:comments:${hashtag}`);
@@ -339,12 +394,16 @@ async function scrapeTikTok(maxPosts = 30) {
                                 ...c,
                                 item_type: 'comment',
                                 parent_excerpt: video.content?.slice(0, 300) || '',
+                                parent_created_at: video.created_at || null,
                             })));
-                            console.log(`[SV:TT]   ↳ ${comments.length} comments (signal hit)`);
+                            console.log(`[SV:TT]   ↳ ${comments.length} comments (signal=${sig.any}, buyer=${sig.buyer})`);
                         }
                     } catch (e) {
                         console.warn(`[SV:TT]   ↳ comments err: ${e.message}`);
                     }
+                } else if (video.url) {
+                    const reason = sig.any < 20 ? 'weak signal' : 'old video';
+                    console.log(`[SV:TT]   ↳ skip comments (${reason})`);
                 }
                 await delay(1000);
             }
@@ -422,6 +481,11 @@ async function scrapeInstagram(maxPosts = 30) {
 
             for (const post of posts.slice(0, 3)) {
                 if (!post.url) continue;
+                const sig = signalScores(post.content || '');
+                if (sig.any < 20 || !isFresh(post.created_at, 10)) {
+                    console.log(`[SV:IG]   ↳ skip comments (${sig.any < 20 ? 'weak signal' : 'old post'})`);
+                    continue;
+                }
                 try {
                     await delay(1500);
                     const comments = await igGetPostComments(post.url, `sv:ig:comments:@${handle}`);
@@ -429,8 +493,9 @@ async function scrapeInstagram(maxPosts = 30) {
                         ...c,
                         item_type: 'comment',
                         parent_excerpt: post.content?.slice(0, 300) || '',
+                        parent_created_at: post.created_at || null,
                     })));
-                    console.log(`[SV:IG]   ↳ @${handle}: ${comments.length} comments`);
+                    console.log(`[SV:IG]   ↳ @${handle}: ${comments.length} comments (signal=${sig.any})`);
                 } catch (e) {
                     console.warn(`[SV:IG]   ↳ @${handle} err: ${e.message}`);
                 }

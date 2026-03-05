@@ -137,17 +137,18 @@ async function runPipeline(options = {}) {
         }
 
         // Step 1.6: Filter out posts older than 30 days (saves AI credits)
+        // For comments, use parent_created_at (parent post age matters, not comment time)
         const MAX_POST_AGE_DAYS = 30;
         const nowMs = Date.now();
         const freshPosts = newPosts.filter(post => {
-            if (!post.post_created_at) return true; // Keep posts with no date (will be penalized later)
-            const postTimeMs = new Date(post.post_created_at).getTime();
-            if (isNaN(postTimeMs)) return true; // Keep if date can't be parsed
+            const timeStr = (post.item_type === 'comment')
+                ? (post.parent_created_at || post.post_created_at)
+                : post.post_created_at;
+            if (!timeStr) return true; // Keep posts with no date
+            const postTimeMs = new Date(timeStr).getTime();
+            if (isNaN(postTimeMs)) return true;
             const ageDays = (nowMs - postTimeMs) / (1000 * 60 * 60 * 24);
-            if (ageDays > MAX_POST_AGE_DAYS) {
-                return false; // Drop old posts
-            }
-            return true;
+            return ageDays <= MAX_POST_AGE_DAYS;
         });
         const oldDropped = newPosts.length - freshPosts.length;
         if (oldDropped > 0) {
@@ -324,20 +325,32 @@ async function main() {
     // Start dashboard server
     startServer();
 
+    // ═══ Scan Mutex — prevent overlapping scans ═══
+    let scanRunning = false;
+    async function safeRunScan(fn) {
+        if (scanRunning) {
+            console.log('[Main] ⛔ Scan already running, skip this trigger');
+            return;
+        }
+        scanRunning = true;
+        try { await fn(); }
+        finally { scanRunning = false; }
+    }
+
     // Schedule 1: Keyword scan (TikTok + IG) — every 30 min
     const keywordCron = config.CRON_KEYWORD_SCAN || '*/30 * * * *';
     console.log(`[Main] ⏰ Keyword scan (TikTok+IG): ${keywordCron}`);
-    const scanJob = cron.schedule(keywordCron, async () => {
+    const scanJob = cron.schedule(keywordCron, () => {
         console.log('[Cron] Triggered keyword scan (TikTok + IG)...');
-        await runPipeline({ platforms: ['tiktok', 'instagram'] });
+        safeRunScan(() => runPipeline({ platforms: ['tiktok', 'instagram'] }));
     });
 
     // Schedule 2: FB Group scan — 2×/day (saves Apify credits)
     const groupCron = config.CRON_GROUP_SCAN || '0 8,20 * * *';
     console.log(`[Main] ⏰ FB Group scan: ${groupCron}`);
-    cron.schedule(groupCron, async () => {
+    cron.schedule(groupCron, () => {
         console.log('[Cron] Triggered FB Group scan...');
-        await runPipeline({ platforms: ['facebook'] });
+        safeRunScan(() => runPipeline({ platforms: ['facebook'] }));
     });
 
     global.getNextScanTime = () => {
@@ -352,7 +365,7 @@ async function main() {
 
     // Run initial keyword scan on startup
     console.log('[Main] 🚀 Running initial keyword scan...');
-    await runPipeline({ platforms: ['tiktok', 'instagram'] });
+    await safeRunScan(() => runPipeline({ platforms: ['tiktok', 'instagram'] }));
 }
 
 main().catch(err => {
