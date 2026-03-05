@@ -57,12 +57,13 @@ module.exports = {
   // ~1 credit/query × 4 queries/scan = ~4 credits/scan
   // ════════════════════════════════════════════════════
   TT_SEARCH_QUERIES: [
-    // Express VN/CN → US
-    'ddp to us', 'ddp shipping usa', 'line us ddp', 'ship hàng đi mỹ ddp',
-    'gửi hàng từ trung quốc đi mỹ', 'forwarder vn to us', 'air freight to us', 'lcl to us',
-    // Warehouse/3PL
-    '3pl warehouse texas', 'warehouse pa fulfillment', 'tiktok shop us fulfillment',
-    'ship to amazon fba prep', 'fba prep center', 'returns processing 3pl',
+    // Vietnamese buyer queries (sellers tìm dịch vụ)
+    'cần ship hàng đi mỹ', 'tìm forwarder ship mỹ', 'ai có line us',
+    'xin giá ship hàng đi mỹ', 'cần kho ở mỹ', 'tìm kho fulfillment',
+    'cần xưởng in pod', 'ship hàng amazon fba', 'gửi hàng từ việt nam đi mỹ',
+    // English buyer queries (more specific than generic logistics)
+    'need fulfillment center us', 'looking for 3pl warehouse',
+    'tiktok shop seller need fulfillment', 'amazon fba prep service review',
   ],
 
   // ════════════════════════════════════════════════════

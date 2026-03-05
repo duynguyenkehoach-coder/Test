@@ -468,13 +468,18 @@ async function scrapeTikTok(maxPosts = 30) {
             console.log(`[SV:TT]   ${videos.length} videos`);
             await delay(1500);
 
-            // Filter by relevance FIRST — skip noise (Korean BBQ, emojis, etc.)
+            // Filter: skip noise AND provider ads (Chinese forwarder ads dominate TikTok)
             const relevant = videos.filter(v => {
                 if (!v.content || v.content.length < 20) return false; // too short / emoji
+                const s = (v.content || '').toLowerCase();
+                // Skip provider/forwarder ads (they have noise comments)
+                if (isProviderText(s)) return false;
+                // Skip obvious Chinese forwarder ads in English
+                if (/shipping agent|freight forwarder|we ship|we offer|contact us|whatsapp/i.test(v.content)) return false;
                 const sig = signalScores(v.content);
-                return sig.any > 0 || sig.buyer || sig.providerLogistics;
+                return sig.any > 0 || sig.buyer;
             });
-            console.log(`[SV:TT]   ${relevant.length}/${videos.length} relevant after signal filter`);
+            console.log(`[SV:TT]   ${relevant.length}/${videos.length} relevant (non-provider) after filter`);
 
             for (const video of relevant.slice(0, 5)) {
                 all.push({
@@ -489,9 +494,9 @@ async function scrapeTikTok(maxPosts = 30) {
                     source: `sv:tt:kw:${q}`,
                 });
 
-                // Hydrate comments ONLY if fresh + strong signal
+                // Hydrate comments — only for buyer-signal videos (provider video comments = noise)
                 const sig = signalScores(video.content || '');
-                if (video.url && sig.any >= 20 && isFresh(video.created_at, 10)) {
+                if (video.url && sig.buyer && sig.any >= 20 && isFresh(video.created_at, 10)) {
                     try {
                         await delay(1500);
                         const comments = await ttGetVideoComments(video.url, `sv:tt:comments:${q}`);
@@ -502,13 +507,13 @@ async function scrapeTikTok(maxPosts = 30) {
                                 parent_excerpt: (video.content || '').slice(0, 300),
                                 parent_created_at: video.created_at || null,
                             })));
-                            console.log(`[SV:TT]   ↳ ${comments.length} comments (signal=${sig.any})`);
+                            console.log(`[SV:TT]   ↳ ${comments.length} comments (signal=${sig.any}, buyer=${sig.buyer})`);
                         }
                     } catch (e) {
                         console.warn(`[SV:TT]   ↳ comments err: ${e.message}`);
                     }
                 } else if (video.url) {
-                    console.log(`[SV:TT]   ↳ skip comments (${sig.any < 20 ? 'weak signal' : 'old video'})`);
+                    console.log(`[SV:TT]   ↳ skip comments (${!sig.buyer ? 'not buyer' : sig.any < 20 ? 'weak signal' : 'old video'})`);
                 }
                 await delay(1000);
             }
