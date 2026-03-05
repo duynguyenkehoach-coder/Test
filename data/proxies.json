@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-03-05T08:21:52.628Z",
+  "last_updated": "2026-03-05T09:35:57.192Z",
   "providers": {
     "iproyal": {
       "name": "IPRoyal",
@@ -20,12 +20,12 @@
       "type": "residential",
       "region": "US",
       "latency": null,
-      "fail_count": 1,
+      "fail_count": 2,
       "success_count": 0,
       "last_used": null,
-      "last_checked": "2026-03-05T08:21:52.628Z",
+      "last_checked": "2026-03-05T09:35:57.189Z",
       "status": "cooling_down",
-      "cooldown_until": "2026-03-05T08:51:52.628Z"
+      "cooldown_until": "2026-03-05T10:05:57.189Z"
     }
   ],
   "blacklisted_proxies": []

@@ -105,6 +105,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .nav-item {
@@ -168,8 +170,9 @@ body {
 }
 
 .sidebar-footer {
-  padding: 20px;
+  padding: 16px 20px;
   border-top: 1px solid var(--glass-border);
+  flex-shrink: 0;
 }
 
 .scan-status-box {
@@ -1615,12 +1618,14 @@ body.light-mode .lead-response {
 /* Agent Brain Panel (Sidebar)                             */
 /* ═══════════════════════════════════════════════════════ */
 .agent-panel {
-  margin: 16px 16px 8px;
-  padding: 14px;
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(59, 130, 246, 0.08));
-  border: 1px solid rgba(139, 92, 246, 0.15);
-  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin: 8px 12px;
+  background: rgba(59, 130, 246, 0.05);
+  border: 1px solid rgba(59, 130, 246, 0.15);
+  border-radius: 10px;
+  flex-shrink: 0;
 }
+
 
 .agent-panel-title {
   font-size: 0.85rem;
