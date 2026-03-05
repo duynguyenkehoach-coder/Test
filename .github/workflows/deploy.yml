@@ -1,0 +1,29 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚀 Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            cd /root/THG_tool
+            echo "📥 Pulling latest changes..."
+            git stash
+            git pull origin main
+            git stash pop || true
+            echo "📦 Installing dependencies..."
+            npm install --production
+            echo "🔄 Restarting PM2..."
+            pm2 restart thg-lead-gen || pm2 start src/index.js --name thg-lead-gen
+            pm2 save
+            echo "✅ Deploy complete!"
