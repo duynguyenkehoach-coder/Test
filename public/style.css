@@ -1868,11 +1868,106 @@ body.light-mode .feedback-btn {
 }
 
 .lead-tab-panel {
-  padding: 8px 0 4px;
+  padding: 10px 0 4px;
 }
 
 .lead-feedback-inline {
   padding: 4px 0;
+}
+
+/* ── Tab Textareas & Inputs ── */
+.response-textarea,
+.notes-textarea,
+.feedback-textarea {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 8px 12px;
+  font-size: 13px;
+  resize: vertical;
+  min-height: 44px;
+  outline: none;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+
+.response-textarea:focus,
+.notes-textarea:focus,
+.feedback-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* ── Tab Action Buttons ── */
+.copy-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.copy-btn:hover {
+  background: rgba(139, 92, 246, 0.2);
+  color: #fff;
+  border-color: rgba(139, 92, 246, 0.5);
+}
+
+.feedback-quick-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.feedback-tag {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.feedback-tag:hover {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.feedback-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.feedback-send-btn {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #fff;
+  border: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.feedback-send-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.5);
 }
 
 /* Light mode overrides */
@@ -1897,4 +1992,24 @@ body.light-mode .lead-action-bar {
 
 body.light-mode .lead-tabs {
   border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+
+body.light-mode .response-textarea,
+body.light-mode .notes-textarea,
+body.light-mode .feedback-textarea {
+  background: #f8f9fa;
+  border-color: #e5e7eb;
+  color: #1f2937;
+}
+
+body.light-mode .copy-btn {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+  color: #4b5563;
+}
+
+body.light-mode .feedback-tag {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+  color: #4b5563;
 }

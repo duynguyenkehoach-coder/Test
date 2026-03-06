@@ -198,9 +198,9 @@ function renderLeadCard(lead) {
 
           <!-- ─── TABBED FOOTER ─── -->
           <div class="lead-tabs">
-            <button class="lead-tab lead-tab--active" onclick="switchTab(${lead.id},'response',this)">💬 Response</button>
-            <button class="lead-tab" onclick="switchTab(${lead.id},'notes',this)">📝 Notes</button>
-            <button class="lead-tab" onclick="switchTab(${lead.id},'agent',this)">🧠 Agent</button>
+            <button class="lead-tab lead-tab--active" onclick="switchLeadTab(${lead.id},'response',this)">💬 Response</button>
+            <button class="lead-tab" onclick="switchLeadTab(${lead.id},'notes',this)">📝 Notes</button>
+            <button class="lead-tab" onclick="switchLeadTab(${lead.id},'agent',this)">🧠 Agent</button>
           </div>
 
           <!-- Tab: Response -->
@@ -251,7 +251,7 @@ function debounceSearch() {
 // ═══════════════════════════════════════════════════════
 // Tab switching for lead card footer
 // ═══════════════════════════════════════════════════════
-function switchTab(leadId, tab, btnEl) {
+function switchLeadTab(leadId, tab, btnEl) {
   const tabs = ['response', 'notes', 'agent'];
   tabs.forEach(t => {
     const panel = document.getElementById(`tab-${t}-${leadId}`);
