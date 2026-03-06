@@ -49,13 +49,30 @@ async function loadLeads() {
         if (minScore) params.set('minScore', minScore);
         if (search) params.set('search', search);
 
+        // Tell backend to hide ignored leads from main dashboard
+        params.set('exclude_ignored', 'true');
+
         const res = await fetch(`/api/leads?${params}`);
         const { data, count } = await res.json();
         AppState.leads = data || [];
         document.getElementById('leadsCount').textContent = `${count || 0} leads`;
+        document.getElementById('tabLeadsCount').textContent = count || 0;
         renderLeads();
     } catch (err) {
         console.error('Failed to load leads:', err);
+    }
+}
+
+async function loadIgnoredLeads() {
+    try {
+        const res = await fetch(`/api/leads?status=ignored`);
+        const { data, count } = await res.json();
+        AppState.ignoredLeads = data || [];
+        document.getElementById('ignoredCount').textContent = `${count || 0} leads`;
+        document.getElementById('tabIgnoredCount').textContent = count || 0;
+        renderIgnoredLeads();
+    } catch (err) {
+        console.error('Failed to load ignored leads:', err);
     }
 }
 

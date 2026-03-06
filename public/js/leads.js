@@ -8,24 +8,27 @@ function getPostDate(lead) {
   return new Date(dateStr.endsWith('Z') ? dateStr : dateStr + 'Z');
 }
 
-function renderLeads() {
-  const grid = document.getElementById('leadsGrid');
-  if (!AppState.leads || AppState.leads.length === 0) {
+function renderLeadsList(leadsArray, gridId = 'leadsGrid') {
+  const grid = document.getElementById(gridId);
+  if (!leadsArray || leadsArray.length === 0) {
     grid.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🔍</div><h3>No leads found</h3><p>Try adjusting filters or run a new scan.</p></div>`;
     return;
   }
 
-  // Apply Date & Time Filters
+  // Apply Date & Time Filters (only for leadsGrid, ignoredGrid usually doesn't need it, but we can keep it safe)
   const filterDate = document.getElementById('filterDate')?.value;
   const filterTime = document.getElementById('filterTime')?.value;
 
-  const filteredLeads = AppState.leads.filter(lead => {
+  const filteredLeads = leadsArray.filter(lead => {
+    // If we're on ignoredGrid, bypass time filter for simplicity or keep it if wanted
+    if (gridId === 'ignoredGrid') return true;
+
     if (!filterDate && !filterTime) return true;
 
     const dt = getPostDate(lead);
     const d = dt.toLocaleDateString('sv-SE');
     const h = String(dt.getHours()).padStart(2, '0');
-    const t = `${h}:00`; // Filter by hourly slots
+    const t = `${h}:00`;
 
     if (filterDate && d !== filterDate) return false;
     if (filterTime && t !== filterTime) return false;
@@ -74,6 +77,14 @@ function renderLeads() {
   }
 
   grid.innerHTML = html;
+}
+
+function renderLeads() {
+  renderLeadsList(AppState.leads, 'leadsGrid');
+}
+
+function renderIgnoredLeads() {
+  renderLeadsList(AppState.ignoredLeads, 'ignoredGrid');
 }
 
 function groupLeadsByDateTime(leads) {

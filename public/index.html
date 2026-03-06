@@ -55,6 +55,11 @@
           <span class="nav-text">Credits</span>
           <span class="nav-badge" id="tabCreditsCount">0</span>
         </button>
+        <button class="nav-item" id="tabIgnored" onclick="switchTab('ignored')">
+          <span class="nav-icon" style="color:#ef4444;">⛔</span>
+          <span class="nav-text" style="color:#ef4444;">Agent Training</span>
+          <span class="nav-badge" id="tabIgnoredCount" style="background:rgba(239,68,68,0.1);color:#ef4444;">0</span>
+        </button>
 
         <div class="nav-divider"></div>
         <button class="nav-item" onclick="toggleTheme()">
@@ -159,7 +164,6 @@
               <option value="new">🆕 New</option>
               <option value="contacted">📞 Contacted</option>
               <option value="converted">✅ Converted</option>
-              <option value="ignored">⛔ Ignored</option>
             </select>
             <select class="filter-select" id="filterScore" onchange="loadLeads()">
               <option value="">All Scores</option>
@@ -189,6 +193,26 @@
               <div class="empty-state-icon">🔍</div>
               <h3>No leads yet</h3>
               <p>Click "Start Scan" to find potential leads.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========== IGNORED & TRAINING TAB ========== -->
+        <div id="ignoredTab" style="display: none;">
+          <div class="filter-bar" style="background: rgba(239, 68, 68, 0.05); border-color: rgba(239, 68, 68, 0.1);">
+            <label style="color: #ef4444; font-weight: 600;">⛔ Focus: Agent Training</label>
+            <span style="font-size:0.9rem; color:var(--text-secondary);">Những bài đăng bị Sale loại bỏ (Ignore). Môi
+              trường để kiểm tra và Feedback giúp AI thông minh hơn.</span>
+            <div style="flex:1"></div>
+            <button class="btn btn-secondary" onclick="loadIgnoredLeads()"
+              style="font-size:0.85rem;padding:8px 14px;">🔄 Làm mới</button>
+            <span class="leads-count" id="ignoredCount">0 leads</span>
+          </div>
+          <div class="leads-grid" id="ignoredGrid">
+            <div class="empty-state">
+              <div class="empty-state-icon">✅</div>
+              <h3>Không có bài bị loại</h3>
+              <p>Mọi thứ đang hoạt động tốt.</p>
             </div>
           </div>
         </div>

@@ -140,6 +140,8 @@ const getLeads = (filters = {}) => {
   if (filters.status) {
     query += ' AND status = @status';
     params.status = filters.status;
+  } else if (filters.exclude_ignored === 'true' || filters.exclude_ignored === true) {
+    query += " AND status != 'ignored'";
   }
   if (filters.minScore) {
     query += ' AND score >= @minScore';

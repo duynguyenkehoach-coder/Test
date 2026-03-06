@@ -16,24 +16,28 @@ const AppState = {
 function switchTab(tab) {
     AppState.currentTab = tab;
     document.getElementById('leadsTab').style.display = tab === 'leads' ? '' : 'none';
+    document.getElementById('ignoredTab').style.display = tab === 'ignored' ? '' : 'none';
     document.getElementById('inboxTab').style.display = tab === 'inbox' ? '' : 'none';
     document.getElementById('dataTab').style.display = tab === 'data' ? '' : 'none';
     document.getElementById('analyticsTab').style.display = tab === 'analytics' ? '' : 'none';
     document.getElementById('creditsTab').style.display = tab === 'credits' ? '' : 'none';
+
     document.getElementById('tabLeads').classList.toggle('active', tab === 'leads');
+    document.getElementById('tabIgnored').classList.toggle('active', tab === 'ignored');
     document.getElementById('tabInbox').classList.toggle('active', tab === 'inbox');
     document.getElementById('tabData').classList.toggle('active', tab === 'data');
     document.getElementById('tabAnalytics').classList.toggle('active', tab === 'analytics');
     document.getElementById('tabCredits').classList.toggle('active', tab === 'credits');
 
     // Update page title
-    const titles = { leads: 'Leads Database', inbox: 'AI Copilot Inbox', data: 'Data Archives', analytics: 'Analytics Dashboard', credits: 'Credit Usage' };
+    const titles = { leads: 'Leads Database', ignored: 'Agent Training (Ignored Leads)', inbox: 'AI Copilot Inbox', data: 'Data Archives', analytics: 'Analytics Dashboard', credits: 'Credit Usage' };
     document.getElementById('pageTitleText').textContent = titles[tab] || 'Dashboard';
 
     if (tab === 'inbox') loadConversations();
     if (tab === 'data') loadDataFiles();
     if (tab === 'analytics') loadAnalytics();
     if (tab === 'credits') loadCredits();
+    if (tab === 'ignored') loadIgnoredLeads();
 }
 
 // --- Dark/Light Mode ---

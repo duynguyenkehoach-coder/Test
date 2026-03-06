@@ -142,6 +142,7 @@ app.get('/api/leads', (req, res) => {
             platform: req.query.platform || null,
             category: req.query.category || null,
             status: req.query.status || null,
+            exclude_ignored: req.query.exclude_ignored === 'true',
             minScore: req.query.minScore ? parseInt(req.query.minScore) : null,
             search: req.query.search || null,
             limit: req.query.limit ? parseInt(req.query.limit) : 100,
