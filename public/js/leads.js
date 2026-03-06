@@ -147,10 +147,9 @@ function renderLeadCard(lead) {
   const assigned = lead.assigned_to || '';
   const staffPills = STAFF.map(name => {
     const isAssigned = assigned === name;
-    const initials = name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
     return `<button class="staff-pill ${isAssigned ? 'staff-pill--active' : ''}" 
       onclick="assignStaff(${lead.id}, '${name}', this)" 
-      title="${name}">${initials}</button>`;
+      title="Giao lead cho ${name}">${name}</button>`;
   }).join('');
 
   return `
@@ -174,7 +173,7 @@ function renderLeadCard(lead) {
             <strong style="color:var(--text);font-size:0.95rem;">
               ${lead.author_url ? `<a href="${lead.author_url}" target="_blank" rel="noopener" style="text-decoration:none;color:var(--accent);">${author}</a>` : author}
             </strong>
-            ${assigned ? `<span style="font-size:11px;color:#8b5cf6;background:rgba(139,92,246,0.1);padding:2px 7px;border-radius:10px;">👤 ${assigned}</span>` : ''}
+            ${assigned ? `<span class="assigned-badge">Phụ trách: <strong>${assigned}</strong></span>` : ''}
           </div>
 
           ${summary ? `<div class="lead-summary">💡 ${summary}</div>` : ''}
@@ -293,8 +292,7 @@ async function assignStaff(leadId, staffName, pillBtn) {
       if (newAssigned && authorRow) {
         const badge = document.createElement('span');
         badge.className = 'assigned-badge';
-        badge.style.cssText = 'font-size:11px;color:#8b5cf6;background:rgba(139,92,246,0.1);padding:2px 7px;border-radius:10px;';
-        badge.textContent = `👤 ${newAssigned}`;
+        badge.innerHTML = `Phụ trách: <strong>${newAssigned}</strong>`;
         authorRow.appendChild(badge);
       }
     }
