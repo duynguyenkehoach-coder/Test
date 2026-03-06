@@ -113,10 +113,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // Auto-refresh intervals
     setInterval(() => {
         loadStats();
+        const activeTag = document.activeElement?.tagName;
+        if (activeTag === 'TEXTAREA' || activeTag === 'INPUT') return; // Pause refresh if typing
         if (AppState.currentTab === 'inbox') loadConversations();
     }, 15000);
 
     setInterval(() => {
+        const activeTag = document.activeElement?.tagName;
+        if (activeTag === 'TEXTAREA' || activeTag === 'INPUT') return; // Pause refresh if typing
         if (AppState.currentTab === 'leads') loadLeads();
     }, 60000);
 });
