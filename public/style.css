@@ -1680,3 +1680,203 @@ body.light-mode .feedback-btn {
   border-color: rgba(0, 0, 0, 0.1);
   color: #475569;
 }
+
+/* ══════════════════════════════════════════════════
+   COMPACT LEAD CARD REDESIGN
+══════════════════════════════════════════════════ */
+.lead-card {
+  border-radius: 12px;
+  padding: 0;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.lead-main {
+  display: flex;
+  gap: 0;
+}
+
+.lead-score-badge {
+  writing-mode: vertical-rl;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  border-radius: 0;
+  flex-shrink: 0;
+}
+
+.lead-score-badge.score-high {
+  background: linear-gradient(180deg, #10b981, #059669);
+  color: #fff;
+}
+
+.lead-score-badge.score-med {
+  background: linear-gradient(180deg, #f59e0b, #d97706);
+  color: #fff;
+}
+
+.lead-score-badge.score-low {
+  background: linear-gradient(180deg, #64748b, #475569);
+  color: #fff;
+}
+
+.lead-body {
+  flex: 1;
+  padding: 12px 14px;
+  min-width: 0;
+}
+
+.lead-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+/* ── Compact Action Bar ── */
+.lead-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 6px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.lab-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  transition: all 0.15s;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.lab-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  transform: scale(1.1);
+}
+
+.lab-active-blue {
+  background: rgba(59, 130, 246, 0.2) !important;
+}
+
+.lab-active-green {
+  background: rgba(16, 185, 129, 0.2) !important;
+}
+
+.lab-active-red {
+  background: rgba(239, 68, 68, 0.15) !important;
+}
+
+/* ── Staff Assignment Pills ── */
+.staff-assign {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.staff-pill {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.staff-pill:hover {
+  border-color: #8b5cf6;
+  color: #8b5cf6;
+  transform: scale(1.15);
+}
+
+.staff-pill--active {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  border-color: #7c3aed;
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.4);
+}
+
+/* ── Tabbed Footer ── */
+.lead-tabs {
+  display: flex;
+  gap: 2px;
+  margin-top: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.lead-tab {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 6px 6px 0 0;
+  transition: all 0.15s;
+}
+
+.lead-tab:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.lead-tab--active {
+  color: var(--accent);
+  background: rgba(139, 92, 246, 0.12);
+  border-bottom: 2px solid var(--accent);
+}
+
+.lead-tab-panel {
+  padding: 8px 0 4px;
+}
+
+.lead-feedback-inline {
+  padding: 4px 0;
+}
+
+/* Light mode overrides */
+body.light-mode .lab-btn {
+  background: rgba(0, 0, 0, 0.04);
+  color: #374151;
+}
+
+body.light-mode .lab-btn:hover {
+  background: rgba(0, 0, 0, 0.09);
+}
+
+body.light-mode .staff-pill {
+  background: rgba(0, 0, 0, 0.04);
+  color: #6b7280;
+  border-color: #d1d5db;
+}
+
+body.light-mode .lead-action-bar {
+  border-top-color: rgba(0, 0, 0, 0.07);
+}
+
+body.light-mode .lead-tabs {
+  border-bottom-color: rgba(0, 0, 0, 0.08);
+}

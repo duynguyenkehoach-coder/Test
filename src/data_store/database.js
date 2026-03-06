@@ -91,6 +91,9 @@ try {
 try {
   db.exec(`ALTER TABLE leads ADD COLUMN author_avatar TEXT DEFAULT ''`);
 } catch { /* column already exists */ }
+try {
+  db.exec(`ALTER TABLE leads ADD COLUMN assigned_to TEXT DEFAULT ''`);
+} catch { /* column already exists */ }
 
 // --- Lead Bank columns (Phase: Data Collection) ---
 try {

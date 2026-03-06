@@ -142,83 +142,103 @@ function renderLeadCard(lead) {
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
   });
 
-  return `
-    <div class="lead-card ${lead.status !== 'new' ? 'status-' + lead.status : ''}" data-id="${lead.id}">
-      <div class="score-badge ${scoreClass}">${lead.score}</div>
-      <div class="lead-body">
-        <div class="lead-meta" style="flex-wrap: wrap; gap: 6px;">
-          <span class="platform-badge platform-${lead.platform}">${platformIcons[lead.platform] || '🌐'} ${lead.platform}</span>
-          <span class="category-tag">${categoryEmojis[lead.category] || '🏷️'} ${lead.category || 'N/A'}</span>
-          <span class="urgency-tag urgency-${lead.urgency || 'low'}">${lead.urgency || 'low'}</span>
-          ${lead.role === 'buyer' ? '<span class="category-tag" style="background:rgba(16,185,129,0.15);color:#10b981;">🎯 Buyer</span>' : ''}
-          ${lead.status !== 'new' ? `<span class="category-tag" style="background:rgba(59,130,246,0.1);color:#3b82f6;">● ${lead.status}</span>` : ''}
-          <span class="category-tag" style="opacity:0.9; background:#f1f5f9; color:#475569; border: 1px solid #cbd5e1;">✏️ Đăng: ${exactTimeStr}</span>
-          <span class="category-tag" style="opacity:0.8;${timeStr.includes('ngày') ? 'color:#ef4444;background:rgba(239,68,68,0.1);' : 'color:#10b981;background:rgba(16,185,129,0.1);'}">${timeStr}</span>
-        </div>
-        <div class="lead-author" style="margin-top: 8px; display:flex; align-items:center; gap:10px;">
-          ${lead.author_avatar ? `<img src="${lead.author_avatar}" alt="" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--border);" onerror="this.style.display='none'">` : '<span style="font-size:1.6rem;">👤</span>'}
-          <strong style="color:var(--text);font-size:1.05rem;">
-            ${lead.author_url ? `<a href="${lead.author_url}" target="_blank" rel="noopener" style="text-decoration:none;color:var(--accent);">${author}</a>` : author}
-          </strong>
-        </div>
-        ${summary ? `<div class="lead-summary">💡 ${summary}</div>` : ''}
-        ${lead.buyer_signals ? `<div class="lead-summary" style="color:var(--accent);opacity:0.8;">🎯 ${escapeHtml(lead.buyer_signals)}</div>` : ''}
-        <div class="lead-content" id="content-${lead.id}">
-          ${content}
-          <div class="lead-content-fade" id="fade-${lead.id}"></div>
-        </div>
-        <button class="expand-btn" onclick="toggleContent(${lead.id})">Show more ▼</button>
+  // Staff assignment pills
+  const STAFF = ['Trang', 'Min', 'Moon', 'Lê Huyền', 'Ngọc Huyền'];
+  const assigned = lead.assigned_to || '';
+  const staffPills = STAFF.map(name => {
+    const isAssigned = assigned === name;
+    const initials = name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+    return `<button class="staff-pill ${isAssigned ? 'staff-pill--active' : ''}" 
+      onclick="assignStaff(${lead.id}, '${name}', this)" 
+      title="${name}">${initials}</button>`;
+  }).join('');
 
-        <!--Editable Response-->
-        <div class="lead-response">
-          <div class="lead-response-header">
-            <span class="lead-response-label">💬 Response (editable)</span>
-            <div style="display:flex;gap:6px;">
+  return `
+    <div class="lead-card ${scoreClass}" id="lead-${lead.id}" data-lead-id="${lead.id}">
+      <div class="lead-main">
+        <div class="lead-score-badge ${scoreClass}">${lead.score}</div>
+        <div class="lead-body">
+
+          <!-- Header tags -->
+          <div class="lead-tags">
+            <span class="platform-badge platform-${lead.platform}">${platformIcons[lead.platform] || '🌐'} ${lead.platform}</span>
+            <span class="category-tag">${categoryEmojis[lead.category] || '🏷️'} ${lead.category || 'N/A'}</span>
+            ${lead.role === 'buyer' ? '<span class="category-tag" style="background:rgba(16,185,129,0.15);color:#10b981;">🎯 Buyer</span>' : ''}
+            ${lead.status !== 'new' ? `<span class="category-tag" style="background:rgba(59,130,246,0.1);color:#3b82f6;">● ${lead.status}</span>` : ''}
+            <span class="category-tag" style="opacity:0.8;color:#94a3b8;">🕐 ${timeStr}</span>
+          </div>
+
+          <!-- Author -->
+          <div class="lead-author" style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+            ${lead.author_avatar ? `<img src="${lead.author_avatar}" alt="" style="width:28px;height:28px;border-radius:50%;object-fit:cover;border:2px solid var(--border);" onerror="this.style.display='none'">` : '<span style="font-size:1.2rem;">👤</span>'}
+            <strong style="color:var(--text);font-size:0.95rem;">
+              ${lead.author_url ? `<a href="${lead.author_url}" target="_blank" rel="noopener" style="text-decoration:none;color:var(--accent);">${author}</a>` : author}
+            </strong>
+            ${assigned ? `<span style="font-size:11px;color:#8b5cf6;background:rgba(139,92,246,0.1);padding:2px 7px;border-radius:10px;">👤 ${assigned}</span>` : ''}
+          </div>
+
+          ${summary ? `<div class="lead-summary">💡 ${summary}</div>` : ''}
+          ${lead.buyer_signals ? `<div class="lead-summary" style="color:var(--accent);opacity:0.8;">🎯 ${escapeHtml(lead.buyer_signals)}</div>` : ''}
+
+          <!-- Content -->
+          <div class="lead-content" id="content-${lead.id}">${content}<div class="lead-content-fade" id="fade-${lead.id}"></div></div>
+          <button class="expand-btn" onclick="toggleContent(${lead.id})">Xem thêm ▼</button>
+
+          <!-- ─── COMPACT ACTION BAR ─── -->
+          <div class="lead-action-bar">
+            ${lead.post_url ? `<a href="${lead.post_url}" target="_blank" rel="noopener" class="lab-btn" title="Xem post">🔗</a>` : ''}
+            ${lead.author_url ? `<a href="${lead.author_url}" target="_blank" rel="noopener" class="lab-btn" title="Profile">👤</a>` : ''}
+            <button class="lab-btn ${lead.status === 'contacted' ? 'lab-active-blue' : ''}" onclick="contactLead(${lead.id})" title="Contacted">📞</button>
+            <button class="lab-btn ${lead.status === 'converted' ? 'lab-active-green' : ''}" onclick="convertLead(${lead.id})" title="Converted">✅</button>
+            <button class="lab-btn ${lead.status === 'ignored' ? 'lab-active-red' : ''}" onclick="updateStatus(${lead.id}, 'ignored')" title="Ignore">⛔</button>
+            <button class="lab-btn" onclick="deleteLead(${lead.id})" title="Xóa" style="color:#ef4444;">🗑️</button>
+            <div style="flex:1"></div>
+            <!-- Staff assignment -->
+            <div class="staff-assign" title="Assign nhân viên">${staffPills}</div>
+          </div>
+
+          <!-- ─── TABBED FOOTER ─── -->
+          <div class="lead-tabs">
+            <button class="lead-tab lead-tab--active" onclick="switchTab(${lead.id},'response',this)">💬 Response</button>
+            <button class="lead-tab" onclick="switchTab(${lead.id},'notes',this)">📝 Notes</button>
+            <button class="lead-tab" onclick="switchTab(${lead.id},'agent',this)">🧠 Agent</button>
+          </div>
+
+          <!-- Tab: Response -->
+          <div class="lead-tab-panel" id="tab-response-${lead.id}">
+            <div style="display:flex;gap:6px;margin-bottom:4px;">
               <button class="copy-btn" onclick="copyResponse(${lead.id})">📋 Copy</button>
               <button class="copy-btn" onclick="saveResponse(${lead.id})">💾 Save</button>
             </div>
+            <textarea class="response-textarea" id="response-${lead.id}" rows="3">${lead.suggested_response || ''}</textarea>
           </div>
-          <textarea class="response-textarea" id="response-${lead.id}" rows="3">${lead.suggested_response || ''}</textarea>
-        </div>
 
-        <!--Notes-->
-        <div class="lead-notes">
-          <div class="lead-response-header">
-            <span class="lead-response-label">📝 Notes</span>
-            <button class="copy-btn" onclick="saveNotes(${lead.id})">💾 Save</button>
+          <!-- Tab: Notes -->
+          <div class="lead-tab-panel" id="tab-notes-${lead.id}" style="display:none;">
+            <div style="display:flex;gap:6px;margin-bottom:4px;">
+              <button class="copy-btn" onclick="saveNotes(${lead.id})">💾 Save ghi chú</button>
+            </div>
+            <textarea class="notes-textarea" id="notes-${lead.id}" rows="2" placeholder="Ghi chú: giá đã báo, deal progress...">${lead.notes || ''}</textarea>
           </div>
-          <textarea class="notes-textarea" id="notes-${lead.id}" rows="2" placeholder="Ghi chú: giá đã báo, deal progress...">${lead.notes || ''}</textarea>
-        </div>
 
-        <!--Agent Feedback-->
-        <div class="lead-feedback" id="feedback-${lead.id}">
-          <div class="lead-response-header">
-            <span class="lead-response-label">🧠 Dạy Agent</span>
-            <span class="feedback-status" id="feedback-status-${lead.id}"></span>
+          <!-- Tab: Dạy Agent -->
+          <div class="lead-tab-panel" id="tab-agent-${lead.id}" style="display:none;">
+            <div class="lead-feedback-inline">
+              <span class="feedback-status" id="feedback-status-${lead.id}"></span>
+              <div class="feedback-quick-tags">
+                <button class="feedback-tag" onclick="quickFeedback(${lead.id}, 'correct', null, '✅ Đúng — buyer xác nhận')">✅ Đúng</button>
+                <button class="feedback-tag" onclick="quickFeedback(${lead.id}, 'wrong', 'provider', '❌ Sai — provider/đối thủ')">❌ Sai→Provider</button>
+                <button class="feedback-tag" onclick="insertTag(${lead.id}, '⬆️ Score nên cao hơn, khoảng ')">⬆️ Nâng</button>
+                <button class="feedback-tag" onclick="insertTag(${lead.id}, '⬇️ Score nên thấp hơn, khoảng ')">⬇️ Giảm</button>
+              </div>
+              <div class="feedback-input-row">
+                <textarea class="feedback-textarea" id="feedback-text-${lead.id}" rows="2" placeholder="Ghi chú thêm cho Agent..."></textarea>
+                <button class="feedback-send-btn" onclick="sendFeedback(${lead.id})">📤</button>
+              </div>
+            </div>
           </div>
-          <div class="feedback-quick-tags">
-            <button class="feedback-tag" onclick="quickFeedback(${lead.id}, 'correct', null, '✅ Đúng — buyer xác nhận')">✅ Đúng</button>
-            <button class="feedback-tag" onclick="quickFeedback(${lead.id}, 'wrong', 'provider', '❌ Sai — đây là provider/đối thủ')">❌ Sai→Provider</button>
-            <button class="feedback-tag" onclick="insertTag(${lead.id}, '⬆️ Score nên cao hơn, khoảng ')">⬆️ Nâng</button>
-            <button class="feedback-tag" onclick="insertTag(${lead.id}, '⬇️ Score nên thấp hơn, khoảng ')">⬇️ Giảm</button>
-          </div>
-          <div class="feedback-input-row">
-            <textarea class="feedback-textarea" id="feedback-text-${lead.id}" rows="2" 
-              placeholder="Nhập feedback: VD 'Post này là buyer rõ ràng, đang tìm kho US cho TikTok Shop, nên chấm 85-90'"></textarea>
-            <button class="feedback-send-btn" onclick="sendFeedback(${lead.id})">
-              📤 Gửi
-            </button>
-          </div>
-        </div>
 
-      </div>
-      <div class="lead-actions">
-        ${lead.author_url ? `<a href="${lead.author_url}" target="_blank" rel="noopener" class="action-btn" style="background:rgba(59,130,246,0.1);color:#3b82f6;font-weight:600;">👤 Profile</a>` : ''}
-        ${lead.post_url ? `<a href="${lead.post_url}" target="_blank" rel="noopener" class="action-btn view-post-btn">🔗 View Post</a>` : ''}
-        <button class="action-btn ${lead.status === 'contacted' ? 'active-contacted' : ''}" onclick="contactLead(${lead.id})">📞 Contacted</button>
-        <button class="action-btn ${lead.status === 'converted' ? 'active-converted' : ''}" onclick="convertLead(${lead.id})">✅ Converted</button>
-        <button class="action-btn ${lead.status === 'ignored' ? 'active-ignored' : ''}" onclick="updateStatus(${lead.id}, 'ignored')">⛔ Ignore</button>
-        <button class="action-btn" style="color:#ef4444;" onclick="deleteLead(${lead.id})">🗑️ Delete</button>
+        </div>
       </div>
     </div>
   `;
@@ -228,6 +248,62 @@ function debounceSearch() {
   clearTimeout(AppState.searchTimeout);
   AppState.searchTimeout = setTimeout(() => loadLeads(), 400);
 }
+
+// ═══════════════════════════════════════════════════════
+// Tab switching for lead card footer
+// ═══════════════════════════════════════════════════════
+function switchTab(leadId, tab, btnEl) {
+  const tabs = ['response', 'notes', 'agent'];
+  tabs.forEach(t => {
+    const panel = document.getElementById(`tab-${t}-${leadId}`);
+    if (panel) panel.style.display = t === tab ? '' : 'none';
+  });
+  // Update active tab button
+  if (btnEl) {
+    const allTabs = btnEl.closest('.lead-tabs')?.querySelectorAll('.lead-tab');
+    allTabs?.forEach(b => b.classList.remove('lead-tab--active'));
+    btnEl.classList.add('lead-tab--active');
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// Staff Assignment
+// ═══════════════════════════════════════════════════════
+async function assignStaff(leadId, staffName, pillBtn) {
+  const card = document.getElementById(`lead-${leadId}`);
+  const allPills = card?.querySelectorAll('.staff-pill');
+  const currentAssigned = pillBtn?.classList.contains('staff-pill--active');
+  const newAssigned = currentAssigned ? '' : staffName; // toggle off if same
+
+  try {
+    const resp = await fetch(`/api/leads/${leadId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assigned_to: newAssigned }),
+    });
+    const data = await resp.json();
+    if (data.ok || data.id) {
+      // Update pills UI
+      allPills?.forEach(p => p.classList.remove('staff-pill--active'));
+      if (newAssigned) pillBtn?.classList.add('staff-pill--active');
+      // Update badge in author row
+      const authorRow = card?.querySelector('.lead-author');
+      const existingBadge = authorRow?.querySelector('.assigned-badge');
+      if (existingBadge) existingBadge.remove();
+      if (newAssigned && authorRow) {
+        const badge = document.createElement('span');
+        badge.className = 'assigned-badge';
+        badge.style.cssText = 'font-size:11px;color:#8b5cf6;background:rgba(139,92,246,0.1);padding:2px 7px;border-radius:10px;';
+        badge.textContent = `👤 ${newAssigned}`;
+        authorRow.appendChild(badge);
+      }
+    }
+  } catch (err) {
+    console.error('assignStaff error:', err);
+  }
+}
+
+
 
 // ═══════════════════════════════════════════════════════
 // Agent Feedback — Text-based learning

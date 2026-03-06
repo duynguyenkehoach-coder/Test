@@ -832,4 +832,23 @@ app.get('/api/agent/feedback-history', (req, res) => {
     }
 });
 
+// PATCH /api/leads/:id — Update any safe field (assigned_to, status, notes, etc.)
+app.patch('/api/leads/:id', (req, res) => {
+    try {
+        const { id } = req.params;
+        const ALLOWED = ['assigned_to', 'status', 'notes', 'suggested_response'];
+        const updates = Object.fromEntries(
+            Object.entries(req.body).filter(([k]) => ALLOWED.includes(k))
+        );
+        if (!Object.keys(updates).length) return res.status(400).json({ ok: false, error: 'No valid fields' });
+        const sets = Object.keys(updates).map(k => `${k} = @${k}`).join(', ');
+        database.db.prepare(`UPDATE leads SET ${sets}, updated_at = datetime('now') WHERE id = @id`)
+            .run({ ...updates, id });
+        const lead = database.db.prepare('SELECT * FROM leads WHERE id = ?').get(id);
+        res.json({ ok: true, ...lead });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
 module.exports = { app, startServer };
