@@ -80,7 +80,7 @@ function toArr(raw) {
 // ════════════════════════════════════════════════════════
 // ROTATION BATCH SIZES
 // ════════════════════════════════════════════════════════
-const FB_GROUPS_PER_SCAN = 8;  // tăng từ 6→8: 21 groups, full cycle mỗi ~2.5 scans
+const FB_GROUPS_PER_SCAN = 30;  // 30/107 groups per scan — full cycle mỗi ~3.5 scans
 const FB_COMPETITORS_PER_SCAN = 1;  // reduced: competitor pages mostly provider content
 const TT_HASHTAGS_PER_SCAN = 4;
 const IG_ACCOUNTS_PER_SCAN = 3;
