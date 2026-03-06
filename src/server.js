@@ -700,6 +700,50 @@ if (require.main === module) {
 }
 
 // ╔══════════════════════════════════════════════════════╗
+// ║  GROUP DISCOVERY DATABASE API                         ║
+// ╚══════════════════════════════════════════════════════╝
+const groupDiscovery = require('./agent/groupDiscovery');
+// Initialize on startup (seeds 107 groups if empty)
+try { groupDiscovery.getDb(); logger.info('GroupDB', `Group database initialized`); } catch (e) { logger.warn('GroupDB', e.message); }
+
+// GET /api/groups — List all groups with optional filters
+app.get('/api/groups', (req, res) => {
+    try {
+        const { category, status, limit } = req.query;
+        const groups = groupDiscovery.getAllGroups({ category, status, limit: limit ? parseInt(limit) : undefined });
+        res.json({ ok: true, data: groups, count: groups.length });
+    } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// GET /api/groups/stats — Group database stats
+app.get('/api/groups/stats', (req, res) => {
+    try {
+        res.json({ ok: true, data: groupDiscovery.getStats() });
+    } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// POST /api/groups — Add new group manually
+app.post('/api/groups', (req, res) => {
+    try {
+        const { name, url, category, relevance_score, notes } = req.body;
+        if (!name || !url) return res.status(400).json({ ok: false, error: 'name and url required' });
+        groupDiscovery.upsertGroup({ name, url, category: category || 'unknown', relevance_score: relevance_score || 50, notes });
+        res.json({ ok: true, message: `Group '${name}' added/updated` });
+    } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// PATCH /api/groups/:id — Update group score or status
+app.patch('/api/groups/:id', (req, res) => {
+    try {
+        const { url, relevance_score, status } = req.body;
+        if (!url) return res.status(400).json({ ok: false, error: 'url required' });
+        if (relevance_score !== undefined) groupDiscovery.updateScore(url, relevance_score);
+        if (status) groupDiscovery.setStatus(url, status);
+        res.json({ ok: true });
+    } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// ╔══════════════════════════════════════════════════════╗
 // ║  AGENT FEEDBACK API                                   ║
 // ╚══════════════════════════════════════════════════════╝
 const memoryStore = require('./agent/memoryStore');
