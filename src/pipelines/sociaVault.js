@@ -85,7 +85,7 @@ const IG_ACCOUNTS_PER_SCAN = 3;
 // PERSONA CLASSIFIER — enhanced dual-agent filtering
 // ════════════════════════════════════════════════════════
 
-// Provider signals (sale/advertising) — EXPANDED
+// Provider signals (sale/advertising) — EXPANDED with log evidence
 const PROVIDER_SIGNALS = [
     'bên em', 'bên mình', 'bên em chuyên', 'chúng tôi', 'nhận vận chuyển', 'nhận ship', 'nhận gửi',
     'dịch vụ', 'cam kết', 'giá rẻ', 'giá rẻ nhất', 'uy tín', 'hotline', 'liên hệ', 'lh',
@@ -95,7 +95,15 @@ const PROVIDER_SIGNALS = [
     'nhận sll', 'bao thuế', 'tuyến bay riêng', 'chiết khấu', 'hỗ trợ 24/7',
     'fullfillment giá tốt', 'kho em có sẵn', 'liên hệ ngay', 'hỗ trợ chi tiết',
     'đội ngũ', 'kinh nghiệm', 'năm kinh nghiệm', 'chuyên nghiệp',
-    'zalo em', 'zl em', 'ib em', 'inbox mình', 'ib mình'
+    'zalo em', 'zl em', 'ib em', 'inbox mình', 'ib mình',
+    // NEW: from real log evidence
+    'nhà làm', 'sản xuất', 'manufacturing', 'new product', 'new products',
+    'ib me', 'dm me', 'dm for', 'order now', 'mua ngay', 'đặt ngay',
+    'cont hàng', 'hàng tiểu ngạch', 'hàng chính ngạch', 'approved dùm',
+    'chương trình ưu đãi', 'ưu đãi', 'khuyến mãi', 'flash sale',
+    'nhà phân phối', 'đại lý', 'reseller', 'wholesale', 'sỉ lẻ',
+    'gate', 'happpy', 'happy international', 'sunnie bay',
+    '0903', '0909', '0912', '0918', '0938', '0968', '0978',  // Vietnamese phone patterns
 ];
 
 // Buyer/seeker signals (people looking for services) — EXPANDED
@@ -189,16 +197,37 @@ function isRealCustomerComment(text) {
 function signalScores(text = '') {
     const s = text.toLowerCase();
 
-    // Hard negatives (noise + wrong-route + non-business personal shipping)
+    // Hard negatives — noise, wrong-route, personal, irrelevant content
     const neg = [
-        'tuyển dụng', 'job', 'giveaway', 'minigame', 'order walmart', 'jammed kitchen',
-        'hiring', 'intern', 'printer', 'labels', 'canvas', 'thêu', 'embroidery',
-        'coaching', 'coach', 'site down', 'support no response'
+        // Job/hiring
+        'tuyển dụng', 'job', 'hiring', 'intern', 'tuyển nhân viên',
+        // Promo noise
+        'giveaway', 'minigame', 'bốc thăm', 'trúng thưởng', 'quay số',
+        // Tech/craft noise
+        'order walmart', 'jammed kitchen', 'printer', 'labels', 'canvas', 'thêu', 'embroidery',
+        'coaching', 'coach', 'site down', 'support no response',
+        // Real estate / housing — NOT shipping customers
+        'bất động sản', 'real estate', 'mua nhà', 'bán nhà', 'phòng share', 'room for rent',
+        'cho thuê phòng', 'rent room', 'mortgage', 'refinance', 'condo', 'townhouse',
+        'metro village', 'discount up to', 'incentive', 'down payment',
+        // Insurance / finance
+        'bảo hiểm', 'insurance', 'obamacare', 'medicare', 'tax return', 'thuế',
+        // Religion / personal
+        'nam mô', 'lạy chúa', 'phật', 'kinh thánh', 'cầu nguyện', 'chúa', 'amen',
+        // Beauty/nail services (local, not shipping)
+        'lông mi', 'nối mi', 'lash', 'nails hiring', 'tiệm nail', 'brow',
+        // Politics / news
+        'tổng thống', 'trump', 'biden', 'quốc hội', 'election', 'congress',
+        // Car sales
+        'bán xe', 'bán honda', 'bán toyota', 'bán camry', 'bán civic',
+        // Travel
+        'du lịch', 'tour', 'vé máy bay', 'booking',
+        // Community events
+        'vui xuân', 'tết', 'lễ hội', 'picnic', 'hội ngộ', 'gala dinner'
     ];
     if (neg.some(x => s.includes(x))) return { express: 0, wh: 0, any: 0, buyer: 0, provider: 0 };
 
     // Food/perishable filter — personal shipping, NOT business customers
-    // THG khách hàng: quần áo, thời trang, nail, sản phẩm thực tế
     const foodSignals = [
         'đồ ăn', 'thực phẩm', 'thức ăn', 'food', 'bánh', 'bánh tráng', 'bánh tét', 'bánh chưng',
         'chả giò', 'nem', 'mắm', 'nước mắm', 'mắm tôm', 'mắm ruốc',
@@ -481,7 +510,7 @@ async function fbGetGroupPosts(groupUrl, groupName) {
     }
 
     try {
-        const data = await svGet('facebook/group/posts', { url: groupUrl, sort_by: 'CHRONOLOGICAL' });
+        const data = await svGet('facebook/group/posts', { url: groupUrl, sort_by: 'CHRONOLOGICAL', count: 20 });
         logCredit('facebook/group/posts', 'facebook', groupName);
 
         const postsArr = toArr(data.posts || data);
@@ -516,7 +545,7 @@ async function scrapeFacebookGroups(maxPosts = 500) {
     let allGroups;
     try {
         const groupDiscovery = require('../agent/groupDiscovery');
-        allGroups = groupDiscovery.getScanRotationList(80); // FB-only: wider pool (was 60)
+        allGroups = groupDiscovery.getScanRotationList(999); // ALL groups — max volume
         if (!allGroups.length) throw new Error('DB empty');
     } catch (e) {
         allGroups = config.FB_TARGET_GROUPS || [];
