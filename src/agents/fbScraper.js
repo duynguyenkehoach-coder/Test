@@ -620,10 +620,14 @@ async function autoJoinGroups(groups = null) {
 
                 // Check page status
                 const pageText = await page.evaluate(() => document.body.innerText.substring(0, 2000));
+                const hasFeed = await page.$('div[role="feed"], div[role="article"]');
 
-                // Already a member → has Discussion/feed tab
-                if (pageText.includes('Discussion') || pageText.includes('Thảo luận') ||
-                    pageText.includes('Write something') || pageText.includes('Viết gì đó')) {
+                // Already a member → has Discussion/feed tab OR visible feed
+                if (hasFeed || pageText.includes('Discussion') || pageText.includes('Thảo luận') ||
+                    pageText.includes('Write something') || pageText.includes('Viết gì đó') ||
+                    pageText.includes('What\'s on your mind') || pageText.includes('Bạn đang nghĩ gì') ||
+                    pageText.includes('Create a post') || pageText.includes('Tạo bài viết') ||
+                    pageText.includes('About') || pageText.includes('Members')) {
                     console.log(`  ✅ Already a member`);
                     stats.already++;
                     await delay(2000);
