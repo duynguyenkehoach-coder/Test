@@ -313,6 +313,20 @@ async function main() {
     console.log('╚══════════════════════════════════════════════════════╝');
     console.log('');
 
+    // Initialize self-hosted scraper if enabled
+    const scrapeMode = config.SCRAPE_MODE || 'sociavault';
+    console.log(`[Main] 🔧 Scrape Mode: ${scrapeMode.toUpperCase()}`);
+    if (scrapeMode === 'self-hosted') {
+        console.log('[Main] 🆓 Self-hosted mode — loading free proxies...');
+        try {
+            const fbScraper = require('./agents/fbScraper');
+            await fbScraper.loadFreeProxies();
+            console.log('[Main] ✅ Self-hosted scraper ready (FREE, no credits!)');
+        } catch (err) {
+            console.warn(`[Main] ⚠️ Proxy init failed: ${err.message} — will retry later`);
+        }
+    }
+
     // Parse platform flags
     const platformFlags = args.filter(a => a.startsWith('--platform='));
     const platformOptions = platformFlags.length

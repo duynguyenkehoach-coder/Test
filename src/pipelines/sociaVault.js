@@ -1,5 +1,7 @@
 /**
- * THG Lead Gen — SociaVault API v3 (field mapping verified từ real responses)
+ * THG Lead Gen — SociaVault API v3 + Self-Hosted Scraper
+ * 
+ * SCRAPE_MODE: 'sociavault' (paid API) or 'self-hosted' (free mbasic scraper)
  * 
  * ENDPOINT PATHS ĐÃ XÁC NHẬN:
  *   Facebook:  facebook/post/comments  → data.comments = {"0":{text, author:{name}}, "1":...}
@@ -11,6 +13,10 @@
 const axios = require('axios');
 const config = require('../config');
 const rotation = require('./rotation');
+
+// Self-hosted scraper (mbasic.facebook.com)
+const fbScraper = require('../agents/fbScraper');
+const SCRAPE_MODE = process.env.SCRAPE_MODE || config.SCRAPE_MODE || 'sociavault';
 
 const SV_API = 'https://api.sociavault.com/v1/scrape';
 const SV_KEY = process.env.SOCIAVAULT_API_KEY || config.SOCIAVAULT_API_KEY || '';
@@ -26,7 +32,7 @@ const DAILY_LIMIT = config.SV_DAILY_LIMIT || 370;
 function canSpend() {
     const stats = database.getCreditStats();
     if (stats.today >= DAILY_LIMIT) {
-        console.warn(`[SV] 🛑 BUDGET EXHAUSTED: ${stats.today}/${DAILY_LIMIT} credits. Stopping until midnight.`);
+        console.warn(`[SV] 🔄 DAILY LIMIT REACHED: ${stats.today}/${DAILY_LIMIT} credits → auto-failover to self-hosted Playwright`);
         return false;
     }
     return true;
@@ -74,45 +80,135 @@ const IG_ACCOUNTS_PER_SCAN = 3;
 
 // ════════════════════════════════════════════════════════
 // SIGNAL GATING — buyer vs provider detection
+// PERSONA CLASSIFIER — enhanced dual-agent filtering
 // ════════════════════════════════════════════════════════
 
+// Provider signals (sale/advertising) — EXPANDED
+const PROVIDER_SIGNALS = [
+    'bên em', 'bên mình', 'bên em chuyên', 'chúng tôi', 'nhận vận chuyển', 'nhận ship', 'nhận gửi',
+    'dịch vụ', 'cam kết', 'giá rẻ', 'giá rẻ nhất', 'uy tín', 'hotline', 'liên hệ', 'lh',
+    'zalo', 'call', 'inbox em', 'inb e', 'inb tư vấn', 'inbox tư vấn', 'ib tư', 'check ib',
+    'chuyên cung cấp', 'chuyên nhận', 'nhận order', 'gom order',
+    'liên hệ số', 'sđt', 'liên hệ hotline', 'chào hàng', 'bảng giá', 'giảm giá',
+    'nhận sll', 'bao thuế', 'tuyến bay riêng', 'chiết khấu', 'hỗ trợ 24/7',
+    'fullfillment giá tốt', 'kho em có sẵn', 'liên hệ ngay', 'hỗ trợ chi tiết',
+    'đội ngũ', 'kinh nghiệm', 'năm kinh nghiệm', 'chuyên nghiệp',
+    'zalo em', 'zl em', 'ib em', 'inbox mình', 'ib mình'
+];
+
+// Buyer/seeker signals (people looking for services) — EXPANDED
+const SEEKER_SIGNALS = [
+    'cần tìm', 'có ai nhận', 'bên nào đi được', 'xin giá', 'báo giá giúp',
+    'hỏi về', 'có kho nào', 'tư vấn giúp', 'tìm đơn vị', 'ai biết',
+    'cần', 'tìm', 'xin', 'nhờ', 'hỏi', 'recommend', 'review',
+    'báo giá', 'rate', 'quote', 'giá bao nhiêu', 'bao lâu', 'ship mấy ngày',
+    'ddp', 'door to door', 'line us', 'ship to us', 'ship mỹ', 'kho', '3pl', 'fulfillment',
+    'fba', 'ship to amazon', 'prep',
+    'cước bao nhiêu', 'giá cước', 'phí vận chuyển', 'mất mấy ngày', 'transit time',
+    'có nhận hàng', 'ai ship được', 'ai gửi được', 'cần gửi', 'muốn gửi'
+];
+
+// Comment-level sale signals (LOẠI BỎ comments quảng cáo)
+const COMMENT_SALE_SIGNALS = [
+    'check inbox', 'check ib', 'inbox mình', 'ib mình', 'inbox em', 'ib em',
+    'bên mình có', 'bên em có', 'bên mình nhận', 'bên em nhận',
+    'liên hệ', 'lh:', 'zalo:', 'hotline:', 'sđt:', 'call:',
+    'đã nhắn tin', 'đã ib', 'check tin nhắn'
+];
+
 function isProviderText(s) {
-    const providerHints = [
-        'bên em', 'bên mình', 'chúng tôi', 'nhận vận chuyển', 'nhận ship', 'nhận gửi',
-        'dịch vụ', 'cam kết', 'giá rẻ', 'hotline', 'liên hệ', 'lh', 'zalo', 'call', 'inbox em', 'inb e',
-        'inb tư vấn', 'inbox tư vấn', 'inbox ...', 'ib tư', 'check ib',
-        'chuyên cung cấp', 'chuyên nhận', 'nhận order', 'gom order',
-        'liên hệ số', 'sđt', 'liên hệ hotline', 'chào hàng', 'bảng giá', 'giảm giá',
-        'nhận sll', 'bao thuế', 'tuyến bay riêng'
-    ];
-    if (providerHints.some(x => s.includes(x))) return true;
-    if (/\b(0\d{8,10})\b/.test(s)) return true;         // phone VN
-    if (/(https?:\/\/|\.com|\.vn|wa\.me)/.test(s)) return true;
+    const count = PROVIDER_SIGNALS.filter(x => s.includes(x)).length;
+    if (count >= 2) return true;  // ≥2 provider signals = definitely provider
+    if (count === 1) {
+        // 1 provider signal: check if has phone/URL as confirmation
+        if (/\b(0\d{8,10})\b/.test(s)) return true;
+        if (/(https?:\/\/|\.com|\.vn|wa\.me)/.test(s)) return true;
+    }
     return false;
 }
 
 function isBuyerText(s) {
-    const buyerHints = [
-        'cần', 'tìm', 'xin', 'nhờ', 'hỏi', 'ai biết', 'recommend', 'review',
-        'báo giá', 'rate', 'quote', 'giá bao nhiêu', 'bao lâu', 'ship mấy ngày',
-        'ddp', 'door to door', 'line us', 'ship to us', 'ship mỹ', 'kho', '3pl', 'fulfillment',
-        'fba', 'ship to amazon', 'prep'
-    ];
-    if (buyerHints.some(x => s.includes(x))) return true;
+    if (SEEKER_SIGNALS.some(x => s.includes(x))) return true;
     if (/\?\s*$/.test(s)) return true; // ends with question mark
     return false;
+}
+
+/**
+ * PERSONA CLASSIFIER — isRealCustomer (Post Scout filter)
+ * Returns true if the post is from a real customer/buyer, not a provider/sale ad.
+ * Provider-logistics posts return false but are tagged separately by signalScores.
+ */
+function isRealCustomer(text) {
+    const s = text.toLowerCase();
+
+    // Step 1: Count provider signals — ≥2 means definitely provider
+    const providerScore = PROVIDER_SIGNALS.filter(w => s.includes(w)).length;
+    if (providerScore >= 2) return false;
+
+    // Step 2: Check if seeker/buyer
+    const isSeeking = SEEKER_SIGNALS.some(w => s.includes(w));
+
+    // Step 3: Icon density — providers spam emojis, buyers write naturally
+    const iconCount = (text.match(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g) || []).length;
+    if (iconCount >= 5 && !isSeeking) return false; // emoji-heavy + no seeker signal = ad
+
+    // Step 4: If clearly seeking services → real customer
+    if (isSeeking && iconCount < 5) return true;
+
+    // Step 5: If has question marks and isn't provider → likely buyer
+    if (/\?/.test(text) && providerScore === 0) return true;
+
+    // Step 6: No strong signal either way — keep for AI to classify later
+    return providerScore === 0;
+}
+
+/**
+ * COMMENT SCOUT — isRealCustomerComment
+ * Filters comments: keeps buyer-intent comments, removes sale/advertising comments.
+ */
+function isRealCustomerComment(text) {
+    const s = text.toLowerCase();
+
+    // Sale comment → reject
+    const saleScore = COMMENT_SALE_SIGNALS.filter(w => s.includes(w)).length;
+    if (saleScore >= 1) return false;
+
+    // Phone number in comment → probably provider responding
+    if (/\b(0\d{8,10})\b/.test(s)) return false;
+
+    // Buyer-intent comment → keep
+    if (SEEKER_SIGNALS.some(w => s.includes(w))) return true;
+    if (/\?/.test(text)) return true;  // has question mark
+
+    // Short generic comment without signal → keep (might be buyer)
+    return true;
 }
 
 function signalScores(text = '') {
     const s = text.toLowerCase();
 
-    // Hard negatives (noise + wrong-route)
+    // Hard negatives (noise + wrong-route + non-business personal shipping)
     const neg = [
         'tuyển dụng', 'job', 'giveaway', 'minigame', 'order walmart', 'jammed kitchen',
         'hiring', 'intern', 'printer', 'labels', 'canvas', 'thêu', 'embroidery',
         'coaching', 'coach', 'site down', 'support no response'
     ];
     if (neg.some(x => s.includes(x))) return { express: 0, wh: 0, any: 0, buyer: 0, provider: 0 };
+
+    // Food/perishable filter — personal shipping, NOT business customers
+    // THG khách hàng: quần áo, thời trang, nail, sản phẩm thực tế
+    const foodSignals = [
+        'đồ ăn', 'thực phẩm', 'thức ăn', 'food', 'bánh', 'bánh tráng', 'bánh tét', 'bánh chưng',
+        'chả giò', 'nem', 'mắm', 'nước mắm', 'mắm tôm', 'mắm ruốc',
+        'khô', 'khô bò', 'khô mực', 'khô cá', 'trái cây', 'hoa quả',
+        'hải sản', 'tôm', 'cua', 'cá', 'đông lạnh', 'frozen',
+        'gia vị', 'bột', 'bún', 'phở', 'mì', 'nui', 'gạo',
+        'trà', 'cà phê', 'coffee', 'snack', 'kẹo', 'mứt',
+        'rau', 'củ', 'nấm', 'gửi đồ ăn', 'ship đồ ăn',
+        'gửi thức ăn', 'gửi bánh', 'gửi khô', 'gửi mắm'
+    ];
+    const foodCount = foodSignals.filter(x => s.includes(x)).length;
+    if (foodCount >= 2) return { express: 0, wh: 0, any: 0, buyer: 0, provider: 0 };
 
     // Wrong-route filter: TQ→VN, domestic VN, US→VN = no signal (save credits)
     const wrongRoute = [
@@ -127,6 +223,7 @@ function signalScores(text = '') {
 
     const provider = isProviderText(s) ? 1 : 0;
     const buyer = isBuyerText(s) ? 1 : 0;
+    const persona = isRealCustomer(text) ? 'buyer' : 'provider';
 
     // Provider post about logistics → STILL hydrate comments (buyers reply to these!)
     const logisticsTerms = ['ship', 'vận chuyển', 'ddp', 'fba', 'fulfillment', 'kho', 'warehouse',
@@ -134,7 +231,7 @@ function signalScores(text = '') {
     const isLogisticsPost = logisticsTerms.some(t => s.includes(t));
 
     // Provider without buyer intent AND not about logistics → noise, skip
-    if (provider && !buyer && !isLogisticsPost) return { express: 0, wh: 0, any: 0, buyer: 0, provider: 1, providerLogistics: false };
+    if (provider && !buyer && !isLogisticsPost) return { express: 0, wh: 0, any: 0, buyer: 0, provider: 1, providerLogistics: false, persona };
 
     // Provider post about logistics: we want comments but lower priority
     const providerLogistics = (provider && !buyer && isLogisticsPost) ? 1 : 0;
@@ -179,7 +276,119 @@ function signalScores(text = '') {
         anyFinal = Math.max(0, any - 15);
     }
 
-    return { express, wh, any: anyFinal, buyer, provider, providerLogistics };
+    return { express, wh, any: anyFinal, buyer, provider, providerLogistics, persona };
+}
+
+// ════════════════════════════════════════════════════════
+// DEEP SCOUT — Sentiment Analysis + Service Classification
+// Tìm khách đang "bực bội" với đơn vị cũ = CƠ HỘI VÀNG
+// ════════════════════════════════════════════════════════
+
+/**
+ * Analyze sentiment: detect frustrated customers vs normal inquiries.
+ * FRUSTRATED = đang gặp vấn đề với đơn vị cũ → cơ hội vàng cho THG.
+ */
+function analyzeSentiment(text) {
+    const s = text.toLowerCase();
+
+    const frustrationKeywords = [
+        'chậm', 'tắc biên', 'mất hàng', 'đắt', 'đắt quá', 'không hỗ trợ', 'lâu quá',
+        'bực', 'thất vọng', 'đơn vị cũ', 'chán', 'hàng bị giữ', 'hàng bị trả',
+        'trễ hẹn', 'trễ', 'giao chậm', 'delay', 'lost', 'late', 'expensive',
+        'hư hỏng', 'bể', 'vỡ', 'thiếu', 'mất kiện', 'không liên lạc được',
+        'không trả lời', 'phản hồi chậm', 'không chuyên nghiệp', 'thái độ tệ',
+        'lừa đảo', 'bị lừa', 'đền bù', 'khiếu nại', 'hoàn tiền',
+        'gặp vấn đề', 'complaint', 'damaged', 'broken', 'issue', 'problem'
+    ];
+
+    const urgentKeywords = [
+        'gấp', 'urgent', 'asap', 'khẩn', 'càng sớm càng tốt', 'cần ngay',
+        'hôm nay', 'ngày mai', 'tuần này', 'deadline', 'rush'
+    ];
+
+    const frustrationCount = frustrationKeywords.filter(kw => s.includes(kw)).length;
+    const isUrgent = urgentKeywords.some(kw => s.includes(kw));
+
+    if (frustrationCount >= 2) return { sentiment: 'FRUSTRATED', frustrationCount, urgent: isUrgent };
+    if (frustrationCount === 1) return { sentiment: 'FRUSTRATED', frustrationCount, urgent: isUrgent };
+    if (isUrgent) return { sentiment: 'URGENT', frustrationCount: 0, urgent: true };
+    return { sentiment: 'INQUIRY', frustrationCount: 0, urgent: isUrgent };
+}
+
+/**
+ * Parse what service the customer needs.
+ * Returns null if wrong-route (VN/TQ import = skip).
+ */
+function parseServiceType(text) {
+    const s = text.toLowerCase();
+
+    // Wrong-route: hàng VỀ VN/TQ → skip (not THG's market)
+    if (['về vn', 'về tq', 'về việt nam', 'nhập từ', 'nhập hàng về'].some(kw => s.includes(kw))) {
+        return null;
+    }
+
+    let service = 'SHIPPING_GENERAL';
+    if (s.includes('fulfillment') || s.includes('ff ') || s.includes(' ff')) service = 'FULFILLMENT';
+    if (s.includes('warehouse') || s.includes('kho mỹ') || s.includes('kho us') || s.includes('3pl')) service = 'WAREHOUSE';
+    if (s.includes('pod') || s.includes('dropship') || s.includes('print on demand')) service = 'POD/DROPSHIP';
+    if (s.includes('fba') || s.includes('ship to amazon') || s.includes('fba prep')) service = 'FBA_PREP';
+    if (s.includes('express') || s.includes('air') || s.includes('đường bay')) service = 'EXPRESS_AIR';
+    if (s.includes('sea') || s.includes('đường biển') || s.includes('lcl') || s.includes('fcl')) service = 'SEA_FREIGHT';
+
+    const destination = (s.includes('mỹ') || s.includes('us') || s.includes('usa') || s.includes('america'))
+        ? 'USA'
+        : (s.includes('eu') || s.includes('châu âu') || s.includes('europe'))
+            ? 'EU'
+            : (s.includes('úc') || s.includes('australia'))
+                ? 'AUSTRALIA'
+                : 'GLOBAL';
+
+    return { service, destination };
+}
+
+/**
+ * DEEP SCOUT: Enrich a scraped item with full intelligence.
+ * Combines: persona + sentiment + service type + urgency score.
+ */
+function deepScoutEnrich(item) {
+    const text = item.content || '';
+    const sig = signalScores(text);
+    const sentimentInfo = analyzeSentiment(text);
+    const serviceInfo = parseServiceType(text);
+
+    // Urgency scoring (0-10 scale)
+    let urgencyScore = 5; // baseline
+
+    // Sentiment boost
+    if (sentimentInfo.sentiment === 'FRUSTRATED') urgencyScore += 3;
+    if (sentimentInfo.frustrationCount >= 2) urgencyScore += 2; // very frustrated
+    if (sentimentInfo.urgent) urgencyScore += 2;
+
+    // Service specificity boost
+    if (serviceInfo && serviceInfo.service !== 'SHIPPING_GENERAL') urgencyScore += 1;
+    if (serviceInfo?.service === 'FBA_PREP' || serviceInfo?.service === 'FULFILLMENT') urgencyScore += 1;
+
+    // Buyer persona boost
+    if (sig.persona === 'buyer') urgencyScore += 1;
+
+    // Cap at 10
+    urgencyScore = Math.min(10, urgencyScore);
+
+    // Map urgency score to label
+    const urgencyLabel = urgencyScore >= 8 ? 'critical' : urgencyScore >= 6 ? 'high' : urgencyScore >= 4 ? 'medium' : 'low';
+
+    return {
+        ...item,
+        persona: sig.persona,
+        sentiment: sentimentInfo.sentiment,
+        service_needed: serviceInfo?.service || 'UNKNOWN',
+        destination: serviceInfo?.destination || 'UNKNOWN',
+        urgency_score: urgencyScore,
+        urgency: urgencyLabel,
+        pain_point: sentimentInfo.sentiment === 'FRUSTRATED'
+            ? text.substring(0, 200)
+            : '',
+    };
 }
 
 // ════════════════════════════════════════════════════════
@@ -198,43 +407,105 @@ function isFresh(isoOrNull, maxDays = 10) {
 
 // Response verified: data.comments.{0..n}.{text, created_at, author:{name, id}}
 async function fbGetPostComments(postUrl, source) {
-    if (!canSpend()) return [];
-    const data = await svGet('facebook/post/comments', { url: postUrl });
-    logCredit('facebook/post/comments', 'facebook', source);
+    // ═══ SELF-HOSTED MODE: use fbScraper (FREE) ═══
+    if (SCRAPE_MODE === 'self-hosted') {
+        try {
+            return await fbScraper.getPostComments(postUrl, source);
+        } catch (err) {
+            console.warn(`[SV:FB] ⚠️ Self-hosted comment scrape failed: ${err.message}`);
+            return [];
+        }
+    }
 
-    return toArr(data.comments).map(item => ({
-        platform: 'facebook',
-        post_url: postUrl,
-        author_name: item.author?.name || 'Unknown',
-        author_url: item.author?.id ? `https://www.facebook.com/${item.author.id}` : '',
-        content: (item.text || '').trim(),
-        post_created_at: item.created_at || new Date().toISOString(),
-        scraped_at: new Date().toISOString(),
-        source,
-        likes: item.reaction_count || 0,
-        comments: item.reply_count || 0,
-    })).filter(p => p.content.length > 5);
+    // ═══ SOCIAVAULT MODE: paid API (auto-failover to self-hosted when credits exhausted) ═══
+    if (!canSpend()) {
+        console.log(`[SV:FB] 🔄 Credits exhausted → auto-failover to self-hosted Playwright`);
+        try {
+            return await fbScraper.getPostComments(postUrl, source);
+        } catch (err) {
+            console.warn(`[SV:FB] ⚠️ Failover comment scrape failed: ${err.message}`);
+            return [];
+        }
+    }
+
+    try {
+        const data = await svGet('facebook/post/comments', { url: postUrl });
+        logCredit('facebook/post/comments', 'facebook', source);
+
+        return toArr(data.comments).map(item => ({
+            platform: 'facebook',
+            post_url: postUrl,
+            author_name: item.author?.name || 'Unknown',
+            author_url: item.author?.id ? `https://www.facebook.com/${item.author.id}` : '',
+            content: (item.text || '').trim(),
+            post_created_at: item.created_at || new Date().toISOString(),
+            scraped_at: new Date().toISOString(),
+            source,
+            likes: item.reaction_count || 0,
+            comments: item.reply_count || 0,
+        })).filter(p => p.content.length > 5);
+    } catch (apiErr) {
+        // API error → auto-failover to self-hosted
+        console.warn(`[SV:FB] ⚠️ SociaVault API error: ${apiErr.message} → failover to self-hosted`);
+        try {
+            return await fbScraper.getPostComments(postUrl, source);
+        } catch (err) {
+            console.warn(`[SV:FB] ⚠️ Failover comment scrape also failed: ${err.message}`);
+            return [];
+        }
+    }
 }
 
 async function fbGetGroupPosts(groupUrl, groupName) {
-    if (!canSpend()) return [];
-    const data = await svGet('facebook/group/posts', { url: groupUrl, sort_by: 'CHRONOLOGICAL' });
-    logCredit('facebook/group/posts', 'facebook', groupName);
+    // ═══ SELF-HOSTED MODE: use fbScraper (FREE) ═══
+    if (SCRAPE_MODE === 'self-hosted') {
+        try {
+            return await fbScraper.getGroupPosts(groupUrl, groupName);
+        } catch (err) {
+            console.warn(`[SV:FB] ⚠️ Self-hosted group scrape failed: ${err.message}`);
+            return [];
+        }
+    }
 
-    const postsArr = toArr(data.posts || data);
-    return postsArr.map(item => ({
-        url: item.url || item.post_url || '',
-        content: (item.text || item.message || '').trim(),
-        author_name: item.author?.name || item.author?.short_name || 'Unknown',
-        created_at: item.publishTime ? new Date(item.publishTime * 1000).toISOString() : null,
-        commentCount: item.commentCount || 0,
-        topComments: toArr(item.topComments).map(c => ({
-            text: (c.text || '').trim(),
-            publishTime: c.publishTime ? new Date(c.publishTime * 1000).toISOString() : null,
-            author_name: c.author?.name || 'Unknown',
-            author_url: c.author?.url || '',
-        })),
-    })).filter(p => p.content.length > 15);
+    // ═══ SOCIAVAULT MODE: paid API (auto-failover to self-hosted when credits exhausted) ═══
+    if (!canSpend()) {
+        console.log(`[SV:FB] 🔄 Credits exhausted → auto-failover to self-hosted Playwright`);
+        try {
+            return await fbScraper.getGroupPosts(groupUrl, groupName);
+        } catch (err) {
+            console.warn(`[SV:FB] ⚠️ Failover group scrape failed: ${err.message}`);
+            return [];
+        }
+    }
+
+    try {
+        const data = await svGet('facebook/group/posts', { url: groupUrl, sort_by: 'CHRONOLOGICAL' });
+        logCredit('facebook/group/posts', 'facebook', groupName);
+
+        const postsArr = toArr(data.posts || data);
+        return postsArr.map(item => ({
+            url: item.url || item.post_url || '',
+            content: (item.text || item.message || '').trim(),
+            author_name: item.author?.name || item.author?.short_name || 'Unknown',
+            created_at: item.publishTime ? new Date(item.publishTime * 1000).toISOString() : null,
+            commentCount: item.commentCount || 0,
+            topComments: toArr(item.topComments).map(c => ({
+                text: (c.text || '').trim(),
+                publishTime: c.publishTime ? new Date(c.publishTime * 1000).toISOString() : null,
+                author_name: c.author?.name || 'Unknown',
+                author_url: c.author?.url || '',
+            })),
+        })).filter(p => p.content.length > 15);
+    } catch (apiErr) {
+        // API error → auto-failover to self-hosted
+        console.warn(`[SV:FB] ⚠️ SociaVault API error: ${apiErr.message} → failover to self-hosted`);
+        try {
+            return await fbScraper.getGroupPosts(groupUrl, groupName);
+        } catch (err) {
+            console.warn(`[SV:FB] ⚠️ Failover group scrape also failed: ${err.message}`);
+            return [];
+        }
+    }
 }
 
 async function scrapeFacebookGroups(maxPosts = 60) {
@@ -266,43 +537,61 @@ async function scrapeFacebookGroups(maxPosts = 60) {
             try { require('../agent/groupDiscovery').markScanned(group.url); } catch (_) { }
             await delay(1500);
 
-            for (const post of posts.slice(0, 10)) { // AGGRESSIVE: 10 posts/group for 200-lead campaign
-                // Add post itself
-                if (post.content) {
-                    all.push({
-                        platform: 'facebook',
-                        item_type: 'post',
-                        post_url: post.url,
-                        author_name: post.author_name,
-                        author_url: '',
-                        content: post.content,
-                        post_created_at: post.created_at || new Date().toISOString(),
-                        scraped_at: new Date().toISOString(),
-                        source: `sv:fb:group:${group.name}`,
-                    });
-                }
+            let postKept = 0, postSkipped = 0, commentKept = 0, commentSkipped = 0;
 
-                // Use FREE topComments (no extra credit cost)
-                for (const tc of (post.topComments || []).slice(0, 5)) { // FB-only: more free comments (was 3)
-                    if (tc.text && tc.text.length > 3) {
+            for (const post of posts.slice(0, 10)) { // AGGRESSIVE: 10 posts/group for 200-lead campaign
+                // ═══ POST SCOUT — PersonaClassifier pre-filter ═══
+                const sig = signalScores(post.content || '');
+                const postIsCustomer = isRealCustomer(post.content || '');
+
+                // Add post itself (ONLY if real customer OR provider-logistics for comment mining)
+                if (post.content) {
+                    if (postIsCustomer || sig.providerLogistics) {
                         all.push({
                             platform: 'facebook',
-                            item_type: 'comment',
+                            item_type: 'post',
                             post_url: post.url,
-                            author_name: tc.author_name,
-                            author_url: tc.author_url,
-                            content: tc.text,
-                            post_created_at: tc.publishTime || new Date().toISOString(),
-                            parent_created_at: post.created_at,
-                            parent_excerpt: (post.content || '').slice(0, 300),
+                            author_name: post.author_name,
+                            author_url: '',
+                            content: post.content,
+                            post_created_at: post.created_at || new Date().toISOString(),
                             scraped_at: new Date().toISOString(),
-                            source: `sv:fb:topComments:${group.name}`,
+                            source: `sv:fb:group:${group.name}`,
+                            persona: sig.persona,
                         });
+                        postKept++;
+                    } else {
+                        postSkipped++;
+                    }
+                }
+
+                // ═══ COMMENT SCOUT — Filter topComments ═══
+                for (const tc of (post.topComments || []).slice(0, 5)) {
+                    if (tc.text && tc.text.length > 3) {
+                        // Comment Scout: reject sale-type comments
+                        if (isRealCustomerComment(tc.text)) {
+                            all.push({
+                                platform: 'facebook',
+                                item_type: 'comment',
+                                post_url: post.url,
+                                author_name: tc.author_name,
+                                author_url: tc.author_url,
+                                content: tc.text,
+                                post_created_at: tc.publishTime || new Date().toISOString(),
+                                parent_created_at: post.created_at,
+                                parent_excerpt: (post.content || '').slice(0, 300),
+                                scraped_at: new Date().toISOString(),
+                                source: `sv:fb:topComments:${group.name}`,
+                                persona: 'buyer',
+                            });
+                            commentKept++;
+                        } else {
+                            commentSkipped++;
+                        }
                     }
                 }
 
                 // PAID comments — different rules for buyer vs provider posts
-                const sig = signalScores(post.content || '');
                 const shouldHydrate = sig.providerLogistics
                     // Provider logistics: only if very fresh (≤7d) + high engagement (≥5 comments)
                     ? (post.url && post.commentCount >= 5 && isFresh(post.created_at, 7))
@@ -313,14 +602,19 @@ async function scrapeFacebookGroups(maxPosts = 60) {
                     try {
                         await delay(1500);
                         const comments = await fbGetPostComments(post.url, `sv:fb:comments:${group.name}`);
-                        all.push(...comments.slice(0, 8).map(c => ({ // FB-only: more paid comments (was 5)
+                        // Comment Scout: filter paid comments too
+                        const filtered = comments.slice(0, 8).filter(c => isRealCustomerComment(c.content || ''));
+                        all.push(...filtered.map(c => ({
                             ...c,
                             item_type: 'comment',
                             parent_excerpt: (post.content || '').slice(0, 300),
                             parent_created_at: post.created_at || null,
+                            persona: 'buyer',
                         })));
+                        commentKept += filtered.length;
+                        commentSkipped += (comments.slice(0, 8).length - filtered.length);
                         const type = sig.providerLogistics ? 'provider-logistics' : 'buyer';
-                        console.log(`[SV:FB]   ↳ ${comments.length} paid comments (${type}, commentCount=${post.commentCount}, signal=${sig.any})`);
+                        console.log(`[SV:FB]   ↳ ${filtered.length}/${comments.length} paid comments kept (${type}, signal=${sig.any})`);
                     } catch (e) {
                         console.warn(`[SV:FB]   ↳ comments err: ${e.message}`);
                     }
@@ -333,6 +627,9 @@ async function scrapeFacebookGroups(maxPosts = 60) {
                     console.log(`[SV:FB]   ↳ skip paid comments (${reasons.join(', ')})`);
                 }
             }
+
+            // Post Scout + Comment Scout stats for this group
+            console.log(`[SV:FB]   📊 Persona: ${postKept} posts kept, ${postSkipped} provider-ads filtered | ${commentKept} comments kept, ${commentSkipped} sale-comments filtered`);
         } catch (err) {
             console.warn(`[SV:FB] ⚠️ ${group.name}: ${err.message}`);
         }
@@ -343,8 +640,15 @@ async function scrapeFacebookGroups(maxPosts = 60) {
     const compComments = await scrapeFBCompetitorComments();
     all.push(...compComments);
 
-    const result = all.filter(p => p.content?.length > 5).slice(0, maxPosts);
-    console.log(`[SV:FB] 📊 Total: ${result.length}`);
+    const result = all.filter(p => p.content?.length > 5)
+        .map(p => deepScoutEnrich(p))
+        .slice(0, maxPosts);
+
+    // Deep Scout stats
+    const frustrated = result.filter(p => p.sentiment === 'FRUSTRATED').length;
+    const urgent = result.filter(p => p.sentiment === 'URGENT').length;
+    const critical = result.filter(p => p.urgency === 'critical').length;
+    console.log(`[SV:FB] 📊 Total: ${result.length} | 🔥 Frustrated: ${frustrated} | ⚡ Urgent: ${urgent} | 🚨 Critical: ${critical}`);
     return result;
 }
 
@@ -667,6 +971,13 @@ module.exports = {
     scrapeInstagram,
     scrapeTikTok,
     isProviderText,
+    isBuyerText,
+    isRealCustomer,
+    isRealCustomerComment,
+    signalScores,
+    analyzeSentiment,
+    parseServiceType,
+    deepScoutEnrich,
     testConnection,
     svGet,
     getCreditsUsed: () => database.getCreditStats().today,

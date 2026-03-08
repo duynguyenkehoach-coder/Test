@@ -20,6 +20,12 @@ module.exports = {
   ENABLED_PLATFORMS: (process.env.ENABLED_PLATFORMS || 'facebook').split(',').map(s => s.trim()),  // FB-only — override via env var
 
   // ════════════════════════════════════════════════════
+  // SCRAPE MODE — 'self-hosted' (FREE mbasic scraper) or 'sociavault' (paid API)
+  // ════════════════════════════════════════════════════
+  SCRAPE_MODE: process.env.SCRAPE_MODE || 'self-hosted',
+  FB_COOKIES: process.env.FB_COOKIES || '',  // Facebook session cookies for self-hosted mode
+
+  // ════════════════════════════════════════════════════
   // SCAN SCHEDULE — AGGRESSIVE FB-ONLY (200 leads by Mar 10)
   // Scan every 30 min 8:00-22:00 (28 scans/day)
   // All credits → Facebook only
