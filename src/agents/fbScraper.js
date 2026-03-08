@@ -384,6 +384,22 @@ async function getGroupPosts(groupUrl, groupName) {
             await delay(2000);
         }
 
+        // DEBUG: Log DOM state before extraction
+        const domDebug = await page.evaluate(() => {
+            const articles = document.querySelectorAll('div[role="article"]').length;
+            const feedChildren = document.querySelectorAll('div[role="feed"] > div').length;
+            const hasFeed = !!document.querySelector('div[role="feed"]');
+            const pageH = document.body.scrollHeight;
+            const dirAutos = document.querySelectorAll('div[dir="auto"]').length;
+            // Sample first dir=auto text
+            const firstText = document.querySelector('div[dir="auto"]')?.innerText?.substring(0, 80) || 'none';
+            return { articles, feedChildren, hasFeed, pageH, dirAutos, firstText };
+        });
+        console.log(`[FBScraper] 🔍 DOM: ${domDebug.articles} articles, ${domDebug.feedChildren} feed-children, feed=${domDebug.hasFeed}, height=${domDebug.pageH}, dirAutos=${domDebug.dirAutos}`);
+        if (domDebug.articles === 0 && domDebug.feedChildren === 0) {
+            console.log(`[FBScraper] 🔍 Sample text: ${domDebug.firstText}`);
+        }
+
         // Extract posts from rendered DOM — using div[role="article"] (confirmed working)
         const posts = await page.evaluate((gUrl) => {
             const results = [];
