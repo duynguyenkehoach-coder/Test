@@ -358,12 +358,17 @@ async function getGroupPosts(groupUrl, groupName) {
             const currentUrl = page.url();
             const pageText = await page.evaluate(() => document.body?.innerText?.substring(0, 200) || '');
             const isJoinPage = pageText.toLowerCase().includes('join group') || pageText.includes('Tham gia nhóm');
-            const isBlocked = pageText.toLowerCase().includes('content isn\'t available') || pageText.includes('nội dung không');
+            const isDead = pageText.toLowerCase().includes('content isn\'t available') || pageText.includes('nội dung không');
 
-            if (isJoinPage) {
+            if (isDead) {
+                console.warn(`[FBScraper] 💀 ${groupName}: DEAD GROUP — auto-deactivating`);
+                // Auto-deactivate in DB so it's never scanned again
+                try {
+                    const gd = require('../agent/groupDiscovery');
+                    if (gd.deactivateGroup) gd.deactivateGroup(groupUrl);
+                } catch (_) { }
+            } else if (isJoinPage) {
                 console.warn(`[FBScraper] ⚠️ ${groupName}: NOT A MEMBER — need to join first`);
-            } else if (isBlocked) {
-                console.warn(`[FBScraper] ⚠️ ${groupName}: GROUP BLOCKED/PRIVATE`);
             } else {
                 console.warn(`[FBScraper] ⚠️ Feed not found for ${groupName} (url: ${currentUrl.substring(0, 60)})`);
             }

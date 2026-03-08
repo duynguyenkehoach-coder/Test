@@ -343,6 +343,22 @@ function getScanRotationList(limit = 30) {
     return groups.map(g => ({ name: g.name, url: g.url }));
 }
 
+// ════════════════════════════════════════════════════════
+// Auto-deactivate dead groups (called by fbScraper)
+// ════════════════════════════════════════════════════════
+function deactivateGroup(url) {
+    try {
+        const result = getDb().prepare(`
+            UPDATE fb_groups SET status = 'dead' WHERE url = ?
+        `).run(url);
+        if (result.changes > 0) {
+            console.log(`[GroupDB] 💀 Deactivated dead group: ${url}`);
+        }
+    } catch (err) {
+        console.warn(`[GroupDB] ⚠️ Failed to deactivate: ${err.message}`);
+    }
+}
+
 module.exports = {
     getDb,
     upsertGroup,
@@ -355,4 +371,5 @@ module.exports = {
     setStatus,
     getStats,
     extractGroupId,
+    deactivateGroup,
 };
