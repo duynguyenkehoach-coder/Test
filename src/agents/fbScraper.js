@@ -400,17 +400,18 @@ async function getGroupPosts(groupUrl, groupName) {
             console.log(`[FBScraper] 🔍 Sample text: ${domDebug.firstText}`);
         }
 
-        // Extract posts from rendered DOM — using div[role="article"] (confirmed working)
+        // Extract posts from rendered DOM
         const posts = await page.evaluate((gUrl) => {
             const results = [];
             const seenTexts = new Set();
 
-            // Primary: div[role="article"] — confirmed 6+ matches on FB group pages
-            let units = document.querySelectorAll('div[role="article"]');
+            // Primary: feed children (catches ALL posts, not just role="article")
+            // Facebook doesn't always add role="article" — feed children is more reliable
+            let units = document.querySelectorAll('div[role="feed"] > div');
 
-            // Fallback: all direct children of feed
+            // Fallback: div[role="article"] if no feed found
             if (units.length === 0) {
-                units = document.querySelectorAll('div[role="feed"] > div');
+                units = document.querySelectorAll('div[role="article"]');
             }
 
             for (const unit of units) {
