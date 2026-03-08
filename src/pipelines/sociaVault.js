@@ -71,9 +71,11 @@ function toArr(raw) {
 }
 
 // ════════════════════════════════════════════════════════
-// ROTATION BATCH SIZES — FB-ONLY MODE (all credits → Facebook)
+// ROTATION BATCH SIZES — Dynamic based on SCRAPE_MODE
+// self-hosted = ALL groups (FREE, no limit)
+// sociavault  = 35 groups (credit-conscious)
 // ════════════════════════════════════════════════════════
-const FB_GROUPS_PER_SCAN = 35;  // AGGRESSIVE: 35 groups/scan for 200-lead campaign
+const FB_GROUPS_PER_SCAN = SCRAPE_MODE === 'self-hosted' ? 999 : 35;  // 999 = all groups in DB
 const FB_COMPETITORS_PER_SCAN = 1;  // reduced: competitor pages mostly provider content
 const TT_HASHTAGS_PER_SCAN = 4;
 const IG_ACCOUNTS_PER_SCAN = 3;

@@ -357,10 +357,10 @@ async function getGroupPosts(groupUrl, groupName) {
             console.warn(`[FBScraper] ⚠️ Feed not found for ${groupName}`);
         }
 
-        // Scroll to load more posts
-        for (let i = 0; i < 5; i++) {
-            await page.evaluate(() => window.scrollBy(0, 2000));
-            await delay(2500);
+        // Scroll aggressively to load more posts (8 scrolls = ~15 posts per group)
+        for (let i = 0; i < 8; i++) {
+            await page.evaluate(() => window.scrollBy(0, 2500));
+            await delay(2000);
         }
 
         // Extract posts from rendered DOM — using div[role="article"] (confirmed working)
