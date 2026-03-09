@@ -164,70 +164,254 @@ function renderCompactLeadCard(lead) {
 }
 
 
-// Apply Date & Time Filters
-const filterDate = document.getElementById('filterDate')?.value;
-const filterTime = document.getElementById('filterTime')?.value;
-
-const filteredLeads = leadsArray.filter(lead => {
-  if (gridId === 'ignoredGrid') return true;
-
-  // Check Sidebar Category Filter
-  if (AppState.currentCategory && AppState.currentCategory !== 'All') {
-    const cat = lead.category || 'General';
-    if (AppState.currentCategory === 'Fulfill') {
-      const fulfillTypes = ['THG Fulfillment', 'Fulfillment', 'POD', 'Dropship', 'THG Fulfill'];
-      if (!fulfillTypes.includes(cat)) return false;
-    } else if (AppState.currentCategory === 'Express') {
-      if (cat !== 'Express' && cat !== 'THG Express') return false;
-    } else if (AppState.currentCategory === 'Warehouse') {
-      if (cat !== 'Warehouse' && cat !== 'THG Warehouse') return false;
-    } else if (AppState.currentCategory === 'General') {
-      const generalTypes = ['General', 'NotRelevant'];
-      if (!generalTypes.includes(cat) && cat !== '') return false;
-    } else {
-      if (cat !== AppState.currentCategory) return false;
-    }
-  }
-
-  if (!filterDate && !filterTime) return true;
-
-  const dt = getPostDate(lead);
-  const d = dt.toLocaleDateString('sv-SE');
-  const h = String(dt.getHours()).padStart(2, '0');
-  const t = `${h}:00`;
-
-  if (filterDate && d !== filterDate) return false;
-  if (filterTime && t !== filterTime) return false;
-  return true;
-});
-
-if (filteredLeads.length === 0) {
-  grid.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🔍</div><h3>No leads match filter</h3><p>Try changing your date or time selection.</p></div>`;
-  return;
-}
-
-
-
 function openLeadDetail(leadId) {
   const lead = AppState.leads.find(l => l.id === leadId) || AppState.ignoredLeads.find(l => l.id === leadId);
   if (!lead) return;
 
-  // Hide Main View, Show Detail View
   document.getElementById('leadsMainView').style.display = 'none';
   const detailView = document.getElementById('leadDetailView');
   detailView.style.display = 'block';
+  detailView.innerHTML = renderClosingRoom(lead);
+}
 
-  // Render the full War Room card plus a back button using the existing renderLeadCard logic
-  detailView.innerHTML = `
-    <div class="war-room-header">
-      <button class="back-btn" onclick="closeLeadDetail()">⬅️ Quay lại danh sách</button>
-      <div class="war-room-title">🎯 The Closing Room</div>
+function renderClosingRoom(lead) {
+  const score = lead.score || 0;
+  const scoreClass = score >= 80 ? 'score-tag-high' : score >= 60 ? 'score-tag-med' : 'score-tag-low';
+  const hotLabel = score >= 80 ? '🔥 HOT' : score >= 60 ? '⚡ WARM' : '💤 COLD';
+  const hotColor = score >= 80 ? '#ff4d4f' : score >= 60 ? '#faad14' : '#8c8c8c';
+
+  const platformMap = { facebook: { icon: '📘', label: 'Facebook', color: '#4096ff' }, instagram: { icon: '📷', label: 'Instagram', color: '#e1306c' }, tiktok: { icon: '🎵', label: 'TikTok', color: '#ff0050' } };
+  const platform = platformMap[lead.platform] || { icon: '🌐', label: lead.platform || 'Web', color: '#8c8c8c' };
+
+  const categoryMap = { 'THG Fulfillment': { label: 'Fulfill', color: '#722ed1' }, 'Fulfillment': { label: 'Fulfill', color: '#722ed1' }, 'THG Express': { label: 'Express', color: '#1890ff' }, 'Express': { label: 'Express', color: '#1890ff' }, 'THG Warehouse': { label: 'Warehouse', color: '#fa8c16' }, 'Warehouse': { label: 'Warehouse', color: '#fa8c16' } };
+  const catInfo = categoryMap[lead.category] || { label: lead.category || 'General', color: '#8c8c8c' };
+
+  const statusMap = { 'new': { label: '● New', color: '#52c41a', bg: 'rgba(82,196,26,0.1)' }, 'contacted': { label: '● Contacted', color: '#faad14', bg: 'rgba(250,173,20,0.1)' }, 'converted': { label: '● Converted', color: '#1890ff', bg: 'rgba(24,144,255,0.1)' }, 'ignored': { label: '● Ignored', color: '#ff4d4f', bg: 'rgba(255,77,79,0.1)' } };
+  const status = statusMap[lead.status] || statusMap['new'];
+
+  const author = escapeHtml(lead.author_name || 'Unknown');
+  const content = escapeHtml(lead.content || '—');
+  const summary = escapeHtml(lead.summary || '');
+  const gap = escapeHtml(lead.gap_opportunity || '');
+  const postDateStr = lead.post_created_at || lead.scraped_at || lead.created_at;
+  const timeLabel = timeAgo(postDateStr);
+  const dt = getPostDate(lead);
+  const fullDate = dt.toLocaleString('vi-VN');
+
+  // Staff pills
+  const STAFF = ['Trang', 'Min', 'Moon', 'Lê Huyền', 'Ngọc Huyền'];
+  const claimedByArr = (lead.claimed_by || lead.assigned_to || '').split(',').map(s => s.trim()).filter(Boolean);
+  const isClaimed = claimedByArr.length > 0;
+
+  const staffPills = STAFF.map(name => {
+    const isMe = claimedByArr.includes(name);
+    return `<button class="cr-staff-pill ${isMe ? 'cr-staff-pill--active' : ''}" onclick="claimLead(${lead.id},'${name}',this)" title="${isMe ? 'Nhả lead' : 'Claim lead'}">${name}${isMe ? ' ✓' : ''}</button>`;
+  }).join('');
+
+  const winnerSection = lead.winner_staff
+    ? `<div class="cr-winner">🏆 <strong>${escapeHtml(lead.winner_staff)}</strong> đã chốt — $${lead.deal_value || 0}</div>`
+    : `<button class="cr-deal-btn" onclick="showCloseDealModal(${lead.id})">🏆 BÁO CÁO CHỐT ĐƠN</button>`;
+
+  const urgencyBadge = lead.urgency === 'critical'
+    ? `<span class="cr-badge cr-badge--red">🚨 Critical</span>`
+    : lead.urgency === 'high'
+      ? `<span class="cr-badge cr-badge--orange">⚡ Cần gấp</span>` : '';
+
+  const sentimentBadge = score >= 90 ? `<span class="cr-badge cr-badge--purple">😤 Frustrated</span>`
+    : score >= 85 ? `<span class="cr-badge cr-badge--gold">💎 VIP</span>` : '';
+
+  return `
+  <div class="cr-wrapper">
+    <!-- Breadcrumb bar -->
+    <div class="cr-topbar">
+      <button class="cr-back-btn" onclick="closeLeadDetail()">← Quay lại</button>
+      <div class="cr-breadcrumb">
+        <span>Leads</span><span class="cr-breadcrumb-sep">›</span>
+        <span style="color:var(--text-primary)">${author}</span>
+      </div>
+      <div class="cr-topbar-title">🎯 The Closing Room</div>
+      <div class="cr-topbar-actions">
+        ${lead.post_url ? `<a href="${lead.post_url}" target="_blank" class="cr-icon-btn" title="Xem post gốc">🔗 Post</a>` : ''}
+        ${lead.author_url ? `<a href="${lead.author_url}" target="_blank" class="cr-icon-btn" title="Xem profile">👤 Profile</a>` : ''}
+      </div>
     </div>
-    <div class="war-room-content">
-      ${renderLeadCard(lead, 'war-room')}
+
+    <!-- Main two-column layout -->
+    <div class="cr-body">
+
+      <!-- LEFT: Lead info + content -->
+      <div class="cr-left">
+
+        <!-- Info card -->
+        <div class="cr-card">
+          <div class="cr-card-header">
+            <div class="cr-author-row">
+              ${lead.author_avatar ? `<img src="${lead.author_avatar}" class="cr-avatar" onerror="this.style.display='none'">` : '<div class="cr-avatar-placeholder">👤</div>'}
+              <div>
+                <div class="cr-author-name">
+                  ${lead.author_url ? `<a href="${lead.author_url}" target="_blank" class="cr-author-link">${author}</a>` : author}
+                </div>
+                <div class="cr-meta-row">
+                  <span style="color:${platform.color};font-size:0.8rem;font-weight:600">${platform.icon} ${platform.label}</span>
+                  <span class="cr-dot">·</span>
+                  <span class="cr-time">${fullDate}</span>
+                  <span class="cr-dot">·</span>
+                  <span class="cr-time">${timeLabel}</span>
+                </div>
+              </div>
+            </div>
+            <div class="cr-tag-row">
+              <span class="category-tag" style="color:${catInfo.color};border-color:${catInfo.color}55;background:${catInfo.color}18">${catInfo.label}</span>
+              <span class="status-tag" style="color:${status.color};background:${status.bg}">${status.label}</span>
+              ${urgencyBadge}${sentimentBadge}
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Analysis card -->
+        ${summary || gap ? `
+        <div class="cr-card">
+          <div class="cr-section-title">🧠 AI Analysis</div>
+          ${summary ? `
+          <div class="cr-info-block">
+            <div class="cr-info-label">💡 Tóm tắt</div>
+            <div class="cr-info-content">${summary}</div>
+          </div>` : ''}
+          ${gap ? `
+          <div class="cr-info-block" style="margin-top:10px">
+            <div class="cr-info-label">🔍 Cơ hội (Gap)</div>
+            <div class="cr-info-content cr-gap-text">${gap}</div>
+          </div>` : ''}
+          ${lead.buyer_signals ? `
+          <div class="cr-info-block" style="margin-top:10px">
+            <div class="cr-info-label">🎯 Buyer Signals</div>
+            <div class="cr-info-content">${escapeHtml(lead.buyer_signals)}</div>
+          </div>` : ''}
+          ${lead.profit_estimate ? `
+          <div class="cr-profit-box">
+            <div class="cr-profit-label">KỲ VỌNG DOANH THU</div>
+            <div class="cr-profit-value">💰 ${escapeHtml(lead.profit_estimate)}</div>
+          </div>` : ''}
+        </div>` : ''}
+
+        <!-- Raw content card -->
+        <div class="cr-card">
+          <div class="cr-section-title">📄 Nội dung gốc</div>
+          <div class="cr-content-box" id="content-${lead.id}">${content}</div>
+          <button class="cr-expand-btn" onclick="toggleContent(${lead.id})">Xem thêm ▼</button>
+        </div>
+
+        <!-- Response / Notes / Agent tabs -->
+        <div class="cr-card">
+          <div class="cr-tabs">
+            <button class="cr-tab cr-tab--active" onclick="switchLeadTab(${lead.id},'response',this)">💬 Response</button>
+            <button class="cr-tab" onclick="switchLeadTab(${lead.id},'notes',this)">📝 Notes</button>
+            <button class="cr-tab" onclick="switchLeadTab(${lead.id},'agent',this)">🧠 Agent</button>
+          </div>
+
+          <!-- Response tab -->
+          <div class="cr-tab-panel" id="tab-response-${lead.id}">
+            <div class="cr-template-row">
+              <button class="cr-template-btn" onclick="fillTemplate(${lead.id},'quote')">📋 Báo giá</button>
+              <button class="cr-template-btn" onclick="fillTemplate(${lead.id},'fulfill')">🏭 Kho/FF</button>
+              <button class="cr-template-btn" onclick="fillTemplate(${lead.id},'complaint')">🛡️ Khiếu nại</button>
+              <div class="cr-tone-sep"></div>
+              <button class="cr-tone-btn cr-tone-btn--active" onclick="setTone(${lead.id},'friendly',this)">🤝 Thân thiện</button>
+              <button class="cr-tone-btn" onclick="setTone(${lead.id},'professional',this)">👔 Pro</button>
+              <button class="cr-tone-btn" onclick="setTone(${lead.id},'concise',this)">⚡ Ngắn</button>
+            </div>
+            <textarea class="cr-textarea" id="response-${lead.id}" rows="4">${lead.suggested_response || ''}</textarea>
+            <div class="cr-btn-row">
+              <button class="cr-btn cr-btn-secondary" onclick="copyResponse(${lead.id})">📋 Copy</button>
+              <button class="cr-btn cr-btn-secondary" onclick="saveResponse(${lead.id})">💾 Save</button>
+            </div>
+          </div>
+
+          <!-- Notes tab -->
+          <div class="cr-tab-panel" id="tab-notes-${lead.id}" style="display:none">
+            <textarea class="cr-textarea" id="notes-${lead.id}" rows="4" placeholder="Ghi chú: giá đã báo, deal progress, follow-up date...">${lead.notes || ''}</textarea>
+            <div class="cr-btn-row">
+              <button class="cr-btn cr-btn-secondary" onclick="saveNotes(${lead.id})">💾 Lưu ghi chú</button>
+            </div>
+          </div>
+
+          <!-- Agent tab -->
+          <div class="cr-tab-panel" id="tab-agent-${lead.id}" style="display:none">
+            <div class="cr-feedback-row">
+              <button class="cr-feedback-tag" onclick="quickFeedback(${lead.id},'correct',null,'✅ Đúng — buyer xác nhận')">✅ Đúng</button>
+              <button class="cr-feedback-tag" onclick="quickFeedback(${lead.id},'wrong','provider','❌ Sai — provider')">❌ Sai→Provider</button>
+              <button class="cr-feedback-tag" onclick="insertTag(${lead.id},'⬆️ Score nên cao hơn, khoảng ')">⬆️ Nâng score</button>
+              <button class="cr-feedback-tag" onclick="insertTag(${lead.id},'⬇️ Score nên thấp hơn, khoảng ')">⬇️ Giảm score</button>
+            </div>
+            <span class="cr-feedback-status" id="feedback-status-${lead.id}"></span>
+            <textarea class="cr-textarea" id="feedback-text-${lead.id}" rows="3" placeholder="Ghi chú thêm cho Agent..."></textarea>
+            <div class="cr-btn-row">
+              <button class="cr-btn cr-btn-primary" onclick="sendFeedback(${lead.id})">📤 Gửi feedback</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Action panel -->
+      <div class="cr-right">
+
+        <!-- Score card -->
+        <div class="cr-card cr-score-card">
+          <div class="cr-score-big score-tag ${scoreClass}">
+            <span class="score-num">${score}</span>
+            <span class="score-lbl">${hotLabel}</span>
+          </div>
+          <div class="cr-score-bar-wrap">
+            <div class="cr-score-bar" style="width:${score}%;background:${hotColor}"></div>
+          </div>
+          <div class="cr-score-sub" style="color:${hotColor}">Lead Score</div>
+          ${lead.pain_score > 0 ? `<div class="cr-meta-pill">⚡ Pain Score: ${lead.pain_score}</div>` : ''}
+          ${lead.spam_score > 0 ? `<div class="cr-meta-pill cr-meta-pill--warn">🚨 Spam Signal: ${lead.spam_score}</div>` : ''}
+        </div>
+
+        <!-- Status actions -->
+        <div class="cr-card">
+          <div class="cr-section-title">⚡ Quick Actions</div>
+          <div class="cr-action-grid">
+            <button class="cr-action-btn cr-action-blue ${lead.status === 'contacted' ? 'cr-action-btn--active' : ''}" onclick="contactLead(${lead.id})">📞 Contacted</button>
+            <button class="cr-action-btn cr-action-green ${lead.status === 'converted' ? 'cr-action-btn--active' : ''}" onclick="convertLead(${lead.id})">✅ Converted</button>
+            <button class="cr-action-btn cr-action-red ${lead.status === 'ignored' ? 'cr-action-btn--active' : ''}" onclick="updateStatus(${lead.id},'ignored')">⛔ Ignore</button>
+            <button class="cr-action-btn cr-action-danger" onclick="deleteLead(${lead.id})">🗑️ Delete</button>
+          </div>
+        </div>
+
+        <!-- Deal section -->
+        <div class="cr-card">
+          <div class="cr-section-title">🏆 Deal</div>
+          ${winnerSection}
+        </div>
+
+        <!-- Staff assignment -->
+        <div class="cr-card">
+          <div class="cr-section-title">👥 Phân công Sale</div>
+          <div class="cr-staff-grid">${staffPills}</div>
+          ${isClaimed ? `<div class="cr-claimed-by">Đang xử lý: <strong>${claimedByArr.join(', ')}</strong></div>` : '<div class="cr-claimed-by" style="opacity:0.5">Chưa có sale nào claim</div>'}
+        </div>
+
+        <!-- Lead metadata -->
+        <div class="cr-card">
+          <div class="cr-section-title">📋 Lead Info</div>
+          <div class="cr-meta-list">
+            <div class="cr-meta-item"><span class="cr-meta-key">ID</span><span class="cr-meta-val">#${lead.id}</span></div>
+            <div class="cr-meta-item"><span class="cr-meta-key">Platform</span><span class="cr-meta-val" style="color:${platform.color}">${platform.icon} ${platform.label}</span></div>
+            <div class="cr-meta-item"><span class="cr-meta-key">Service</span><span class="cr-meta-val"><span class="category-tag" style="color:${catInfo.color};border-color:${catInfo.color}55;background:${catInfo.color}18;font-size:0.72rem">${catInfo.label}</span></span></div>
+            <div class="cr-meta-item"><span class="cr-meta-key">Status</span><span class="cr-meta-val"><span class="status-tag" style="color:${status.color};background:${status.bg};font-size:0.72rem">${status.label}</span></span></div>
+            <div class="cr-meta-item"><span class="cr-meta-key">Urgency</span><span class="cr-meta-val">${lead.urgency || '—'}</span></div>
+            <div class="cr-meta-item"><span class="cr-meta-key">Scraped</span><span class="cr-meta-val">${timeLabel}</span></div>
+          </div>
+        </div>
+      </div>
     </div>
+  </div>
   `;
 }
+
+
 
 function closeLeadDetail() {
   document.getElementById('leadDetailView').style.display = 'none';
@@ -817,6 +1001,46 @@ async function closeDeal(leadId) {
       loadLeads();
       loadStats();
       loadClosingFeed();
+
+      // ─── AWARD POINTS to Leaderboard ─────────────────────────
+      // 100 base pts for closing + bonus from deal value
+      const basePoints = 100;
+      try {
+        await fetch('/api/points/award', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sales_name: winner,
+            action_type: 'CLOSE_DEAL',
+            points: basePoints,
+            deal_value: dealValue,
+            lead_id: leadId,
+            note: note || `Chốt đơn $${dealValue} từ Lead #${leadId}`,
+          }),
+        });
+        // Show ticker notification (if leaderboard.js is loaded)
+        if (typeof showTickerToast === 'function') {
+          showTickerToast({
+            id: Date.now(),
+            sales_name: winner,
+            action_type: 'CLOSE_DEAL',
+            points: basePoints,
+            deal_value: dealValue,
+            note: note || `Chốt $${dealValue}`,
+            created_at: new Date().toISOString(),
+          });
+        }
+        // Refresh leaderboard if tab is open
+        const lbTab = document.getElementById('leaderboardTab');
+        if (lbTab && lbTab.style.display !== 'none' && typeof loadLeaderboard === 'function') {
+          setTimeout(loadLeaderboard, 800);
+        }
+
+      } catch (ptErr) {
+        console.warn('[Points] Award failed silently:', ptErr.message);
+      }
+      // ─────────────────────────────────────────────────────────
+
     } else {
       showToast(data.error || 'Lỗi khi chốt đơn', 'error');
     }
@@ -824,6 +1048,7 @@ async function closeDeal(leadId) {
     showToast('❌ Lỗi khi chốt đơn', 'error');
   }
 }
+
 
 // ═══════════════════════════════════════════════════════
 // Closing Feed — Victory Ticker
@@ -860,6 +1085,8 @@ function updateSpeedCounters() {
 // ═══════════════════════════════════════════════════════
 // ANT DESIGN SIDEBAR NAVIGATION
 // ═══════════════════════════════════════════════════════
+// ANT DESIGN SIDEBAR NAVIGATION
+// ═══════════════════════════════════════════════════════
 
 function toggleNavGroup(groupId) {
   const group = document.getElementById(`navGroup${groupId.charAt(0).toUpperCase() + groupId.slice(1)}`);
@@ -868,21 +1095,36 @@ function toggleNavGroup(groupId) {
 }
 
 function filterByMenu(category, btnEl) {
-  // 1. Remove active state from all sub-items
-  document.querySelectorAll('.nav-sub-item').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.nav-item-header').forEach(el => el.classList.remove('active'));
+  // 1. Clear all active states across the full sidebar
+  document.querySelectorAll('.nav-item, .nav-sub-item, .nav-item-header').forEach(el => el.classList.remove('active'));
 
-  // 2. Add active state to clicked sub-item and its parent header
+  // 2. Set active on the clicked element + its parent header
   if (btnEl) {
     btnEl.classList.add('active');
     const groupHeader = btnEl.closest('.nav-item-group')?.querySelector('.nav-item-header');
     if (groupHeader) groupHeader.classList.add('active');
   }
 
-  // 3. Set the category filter in global state
+  // 3. Set category
   AppState.currentCategory = category === 'All' ? '' : category;
-
-  // 4. Make sure we're on leads tab and reload from server
   AppState.currentTab = 'leads';
+
+  // 4. Show leadsTab, hide ALL other tabs (fixes: switching from Analytics/Data to leads)
+  const allTabDivs = ['leadsTab', 'inboxTab', 'dataTab', 'analyticsTab', 'creditsTab', 'ignoredTab', 'groupsTab'];
+  allTabDivs.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  const leadsTabEl = document.getElementById('leadsTab');
+  const leadsMainView = document.getElementById('leadsMainView');
+  if (leadsTabEl) leadsTabEl.style.display = 'block';
+  if (leadsMainView) leadsMainView.style.display = 'block';
+
+  // 5. Restore stats bar
+  const statsBar = document.getElementById('statsBar');
+  if (statsBar) { statsBar.style.opacity = '1'; statsBar.style.pointerEvents = 'auto'; }
+
+  // 6. Fetch and render
   loadLeads();
 }
+

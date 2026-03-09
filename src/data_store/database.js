@@ -212,7 +212,143 @@ try {
   db.exec(`ALTER TABLE leads ADD COLUMN spam_score INTEGER DEFAULT 0`);
 } catch { /* column already exists */ }
 
+// ─── Personal Agent Profiles ───────────────────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS agent_profiles (
+    name        TEXT PRIMARY KEY,
+    tone        TEXT DEFAULT 'friendly',
+    personal_note TEXT DEFAULT '',
+    deals_note  TEXT DEFAULT '',
+    takeover    INTEGER DEFAULT 0,
+    auto_reply  INTEGER DEFAULT 0,
+    updated_at  TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+// Seed 5 default profiles (INSERT OR IGNORE = safe to re-run)
+const SALES_TEAM = ['Trang', 'Min', 'Moon', 'Lê Huyền', 'Ngọc Huyền'];
+const seedAgent = db.prepare(`
+  INSERT OR IGNORE INTO agent_profiles (name) VALUES (?)
+`);
+for (const name of SALES_TEAM) {
+  try { seedAgent.run(name); } catch (_) { }
+}
+
+const getAgentProfiles = () =>
+  db.prepare(`SELECT * FROM agent_profiles ORDER BY name`).all();
+
+const getAgentProfile = (name) =>
+  db.prepare(`SELECT * FROM agent_profiles WHERE name = ?`).get(name);
+
+const saveAgentProfile = (name, { tone, personal_note, deals_note }) =>
+  db.prepare(`
+    UPDATE agent_profiles
+    SET tone = @tone, personal_note = @personal_note, deals_note = @deals_note,
+        updated_at = datetime('now')
+    WHERE name = @name
+  `).run({ name, tone: tone || 'friendly', personal_note: personal_note || '', deals_note: deals_note || '' });
+
+const toggleAgentTakeover = (name) => {
+  const row = getAgentProfile(name);
+  if (!row) return null;
+  const next = row.takeover ? 0 : 1;
+  db.prepare(`UPDATE agent_profiles SET takeover = ?, updated_at = datetime('now') WHERE name = ?`).run(next, name);
+  return next;
+};
+
+
+
+// ─── Gamification: Sales Performance & Points ─────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sales_performance (
+    name         TEXT PRIMARY KEY,
+    total_points INTEGER DEFAULT 0,
+    deals_closed INTEGER DEFAULT 0,
+    total_revenue REAL   DEFAULT 0,
+    rank_level   TEXT    DEFAULT 'ROOKIE',
+    streak_days  INTEGER DEFAULT 0,
+    last_action  TEXT    DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS points_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    sales_name   TEXT    NOT NULL,
+    action_type  TEXT    NOT NULL,
+    points       INTEGER NOT NULL DEFAULT 0,
+    deal_value   REAL    DEFAULT 0,
+    lead_id      INTEGER DEFAULT 0,
+    note         TEXT    DEFAULT '',
+    created_at   TEXT    DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_plog_sales ON points_log(sales_name);
+  CREATE INDEX IF NOT EXISTS idx_plog_ts    ON points_log(created_at);
+`);
+
+// Seed 5 sales into performance table
+const seedPerf = db.prepare(`INSERT OR IGNORE INTO sales_performance (name) VALUES (?)`);
+for (const name of SALES_TEAM) {
+  try { seedPerf.run(name); } catch (_) { }
+}
+
+const RANK_THRESHOLDS = [
+  { level: 'HUNTER', min: 3000 },
+  { level: 'LEGEND', min: 1500 },
+  { level: 'ELITE', min: 500 },
+  { level: 'ROOKIE', min: 0 },
+];
+
+function getRankLevel(points) {
+  return RANK_THRESHOLDS.find(r => points >= r.min)?.level || 'ROOKIE';
+}
+
+function awardPoints(salesName, actionType, points, { dealValue = 0, leadId = 0, note = '' } = {}) {
+  // Insert log entry
+  db.prepare(`
+    INSERT INTO points_log (sales_name, action_type, points, deal_value, lead_id, note)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(salesName, actionType, points, dealValue, leadId, note);
+
+  // Ensure row exists
+  db.prepare(`INSERT OR IGNORE INTO sales_performance (name) VALUES (?)`).run(salesName);
+
+  // Update totals
+  const isCloseDeal = actionType === 'CLOSE_DEAL';
+  db.prepare(`
+    UPDATE sales_performance
+    SET total_points  = total_points + ?,
+        deals_closed  = deals_closed + ?,
+        total_revenue = total_revenue + ?,
+        last_action   = datetime('now')
+    WHERE name = ?
+  `).run(points, isCloseDeal ? 1 : 0, dealValue, salesName);
+
+  // Recompute rank
+  const row = db.prepare(`SELECT total_points FROM sales_performance WHERE name = ?`).get(salesName);
+  if (row) {
+    const newRank = getRankLevel(row.total_points);
+    db.prepare(`UPDATE sales_performance SET rank_level = ? WHERE name = ?`).run(newRank, salesName);
+  }
+
+  return { salesName, actionType, points, dealValue };
+}
+
+const getLeaderboard = () => {
+  const rankings = db.prepare(`
+    SELECT name, total_points, deals_closed, total_revenue, rank_level, streak_days, last_action
+    FROM sales_performance
+    ORDER BY total_points DESC
+  `).all();
+  const recentLog = db.prepare(`
+    SELECT * FROM points_log ORDER BY created_at DESC LIMIT 30
+  `).all();
+  return { rankings, recentLog };
+};
+
+const getPointsLog = (limit = 20) =>
+  db.prepare(`SELECT * FROM points_log ORDER BY created_at DESC LIMIT ?`).all(limit);
+
 // --- Prepared statements ---
+
 
 const insertLead = db.prepare(`
   INSERT OR IGNORE INTO leads (platform, post_url, author_name, author_url, author_avatar, content, score, category, summary, urgency, suggested_response, role, buyer_signals, scraped_at, post_created_at, profit_estimate, gap_opportunity, pain_score, spam_score)
@@ -481,4 +617,16 @@ module.exports = {
   // Deduplication
   getExistingPostUrls,
   getExistingContentHashes,
+  // Agent Profiles
+  getAgentProfiles,
+  getAgentProfile,
+  saveAgentProfile,
+  toggleAgentTakeover,
+  // Gamification
+  awardPoints,
+  getLeaderboard,
+  getPointsLog,
+  db,
 };
+
+

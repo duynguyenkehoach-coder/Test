@@ -977,6 +977,20 @@ app.post('/api/leads/:id/close', (req, res) => {
             });
         }
 
+        // ═══ AWARD LEADERBOARD POINTS ═══
+        // 100 base pts + bonus (deal_value * 0.002) calculated inside awardPoints
+        try {
+            database.awardPoints(winner_staff, 'CLOSE_DEAL', 100, {
+                dealValue: deal_value || 0,
+                leadId: parseInt(id, 10),
+                note: note || `Chốt đơn $${deal_value || 0} từ Lead #${id}`,
+            });
+            logger.info('Gamification', `🏆 ${winner_staff} awarded 100+bonus pts for closing deal #${id}`);
+        } catch (ptErr) {
+            logger.warn('Gamification', `awardPoints failed silently: ${ptErr.message}`);
+        }
+        // ═════════════════════════════════
+
         logger.info('Sales', `🏆 ${winner_staff} closed deal #${id} — $${deal_value || 0}`);
         res.json({ ok: true, message: `🏆 ${winner_staff} chốt đơn thành công!`, lead });
     } catch (err) {
@@ -1036,5 +1050,152 @@ app.get('/api/staff/stats', (req, res) => {
         res.status(500).json({ success: false, error: err.message });
     }
 });
+
+// ╔═══════════════════════════════════════════════════════════╗
+// ║  PERSONAL AGENT SYSTEM                                    ║
+// ╚═══════════════════════════════════════════════════════════╝
+
+const { buildAgentReply } = require('./agent/promptBuilder');
+const messenger = require('./integrations/messenger');
+
+// GET /api/agents — list all agent profiles
+app.get('/api/agents', (req, res) => {
+    try {
+        const profiles = database.getAgentProfiles();
+        res.json({ success: true, data: profiles, messenger_status: messenger.getStatus() });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// POST /api/agents/generate-reply — generate AI reply in agent's voice
+// MUST BE BEFORE /api/agents/:name to avoid Express wildcard matching!
+app.post('/api/agents/generate-reply', express.json(), async (req, res) => {
+    try {
+        const { agent_name, lead_id } = req.body;
+        const agentProfile = database.getAgentProfile(agent_name);
+        if (!agentProfile) return res.status(404).json({ success: false, error: 'Agent not found' });
+        if (agentProfile.takeover) return res.status(409).json({ success: false, error: 'Agent is in Take Over mode — AI silent', takeover: true });
+
+        const lead = database.db.prepare('SELECT * FROM leads WHERE id = ?').get(lead_id);
+        if (!lead) return res.status(404).json({ success: false, error: 'Lead not found' });
+
+        const { system, user } = buildAgentReply(lead, agentProfile);
+
+        let reply = '';
+        try {
+            const Groq = require('groq-sdk');
+            const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+            const completion = await groq.chat.completions.create({
+                model: 'llama-3.1-70b-versatile',
+                messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+                max_tokens: 300, temperature: 0.7,
+            });
+            reply = completion.choices[0]?.message?.content?.trim() || '';
+        } catch (aiErr) {
+            try {
+                const { GoogleGenerativeAI } = require('@google/generative-ai');
+                const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+                const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+                const result = await model.generateContent(`${system}\n\n${user}`);
+                reply = result.response.text().trim();
+            } catch (geminiErr) {
+                return res.status(500).json({ success: false, error: 'AI providers unavailable' });
+            }
+        }
+        res.json({ success: true, reply, agent: agent_name });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// POST /api/agents/:name — save agent profile (WILDCARD — must be after specific paths!)
+app.post('/api/agents/:name', express.json(), (req, res) => {
+    try {
+        const { name } = req.params;
+        database.saveAgentProfile(name, req.body);
+        const updated = database.getAgentProfile(name);
+        res.json({ success: true, data: updated });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// POST /api/agents/:name/takeover — toggle take over mode
+app.post('/api/agents/:name/takeover', (req, res) => {
+    try {
+        const next = database.toggleAgentTakeover(req.params.name);
+        if (next === null) return res.status(404).json({ success: false, error: 'Agent not found' });
+        res.json({ success: true, takeover: next });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// ─── Facebook Messenger Webhooks (disabled until AUTO_REPLY_ENABLED=true) ───
+// GET /webhook — verification
+app.get('/webhook', messenger.verifyWebhook);
+// POST /webhook — receive events
+app.post('/webhook', express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }), messenger.receiveWebhook);
+
+
+// ╔═══════════════════════════════════════════════════════════╗
+// ║  GAMIFICATION — LEADERBOARD & POINTS SYSTEM               ║
+// ╚═══════════════════════════════════════════════════════════╝
+
+// GET /api/leaderboard — full rankings + recent activity log
+app.get('/api/leaderboard', (req, res) => {
+    try {
+        const data = database.getLeaderboard();
+        res.json({ success: true, data });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// GET /api/leaderboard/log — recent activity feed (for live ticker)
+app.get('/api/leaderboard/log', (req, res) => {
+    try {
+        const limit = req.query.limit ? parseInt(req.query.limit, 10) : 10;
+        const data = database.getPointsLog(limit);
+        res.json({ success: true, data });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// POST /api/points/award — award points to a sales person
+// Used by: Closing Room (close deal), Lead actions (qualify), admin manual
+app.post('/api/points/award', express.json(), (req, res) => {
+    try {
+        const { sales_name, action_type, points, deal_value = 0, lead_id = 0, note = '' } = req.body;
+        if (!sales_name || !action_type || points == null) {
+            return res.status(400).json({ success: false, error: 'Missing required fields: sales_name, action_type, points' });
+        }
+
+        // If CLOSE_DEAL, auto-add revenue bonus (5% of deal value as bonus pts)
+        let totalPoints = parseInt(points, 10);
+        if (action_type === 'CLOSE_DEAL' && deal_value > 0) {
+            totalPoints += Math.floor(deal_value * 0.002); // $500 deal = 1 extra pt per $
+        }
+
+        const result = database.awardPoints(sales_name, action_type, totalPoints, { dealValue: deal_value, leadId: lead_id, note });
+
+        // Update lead's winner_staff and deal_value if this is a CLOSE_DEAL
+        if (action_type === 'CLOSE_DEAL' && lead_id) {
+            try {
+                database.db.prepare(`
+                    UPDATE leads SET winner_staff = ?, deal_value = ?, closed_at = datetime('now'), status = 'converted'
+                    WHERE id = ?
+                `).run(sales_name, deal_value, lead_id);
+            } catch (_) { }
+        }
+
+        res.json({ success: true, result, totalPoints });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 
 module.exports = { app, startServer };

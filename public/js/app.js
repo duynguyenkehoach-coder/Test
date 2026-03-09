@@ -15,22 +15,47 @@ const AppState = {
 };
 
 // --- Tab Switching ---
-function switchTab(tabId) {
-    // 1. Update Navigation visual state
-    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-    document.getElementById(
-        tabId === 'leads' ? 'tabLeads' :
-            tabId === 'inbox' ? 'tabInbox' :
-                tabId === 'data' ? 'tabData' :
-                    tabId === 'analytics' ? 'tabAnalytics' :
-                        tabId === 'credits' ? 'tabCredits' :
-                            tabId === 'groups' ? 'tabGroups' :
-                                'tabIgnored'
-    ).classList.add('active');
+const DATA_SUB_TABS = ['data', 'analytics', 'credits', 'groups'];
+const INBOX_SUB_TABS = ['inbox', 'agent', 'salesInbox'];
+
+function switchTab(tabId, person) {
+    // 1. Clear ALL active states
+    document.querySelectorAll('.nav-item, .nav-sub-item, .nav-sub-item--deep, .nav-item-header').forEach(el => el.classList.remove('active'));
+
+    // 2. Determine which nav element to highlight
+    let navElId = null;
+    if (tabId === 'agent' && person) {
+        const safe = person.replace('Lê Huyền', 'LeHuyen').replace('Ngọc Huyền', 'NgocHuyen').replace(/\s/g, '_');
+        navElId = 'tabAgent-' + safe;
+    } else if (tabId === 'salesInbox' && person) {
+        const safe = person.replace('Lê Huyền', 'LeHuyen').replace('Ngọc Huyền', 'NgocHuyen').replace(/\s/g, '_');
+        navElId = 'tabSales-' + safe;
+    } else {
+        const elMap = { leads: 'tabLeads', inbox: 'tabInbox', ignored: 'tabIgnored', data: 'tabData', analytics: 'tabAnalytics', credits: 'tabCredits', groups: 'tabGroups' };
+        navElId = elMap[tabId] || null;
+    }
+    if (navElId) {
+        const el = document.getElementById(navElId);
+        if (el) {
+            el.classList.add('active');
+            if (DATA_SUB_TABS.includes(tabId)) {
+                const h = document.querySelector('#navGroupData .nav-item-header');
+                if (h) h.classList.add('active');
+            }
+            if (INBOX_SUB_TABS.includes(tabId)) {
+                const h = document.querySelector('#navGroupInbox .nav-item-header');
+                if (h) h.classList.add('active');
+            }
+        }
+    }
 
     // 2. Hide all main content areas
     document.getElementById('leadsTab').style.display = 'none';
     document.getElementById('inboxTab').style.display = 'none';
+    const salesInboxEl = document.getElementById('salesInboxTab');
+    if (salesInboxEl) salesInboxEl.style.display = 'none';
+    const lbTab = document.getElementById('leaderboardTab');
+    if (lbTab) lbTab.style.display = 'none';
     document.getElementById('dataTab').style.display = 'none';
     document.getElementById('analyticsTab').style.display = 'none';
     document.getElementById('creditsTab').style.display = 'none';
@@ -39,9 +64,9 @@ function switchTab(tabId) {
     const groupsTab = document.getElementById('groupsTab');
     if (groupsTab) groupsTab.style.display = 'none';
 
-    // Disable Top Stats bar for non-lead tabs
-    document.getElementById('statsBar').style.pointerEvents = (tabId === 'leads' || tabId === 'inbox') ? 'auto' : 'none';
-    document.getElementById('statsBar').style.opacity = (tabId === 'leads' || tabId === 'inbox') ? '1' : '0.5';
+    // Stats bar only active on leads
+    document.getElementById('statsBar').style.pointerEvents = (tabId === 'leads') ? 'auto' : 'none';
+    document.getElementById('statsBar').style.opacity = (tabId === 'leads') ? '1' : '0.5';
 
     // 3. Show requested tab & update title
     if (tabId === 'leads') {
@@ -52,6 +77,16 @@ function switchTab(tabId) {
         document.getElementById('inboxTab').style.display = 'block';
         document.getElementById('pageTitleText').textContent = 'AI Copilot Inbox';
         loadConversations();
+    } else if (tabId === 'agent') {
+        const el = document.getElementById('salesInboxTab');
+        if (el) el.style.display = 'block';
+        document.getElementById('pageTitleText').textContent = person ? `Agent — ${person}` : 'Agents';
+        if (typeof loadAgents === 'function') loadAgents(person, null);
+    } else if (tabId === 'salesInbox') {
+        const el = document.getElementById('salesInboxTab');
+        if (el) el.style.display = 'block';
+        document.getElementById('pageTitleText').textContent = person ? `Sales Inbox — ${person}` : 'Sales Inbox';
+        if (typeof loadAgents === 'function') loadAgents(null, person);
     } else if (tabId === 'data') {
         document.getElementById('dataTab').style.display = 'block';
         document.getElementById('pageTitleText').textContent = 'Data & Archives';
@@ -71,10 +106,14 @@ function switchTab(tabId) {
     } else if (tabId === 'groups') {
         if (groupsTab) groupsTab.style.display = 'block';
         document.getElementById('pageTitleText').textContent = 'Group Discovery Database';
-        // Delay load slightly so the page doesn't stutter on switch
         setTimeout(() => {
             if (typeof loadGroups === 'function') loadGroups();
         }, 50);
+    } else if (tabId === 'leaderboard') {
+        if (lbTab) lbTab.style.display = 'block';
+        document.getElementById('pageTitleText').textContent = '🏆 Leaderboard — Hall of Fame';
+        if (typeof loadLeaderboard === 'function') loadLeaderboard();
+        if (typeof startLiveTicker === 'function') startLiveTicker();
     }
 }
 

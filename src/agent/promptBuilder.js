@@ -190,8 +190,57 @@ Nớng: is_potential=true → score PHẢI >= 60. is_potential=false → score =
 Nếu là COMMENT ngắn nhưng rõ buyer intent ("xin giá", "ib", "rate?") + Parent context liên quan logistics → is_potential=true.`;
 }
 
+
 module.exports = {
     buildSystemPrompt,
     buildUserPrompt,
     buildBatchPrompt,
+    buildAgentReply,
 };
+
+/**
+ * Build a personalized reply prompt for a specific sales agent
+ * Uses Master Brain (THG context + knowledge base) + agent's personal voice
+ * 
+ * @param {object} lead - the lead object from DB
+ * @param {object} agentProfile - { name, tone, personal_note, deals_note }
+ * @returns {{ system: string, user: string }}
+ */
+function buildAgentReply(lead, agentProfile) {
+    const config = require('../config');
+    const { getContextForPrompt } = require('./knowledgeBase');
+
+    const toneGuide = {
+        friendly: 'Nhiệt tình, thân thiện, dùng emoji nhẹ nhàng, xưng hô "mình/bạn".',
+        professional: 'Chuyên nghiệp, lịch sự, dùng "chúng tôi/quý khách", không emoji.',
+        concise: 'Ngắn gọn, đi thẳng vào vấn đề, tối đa 3-4 câu, không vòng vo.',
+    };
+
+    const tone = toneGuide[agentProfile.tone] || toneGuide.friendly;
+    const kbContext = getContextForPrompt(lead.content || '');
+
+    const system = `Bạn là ${agentProfile.name} — Sale của THG Logistics.
+Bạn đang trả lời một potential lead trên Facebook với phong cách: ${tone}
+${agentProfile.personal_note ? `\nLưu ý cá nhân từ ${agentProfile.name}: "${agentProfile.personal_note}"` : ''}
+${agentProfile.deals_note ? `\nƯu đãi riêng có thể dùng: "${agentProfile.deals_note}"` : ''}
+
+=== KIẾN THỨC THG (MASTER BRAIN) ===
+${config.THG_CONTEXT}
+${kbContext ? `\n=== THÔNG TIN LIÊN QUAN ===\n${kbContext}` : ''}
+
+QUY TẮC:
+- Chỉ nói về dịch vụ THG, không được tự chế thông tin.
+- Nếu khách hỏi điều không chắc, bảo khách để lại SĐT để team hỗ trợ chi tiết.
+- Giữ đúng phong cách được yêu cầu xuyên suốt.
+- Trả về CHỈ nội dung tin nhắn, không giải thích gì thêm.`;
+
+    const user = `Lead: ${lead.author_name || 'Khách hàng'}
+Nội dung post/comment: "${lead.content || ''}"
+${lead.summary ? `AI tóm tắt nhu cầu: ${lead.summary}` : ''}
+${lead.gap_opportunity ? `Cơ hội bán: ${lead.gap_opportunity}` : ''}
+Dịch vụ phù hợp: ${lead.category || 'Chưa xác định'}
+
+Hãy viết tin nhắn/comment reply phù hợp với phong cách của bạn để tiếp cận lead này.`;
+
+    return { system, user };
+}
