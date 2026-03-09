@@ -132,11 +132,91 @@ try {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_service ON leads(service_match)`);
 } catch { /* ignore */ }
 
+// --- Multi-Sales Tracking & Revenue columns ---
+try {
+  db.exec(`ALTER TABLE leads ADD COLUMN deal_value REAL DEFAULT 0`);
+} catch { /* column already exists */ }
+try {
+  db.exec(`ALTER TABLE leads ADD COLUMN winner_staff TEXT DEFAULT ''`);
+} catch { /* column already exists */ }
+try {
+  db.exec(`ALTER TABLE leads ADD COLUMN closed_at TEXT`);
+} catch { /* column already exists */ }
+try {
+  db.exec(`ALTER TABLE leads ADD COLUMN profit_estimate TEXT DEFAULT ''`);
+} catch { /* column already exists */ }
+try {
+  db.exec(`ALTER TABLE leads ADD COLUMN gap_opportunity TEXT DEFAULT ''`);
+} catch { /* column already exists */ }
+
+// --- Sales Activities table (interaction timeline) ---
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sales_activities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lead_id INTEGER,
+    staff_name TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    note TEXT DEFAULT '',
+    deal_value REAL DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_sa_lead ON sales_activities(lead_id);
+  CREATE INDEX IF NOT EXISTS idx_sa_staff ON sales_activities(staff_name);
+  CREATE INDEX IF NOT EXISTS idx_sa_action ON sales_activities(action_type);
+`);
+
+// --- Forbidden Keywords table (dynamic provider blocklist) ---
+db.exec(`
+  CREATE TABLE IF NOT EXISTS forbidden_keywords (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    keyword TEXT UNIQUE NOT NULL,
+    category TEXT DEFAULT 'provider',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+// Seed default forbidden keywords (INSERT OR IGNORE = safe to re-run)
+const seedKeywords = [
+  // Provider self-promotion
+  ['bên mình nhận', 'provider'], ['bên em nhận', 'provider'],
+  ['bên mình chuyên', 'provider'], ['bên em chuyên', 'provider'],
+  ['chúng tôi chuyên', 'provider'], ['chúng mình chuyên', 'provider'],
+  ['dịch vụ của bên mình', 'provider'], ['dịch vụ bên mình', 'provider'],
+  // Pricing / catalog signals
+  ['bảng giá', 'provider'], ['chiết khấu', 'provider'],
+  ['tuyển sỉ', 'provider'], ['tuyển đại lý', 'provider'],
+  ['hoa hồng', 'provider'], ['ưu đãi hấp dẫn', 'provider'],
+  // Contact / CTA signals
+  ['inbox báo giá', 'provider'], ['liên hệ báo giá', 'provider'],
+  ['pm báo giá', 'provider'], ['nhắn tin báo giá', 'provider'],
+  ['xin số điện thoại', 'provider'], ['để lại sđt', 'provider'],
+  // Competitor service phrases
+  ['hỗ trợ ship', 'provider'], ['nhận đặt hàng hộ', 'provider'],
+  ['mua hàng hộ', 'provider'], ['checkout hộ', 'provider'],
+  ['thanh toán hộ', 'provider'], ['agent tìm nguồn', 'provider'],
+  ['fulfillment service', 'provider'], ['kho bãi chuyên nghiệp', 'provider'],
+  // Spam/marketing
+  ['xin phép ad', 'provider'], ['xin phép admin và', 'provider'],
+];
+
+const insertKw = db.prepare(`INSERT OR IGNORE INTO forbidden_keywords (keyword, category) VALUES (?, ?)`);
+for (const [kw, cat] of seedKeywords) {
+  try { insertKw.run(kw, cat); } catch (_) { }
+}
+
+// pain_score and spam_score on leads
+try {
+  db.exec(`ALTER TABLE leads ADD COLUMN pain_score INTEGER DEFAULT 0`);
+} catch { /* column already exists */ }
+try {
+  db.exec(`ALTER TABLE leads ADD COLUMN spam_score INTEGER DEFAULT 0`);
+} catch { /* column already exists */ }
+
 // --- Prepared statements ---
 
 const insertLead = db.prepare(`
-  INSERT OR IGNORE INTO leads (platform, post_url, author_name, author_url, author_avatar, content, score, category, summary, urgency, suggested_response, role, buyer_signals, scraped_at, post_created_at)
-  VALUES (@platform, @post_url, @author_name, @author_url, @author_avatar, @content, @score, @category, @summary, @urgency, @suggested_response, @role, @buyer_signals, @scraped_at, @post_created_at)
+  INSERT OR IGNORE INTO leads (platform, post_url, author_name, author_url, author_avatar, content, score, category, summary, urgency, suggested_response, role, buyer_signals, scraped_at, post_created_at, profit_estimate, gap_opportunity, pain_score, spam_score)
+  VALUES (@platform, @post_url, @author_name, @author_url, @author_avatar, @content, @score, @category, @summary, @urgency, @suggested_response, @role, @buyer_signals, @scraped_at, @post_created_at, @profit_estimate, @gap_opportunity, @pain_score, @spam_score)
 `);
 
 const getLeads = (filters = {}) => {

@@ -245,6 +245,10 @@ async function runPipeline(options = {}) {
                     buyer_signals: lead.buyerSignals || '',
                     scraped_at: lead.scraped_at,
                     post_created_at: lead.post_created_at || lead.scraped_at,
+                    profit_estimate: lead.profitEstimate || '',
+                    gap_opportunity: lead.gapOpportunity || '',
+                    pain_score: lead.painScore || 0,
+                    spam_score: lead.spamScore || 0,
                 });
                 totalLeads++;
                 if (stats.platforms[lead.platform]) stats.platforms[lead.platform].leads++;

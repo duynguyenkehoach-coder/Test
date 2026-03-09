@@ -47,6 +47,60 @@ const BLACKLIST_AUTHORS = ['merchize', 'bestexpressvn', 'boxmeglobal', 'printify
 // Must-have: posts without ANY business keyword are skipped (saves AI credits)
 const MUST_HAVE_KEYWORDS = /(ship|vận chuyển|fulfillment|fulfill|pod|dropship|gửi hàng|tuyến|kho|warehouse|giá|báo giá|tìm đơn vị|logistics|3pl|fba|ecommerce|e-commerce|seller|bán hàng|order|đơn hàng|tracking|inventory|supplier|basecost|print on demand|freight|cargo|express|đóng gói|cần tìm|xưởng|prep|xin|nhờ|hỏi|tìm|cần|review|recommend|line us|ddp|forwarder|thông quan|customs|lcl|fcl|cbm|pallet|container|amazon|tiktok shop|etsy|shopify|mua hàng|hàng từ|gửi về|ship về|nhờ ai|ai biết|chỗ nào|ở đâu|mua ở|đặt hàng|order hàng|mua sỉ|nhập hàng|nguồn hàng|đồ từ|hàng việt|hàng trung)/i;
 
+// ═══════════════════════════════════════════════════════
+// LAYER 2 — Hard Pattern Guards (Phone, Link, Bio, Contact)
+// Zero-cost regex — runs BEFORE AI, catches 10-15% extra providers
+// ═══════════════════════════════════════════════════════
+
+// Vietnamese phone number pattern (0[3|5|7|8|9]xxxxxxxx)
+const PHONE_VN_REGEX = /(?:^|[\s\,\.\(\[])0[35789]\d{8}(?:$|[\s\,\.\)\]])/;
+
+// Provider links — zalo, telegram, landing pages
+const PROVIDER_LINK_REGEX = /(?:zalo\.me|t\.me|telegram\.me|wa\.me|m\.me\/[a-z]|bit\.ly|linktr\.ee|beacon\.by|flowpage\.com|shopee\.vn\/shop|lazada\.vn\/shop|tiktok\.com\/@[a-z])/i;
+
+// Bio / author name signals of providers
+const BIO_PROVIDER_REGEX = /\b(logistics|agency|freight|forwarder|fulfillment co|3pl|ceo|founder|director|manager|shipping company|courier|express co|nhà phân phối|đại lý|tuyển dụng)\b/i;
+
+// Contact CTAs embedded in content: 'zalo: 09...', 'tel: 0...', 'sđt: 0...'
+const CONTACT_EMBED_REGEX = /(?:zalo|tel|sđt|phone|liên hệ|contact)\s*[:\-]\s*0[35789]\d{7,}/i;
+
+// Pain point keywords (buyer signals) for painScore computation
+const PAIN_KEYWORDS_REGEX = /(lỗi|bị lỗi|lỗi thanh toán|cần tìm|cho hỏi|nhờ ai|ai biết|chỗ nào|ở đâu|review|recommend|bị khóa|hold tiền|mất hàng|hàng chậm|giao chậm|ship chậm|pixel không|chán rồi|tệ quá|bó tay|cần gấp|urgent|help|cần giúp|tư vấn giúp|giúp em|giúp mình|suggest|tìm kho|tìm xưởng|tìm bên|tìm đơn vị|tìm supplier|muốn bắt đầu|mới bắt đầu|lần đầu|chưa biết|không biết|đang tìm|có ai|ai có|nên chọn|nên dùng|so sánh|xin giá|báo giá giúp|rate\?|check giá|ib em giá|hỏi giá)/i;
+
+/**
+ * Compute spam score: count provider signals (phone, links, service language)
+ * @param {string} content - Post content
+ * @param {string} bio - Author bio
+ * @returns {number} spamScore (0-10+)
+ */
+function computeSpamScore(content = '', bio = '') {
+    let score = 0;
+    if (PHONE_VN_REGEX.test(content)) score += 3;       // Phone in content = strong provider signal
+    if (PROVIDER_LINK_REGEX.test(content)) score += 2;  // Provider links
+    if (CONTACT_EMBED_REGEX.test(content)) score += 2;  // 'zalo: 09...'
+    if (BIO_PROVIDER_REGEX.test(bio)) score += 2;       // Bio has agency/logistics
+    // Count service-language phrases
+    const serviceHits = (content.match(/(?:bên mình|bên em|chúng tôi|chúng mình).{0,20}(?:nhận|chuyên|cung cấp|hỗ trợ)/gi) || []).length;
+    score += Math.min(serviceHits * 2, 4);
+    // Count hashtags (providers spam hashtags)
+    const hashtagCount = (content.match(/#[\wÀ-ỹ]+/g) || []).length;
+    if (hashtagCount >= 5) score += 2;
+    if (hashtagCount >= 10) score += 2;
+    return score;
+}
+
+/**
+ * Compute pain score: count buyer pain point signals
+ * @param {string} content
+ * @returns {number} painScore
+ */
+function computePainScore(content = '') {
+    const matches = content.match(PAIN_KEYWORDS_REGEX) || [];
+    // Also count question marks as buyer signals
+    const questionCount = (content.match(/\?/g) || []).length;
+    return Math.min(matches.length + Math.floor(questionCount / 2), 10);
+}
+
 // International route boost: THG serves VN/CN → US/World
 const US_ROUTE_REGEX = /(mỹ|\bus\b|\busa\b|america|amazon|tiktok shop us|fba|đi mỹ|ship mỹ|kho mỹ|warehouse us|pennsylvania|texas|fulfill us|line us|美国|发美国)/i;
 const INTL_ROUTE_REGEX = /(nhật bản|\bjapan\b|đi nhật|ship nhật|gửi.{0,10}nhật|hàn quốc|\bkorea\b|đi hàn|ship hàn|gửi.{0,10}hàn|đức|\bgermany\b|đi đức|ship đức|pháp|\bfrance\b|đi pháp|ship pháp|úc|\baustralia\b|đi úc|ship úc|anh|\buk\b|\bengland\b|đi anh|ship anh|đài loan|\btaiwan\b|uae|dubai|saudi|chile|colombia|mexico)/i;
@@ -143,6 +197,8 @@ function parseResult(result) {
         summary: result.reasoning || '',
         urgency: isPotential ? (result.urgency || 'low') : 'low',
         buyerSignals: isPotential ? (result.reasoning || '') : '',
+        profitEstimate: isPotential ? (result.profit_estimate || '') : '',
+        gapOpportunity: isPotential ? (result.gap_opportunity || '') : '',
     };
 }
 
@@ -332,48 +388,97 @@ async function classifyPosts(posts) {
     const toClassify = [];
     const preFiltered = [];
 
+    // ── Load forbidden keywords from DB (cached per batch) ──
+    let forbiddenKws = [];
+    try {
+        const database = require('../data_store/database');
+        forbiddenKws = database.db.prepare('SELECT keyword FROM forbidden_keywords').all().map(r => r.keyword.toLowerCase());
+    } catch (e) { /* DB not available in test env */ }
+
     for (const post of posts) {
         const content = post.content || '';
-        if (content.length < 10) {
-            preFiltered.push({ ...post, ...makeFallback(), summary: 'Nội dung quá ngắn' });
-            continue;
-        }
-        // Blacklist: posts from competitor accounts → skip
+        const bio = post.author_bio || post.bio || '';
         const authorLower = (post.author_name || '').toLowerCase();
+
+        if (content.length < 10) {
+            preFiltered.push({ ...post, ...makeFallback(), summary: 'Nội dung quá ngắn', spamScore: 0, painScore: 0 });
+            continue;
+        }
+
+        // ─ Compute scores early (used for both filtering and saving) ─
+        const spamScore = computeSpamScore(content, bio);
+        const painScore = computePainScore(content);
+
+        // Blacklist: posts from competitor accounts → skip
         if (BLACKLIST_AUTHORS.some(b => authorLower.includes(b))) {
-            preFiltered.push({ ...post, isLead: false, role: 'provider', score: 0, category: 'NotRelevant', summary: `Blacklisted: @${post.author_name}`, urgency: 'low', buyerSignals: '' });
+            preFiltered.push({ ...post, isLead: false, role: 'provider', score: 0, category: 'NotRelevant', summary: `Blacklisted: @${post.author_name}`, urgency: 'low', buyerSignals: '', spamScore, painScore: 0 });
             continue;
         }
+
+        // ── LAYER 1: Hard regex (existing PROVIDER_REGEX) ──
         if (PROVIDER_REGEX.test(content)) {
-            preFiltered.push({ ...post, isLead: false, role: 'provider', score: 0, category: 'NotRelevant', summary: 'Provider regex', urgency: 'low', buyerSignals: '' });
+            preFiltered.push({ ...post, isLead: false, role: 'provider', score: 0, category: 'NotRelevant', summary: 'Provider regex match', urgency: 'low', buyerSignals: '', spamScore, painScore: 0 });
             continue;
         }
+
+        // ── LAYER 2a: Phone number in content → almost always provider ──
+        if (PHONE_VN_REGEX.test(content) && !painScore) {
+            preFiltered.push({ ...post, isLead: false, role: 'provider', score: 0, category: 'NotRelevant', summary: 'Phone number detected — Provider', urgency: 'low', buyerSignals: '', spamScore, painScore });
+            console.log(`[Sieve] 📵 Phone block: ${content.substring(0, 60)}...`);
+            continue;
+        }
+
+        // ── LAYER 2b: DB forbidden keywords check ──
+        const contentLower = content.toLowerCase();
+        const hitKeyword = forbiddenKws.find(kw => contentLower.includes(kw));
+        if (hitKeyword && spamScore >= 2) {
+            preFiltered.push({ ...post, isLead: false, role: 'provider', score: 0, category: 'NotRelevant', summary: `Forbidden keyword: "${hitKeyword}"`, urgency: 'low', buyerSignals: '', spamScore, painScore: 0 });
+            console.log(`[Sieve] 🚫 Forbidden kw "${hitKeyword}" (spamScore:${spamScore}): ${content.substring(0, 60)}...`);
+            continue;
+        }
+
+        // ── LAYER 2c: High spam score + no pain points → DISCARD ──
+        if (spamScore >= 4 && painScore === 0) {
+            preFiltered.push({ ...post, isLead: false, role: 'provider', score: 0, category: 'NotRelevant', summary: `SpamScore ${spamScore} — Provider CTA detected`, urgency: 'low', buyerSignals: '', spamScore, painScore });
+            console.log(`[Sieve] 🗑️ SpamScore ${spamScore} discard: ${content.substring(0, 60)}...`);
+            continue;
+        }
+
+        // ── LAYER 2d: Bio provider check ──
+        if (BIO_PROVIDER_REGEX.test(bio) && !painScore) {
+            preFiltered.push({ ...post, isLead: false, role: 'provider', score: 0, category: 'NotRelevant', summary: `Bio provider: "${bio.substring(0, 40)}"`, urgency: 'low', buyerSignals: '', spamScore, painScore });
+            continue;
+        }
+
         if (IRRELEVANT_REGEX.test(content)) {
-            preFiltered.push({ ...post, ...makeFallback(), summary: 'Không liên quan' });
+            preFiltered.push({ ...post, ...makeFallback(), summary: 'Không liên quan', spamScore, painScore });
             continue;
         }
         if (MARKETING_REGEX.test(content)) {
-            preFiltered.push({ ...post, ...makeFallback(), summary: 'Marketing content (brand page)' });
+            preFiltered.push({ ...post, ...makeFallback(), summary: 'Marketing content (brand page)', spamScore, painScore });
             continue;
         }
         // Wrong-route filters: THG only serves VN/CN → US/World
         if (DOMESTIC_VN_REGEX.test(content)) {
-            preFiltered.push({ ...post, ...makeFallback(), summary: 'Nội địa VN — sai tuyến' });
+            preFiltered.push({ ...post, ...makeFallback(), summary: 'Nội địa VN — sai tuyến', spamScore, painScore });
             continue;
         }
         if (TQ_TO_VN_REGEX.test(content)) {
-            preFiltered.push({ ...post, ...makeFallback(), summary: 'Tuyến TQ→VN — sai tuyến' });
+            preFiltered.push({ ...post, ...makeFallback(), summary: 'Tuyến TQ→VN — sai tuyến', spamScore, painScore });
             continue;
         }
         if (US_TO_VN_REGEX.test(content)) {
-            preFiltered.push({ ...post, ...makeFallback(), summary: 'Tuyến US→VN — sai tuyến' });
+            preFiltered.push({ ...post, ...makeFallback(), summary: 'Tuyến US→VN — sai tuyến', spamScore, painScore });
             continue;
         }
         // Must-have: no business keywords at all → skip (saves AI)
         if (!MUST_HAVE_KEYWORDS.test(content) && content.length < 200) {
-            preFiltered.push({ ...post, ...makeFallback(), summary: 'No business keywords' });
+            preFiltered.push({ ...post, ...makeFallback(), summary: 'No business keywords', spamScore, painScore });
             continue;
         }
+        // Pass scores through to AI classification
+        post._spamScore = spamScore;
+        post._painScore = painScore;
         toClassify.push(post);
     }
 
@@ -436,6 +541,12 @@ async function classifyPosts(posts) {
                     }
                 }
                 delete merged._intent;
+
+                // Carry spam/pain scores onto result
+                merged.spamScore = batch[j]._spamScore || 0;
+                merged.painScore = batch[j]._painScore || 0;
+                delete merged._spamScore;
+                delete merged._painScore;
 
                 results.push(merged);
 

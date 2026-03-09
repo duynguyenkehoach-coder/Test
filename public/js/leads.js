@@ -218,6 +218,16 @@ function renderLeadCard(lead) {
             <span class="hot-meter-label">${hotLabel}</span>
           </div>
 
+          <!-- Revenue Insights -->
+          <div class="revenue-insights">
+            ${lead.profit_estimate ? `<span class="profit-badge">💰 ${escapeHtml(lead.profit_estimate)}</span>` : ''}
+            ${lead.gap_opportunity ? `<span class="gap-tag">🔍 ${escapeHtml(lead.gap_opportunity)}</span>` : ''}
+            <span class="speed-counter" data-created="${postDateStr}">⏱️ ${timeStr}</span>
+            ${lead.winner_staff ? `<span class="winner-badge">🏆 ${escapeHtml(lead.winner_staff)} — $${lead.deal_value || 0}</span>` : ''}
+            ${(lead.pain_score > 0) ? `<span class="pain-score-badge" title="Điểm đau của buyer — càng cao càng chất">⚡ Pain:${lead.pain_score}</span>` : ''}
+            ${(lead.spam_score > 0) ? `<span class="spam-score-badge" title="Điểm nghi ngờ Provider — nếu cao mà vẫn lọt, cần review">🚨 Spam:${lead.spam_score}</span>` : ''}
+          </div>
+
           <!-- Author -->
           <div class="lead-author" style="margin-top:6px;display:flex;align-items:center;gap:8px;">
             ${lead.author_avatar ? `<img src="${lead.author_avatar}" alt="" style="width:28px;height:28px;border-radius:50%;object-fit:cover;border:2px solid var(--border);" onerror="this.style.display='none'">` : '<span style="font-size:1.2rem;">👤</span>'}
@@ -241,6 +251,7 @@ function renderLeadCard(lead) {
             <button class="lab-btn ${lead.status === 'converted' ? 'lab-active-green' : ''}" onclick="convertLead(${lead.id})" title="Converted">✅</button>
             <button class="lab-btn ${lead.status === 'ignored' ? 'lab-active-red' : ''}" onclick="updateStatus(${lead.id}, 'ignored')" title="Ignore">⛔</button>
             <button class="lab-btn" onclick="deleteLead(${lead.id})" title="Xóa" style="color:#ef4444;">🗑️</button>
+            ${!lead.winner_staff ? `<button class="lab-btn close-deal-btn" onclick="showCloseDealModal(${lead.id})" title="Chốt đơn">🏆</button>` : ''}
             <div style="flex:1"></div>
             <!-- Staff Claim & Lock -->
             <div class="staff-assign" title="Tiếp nhận lead">${staffPills}</div>
@@ -560,4 +571,96 @@ async function loadAgentStats() {
 // Load agent stats on page load
 document.addEventListener('DOMContentLoaded', () => {
   setTimeout(loadAgentStats, 1000);
+  setTimeout(loadClosingFeed, 1500);
+  // Speed-to-Lead live updater (every 30s)
+  setInterval(updateSpeedCounters, 30000);
 });
+
+// ═══════════════════════════════════════════════════════
+// Close Deal Modal
+// ═══════════════════════════════════════════════════════
+function showCloseDealModal(leadId) {
+  const STAFF = ['Trang', 'Min', 'Moon', 'Lê Huyền', 'Ngọc Huyền'];
+  const card = document.getElementById(`lead-${leadId}`);
+  const claimedBy = card?.querySelector('.staff-pill--claimed')?.textContent?.replace(' 🛡️', '') || '';
+
+  const modal = document.createElement('div');
+  modal.className = 'close-deal-overlay';
+  modal.id = `close-modal-${leadId}`;
+  modal.innerHTML = `
+    <div class="close-deal-modal">
+      <h3 style="margin:0 0 16px;color:#22d3ee;font-size:1.1rem;">🏆 Chốt Đơn — Lead #${leadId}</h3>
+      <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Người chốt đơn:</label>
+      <select id="close-winner-${leadId}" class="close-deal-select">
+        ${STAFF.map(s => `<option value="${s}" ${s === claimedBy ? 'selected' : ''}>${s}</option>`).join('')}
+      </select>
+      <label style="font-size:12px;color:var(--text-secondary);display:block;margin:12px 0 4px;">Giá trị đơn ($):</label>
+      <input type="number" id="close-value-${leadId}" class="close-deal-input" placeholder="vd: 1500" min="0" step="50" />
+      <label style="font-size:12px;color:var(--text-secondary);display:block;margin:12px 0 4px;">Ghi chú:</label>
+      <input type="text" id="close-note-${leadId}" class="close-deal-input" placeholder="vd: Khách đặt 200kg FF đi US" />
+      <div style="display:flex;gap:8px;margin-top:16px;">
+        <button class="close-deal-confirm" onclick="closeDeal(${leadId})">🏆 Xác nhận</button>
+        <button class="close-deal-cancel" onclick="document.getElementById('close-modal-${leadId}').remove()">Hủy</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function closeDeal(leadId) {
+  const winner = document.getElementById(`close-winner-${leadId}`)?.value;
+  const dealValue = parseFloat(document.getElementById(`close-value-${leadId}`)?.value) || 0;
+  const note = document.getElementById(`close-note-${leadId}`)?.value || '';
+
+  try {
+    const resp = await fetch(`/api/leads/${leadId}/close`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ winner_staff: winner, deal_value: dealValue, note }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      showToast(`🏆 ${winner} chốt đơn $${dealValue} thành công!`, 'success');
+      document.getElementById(`close-modal-${leadId}`)?.remove();
+      loadLeads();
+      loadStats();
+      loadClosingFeed();
+    } else {
+      showToast(data.error || 'Lỗi khi chốt đơn', 'error');
+    }
+  } catch (err) {
+    showToast('❌ Lỗi khi chốt đơn', 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// Closing Feed — Victory Ticker
+// ═══════════════════════════════════════════════════════
+async function loadClosingFeed() {
+  try {
+    const res = await fetch('/api/activities/feed?limit=10');
+    const { data } = await res.json();
+    const ticker = document.getElementById('closingFeed');
+    if (!ticker || !data || data.length === 0) {
+      if (ticker) ticker.style.display = 'none';
+      return;
+    }
+    ticker.style.display = '';
+    const items = data.map(d => {
+      const timeAgoStr = timeAgo(d.created_at);
+      return `🏆 <strong>${d.staff_name}</strong> chốt $${d.deal_value || 0} ${d.category || ''} từ ${d.source_group || 'lead'} (${timeAgoStr})`;
+    }).join('  •  ');
+    ticker.innerHTML = `<div class="closing-feed-inner"><span class="closing-feed-text">${items}</span></div>`;
+  } catch (err) { /* silently fail */ }
+}
+
+// ═══════════════════════════════════════════════════════
+// Speed-to-Lead — Live Counter
+// ═══════════════════════════════════════════════════════
+function updateSpeedCounters() {
+  document.querySelectorAll('.speed-counter').forEach(el => {
+    const created = el.dataset?.created;
+    if (!created) return;
+    el.textContent = '⏱️ ' + timeAgo(created);
+  });
+}

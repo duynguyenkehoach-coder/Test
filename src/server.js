@@ -911,9 +911,122 @@ app.patch('/api/leads/:id', (req, res) => {
             }
         }
 
+        // ═══ AUTO-LOG to sales_activities ═══
+        if (updates.claimed_by) {
+            try {
+                database.db.prepare(
+                    `INSERT INTO sales_activities (lead_id, staff_name, action_type, note) VALUES (?, ?, 'CLAIM', ?)`
+                ).run(id, updates.claimed_by, `Claimed lead #${id}`);
+            } catch (e) { /* ignore logging errors */ }
+        }
+        if (updates.status === 'contacted' && lead?.claimed_by) {
+            try {
+                database.db.prepare(
+                    `INSERT INTO sales_activities (lead_id, staff_name, action_type, note) VALUES (?, ?, 'CONTACT', ?)`
+                ).run(id, lead.claimed_by, `Contacted lead #${id}`);
+            } catch (e) { /* ignore */ }
+        }
+
         res.json({ ok: true, ...lead });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// ╔═══════════════════════════════════════════════════════════╗
+// ║  CLOSE DEAL — Winner + Revenue Tracking                   ║
+// ╚═══════════════════════════════════════════════════════════╝
+
+app.post('/api/leads/:id/close', (req, res) => {
+    try {
+        const { id } = req.params;
+        const { winner_staff, deal_value, note } = req.body;
+
+        if (!winner_staff) return res.status(400).json({ ok: false, error: 'winner_staff required' });
+
+        // Update lead with winner info
+        database.db.prepare(`
+            UPDATE leads SET
+                status = 'converted',
+                winner_staff = @winner_staff,
+                deal_value = @deal_value,
+                closed_at = datetime('now'),
+                converted_at = CASE WHEN converted_at IS NULL THEN datetime('now') ELSE converted_at END,
+                updated_at = datetime('now')
+            WHERE id = @id
+        `).run({ winner_staff, deal_value: deal_value || 0, id });
+
+        // Log the closing activity
+        database.db.prepare(
+            `INSERT INTO sales_activities (lead_id, staff_name, action_type, deal_value, note) VALUES (?, ?, 'CLOSED', ?, ?)`
+        ).run(id, winner_staff, deal_value || 0, note || `Chốt đơn $${deal_value || 0}`);
+
+        // Auto-train agent: confirmed buyer
+        const lead = database.db.prepare('SELECT * FROM leads WHERE id = ?').get(id);
+        if (lead?.content) {
+            memoryStore.saveFeedbackByContent(lead.content, {
+                type: 'correct', correct_role: 'buyer',
+                note: `Deal closed by ${winner_staff} — $${deal_value || 0}`, platform: lead.platform,
+            });
+        }
+
+        logger.info('Sales', `🏆 ${winner_staff} closed deal #${id} — $${deal_value || 0}`);
+        res.json({ ok: true, message: `🏆 ${winner_staff} chốt đơn thành công!`, lead });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// ╔═══════════════════════════════════════════════════════════╗
+// ║  CLOSING FEED — Recent Wins Ticker                        ║
+// ╚═══════════════════════════════════════════════════════════╝
+
+app.get('/api/activities/feed', (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 10;
+        const feed = database.db.prepare(`
+            SELECT sa.*, l.category, l.source_group, l.author_name
+            FROM sales_activities sa
+            LEFT JOIN leads l ON sa.lead_id = l.id
+            WHERE sa.action_type = 'CLOSED'
+            ORDER BY sa.created_at DESC
+            LIMIT ?
+        `).all(limit);
+        res.json({ success: true, data: feed });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// ╔═══════════════════════════════════════════════════════════╗
+// ║  STAFF STATS — Per-Staff Revenue Dashboard                ║
+// ╚═══════════════════════════════════════════════════════════╝
+
+app.get('/api/staff/stats', (req, res) => {
+    try {
+        const stats = database.db.prepare(`
+            SELECT
+                staff_name,
+                COUNT(CASE WHEN action_type = 'CLAIM' THEN 1 END) as claims,
+                COUNT(CASE WHEN action_type = 'CONTACT' THEN 1 END) as contacts,
+                COUNT(CASE WHEN action_type = 'CLOSED' THEN 1 END) as closes,
+                SUM(CASE WHEN action_type = 'CLOSED' THEN deal_value ELSE 0 END) as total_revenue
+            FROM sales_activities
+            GROUP BY staff_name
+            ORDER BY total_revenue DESC
+        `).all();
+
+        // Also get today's activity
+        const today = database.db.prepare(`
+            SELECT staff_name, action_type, COUNT(*) as count
+            FROM sales_activities
+            WHERE date(created_at) = date('now')
+            GROUP BY staff_name, action_type
+        `).all();
+
+        res.json({ success: true, data: { allTime: stats, today } });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
