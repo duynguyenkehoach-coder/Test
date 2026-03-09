@@ -150,85 +150,60 @@
 
         <!-- ========== LEADS TAB ========== -->
         <div id="leadsTab">
-          <div class="filter-bar">
-            <label>🔎 Filter</label>
-            <select class="filter-select" id="filterPlatform" onchange="loadLeads()">
-              <option value="">All Platforms</option>
-              <option value="facebook">📘 Facebook</option>
-              <option value="instagram">📷 Instagram</option>
-              <option value="tiktok">🎵 TikTok</option>
-            </select>
-            <select class="filter-select" id="filterCategory" onchange="loadLeads()">
-              <option value="">All Categories</option>
-              <option value="POD">🖨️ POD</option>
-              <option value="Dropship">📦 Dropship</option>
-              <option value="Fulfillment">🏭 Fulfillment</option>
-              <option value="Express">✈️ Express</option>
-              <option value="Warehouse">🏢 Warehouse</option>
-              <option value="General">🔄 General</option>
-            </select>
-            <select class="filter-select" id="filterStatus" onchange="loadLeads()">
-              <option value="">All Status</option>
-              <option value="new">🆕 New</option>
-              <option value="contacted">📞 Contacted</option>
-              <option value="converted">✅ Converted</option>
-            </select>
-            <select class="filter-select" id="filterScore" onchange="loadLeads()">
-              <option value="">All Scores</option>
-              <option value="80">Score ≥ 80</option>
-              <option value="60">Score ≥ 60</option>
-              <option value="40">Score ≥ 40</option>
-            </select>
-            <input type="date" class="filter-input" id="filterDate" onchange="renderLeads()" style="width: auto;">
-            <select class="filter-select" id="filterTime" onchange="renderLeads()">
-              <option value="">All Times</option>
-              <!-- Populated by JS -->
-            </select>
-            <input type="text" class="filter-input" id="filterSearch" placeholder="Search content, author..."
-              oninput="debounceSearch()">
-            <div class="filter-spacer"></div>
-            <a href="/api/leads/export" class="btn" style="font-size:0.85rem;padding:8px 14px;text-decoration:none;">
-              📥 Export
-            </a>
-            <button class="btn" onclick="clearAllLeads()"
-              style="font-size:0.85rem;padding:8px 14px;background:linear-gradient(135deg,#ef4444,#dc2626);color:white;border:none;">
-              🗑️ Clear
-            </button>
-            <span class="leads-count" id="leadsCount">0 leads</span>
+          <!-- ── MAIN LEADS VIEW (List/Grid) ── -->
+          <div id="leadsMainView">
+            <div class="filter-bar">
+              <label>🔎 Filter</label>
+              <select class="filter-select" id="filterPlatform" onchange="loadLeads()">
+                <option value="">All Platforms</option>
+                <option value="facebook">📘 Facebook</option>
+                <option value="instagram">📷 Instagram</option>
+                <option value="tiktok">🎵 TikTok</option>
+              </select>
+              <select class="filter-select" id="filterCategory" onchange="loadLeads()">
+                <option value="">All Categories</option>
+                <option value="POD">🖨️ POD</option>
+                <option value="Dropship">📦 Dropship</option>
+                <option value="Fulfillment">🏭 Fulfillment</option>
+                <option value="Express">✈️ Express</option>
+                <option value="Warehouse">🏢 Warehouse</option>
+                <option value="General">🔄 General</option>
+              </select>
+              <select class="filter-select" id="filterStatus" onchange="loadLeads()">
+                <option value="">All Status</option>
+                <option value="new">🆕 New</option>
+                <option value="contacted">📞 Contacted</option>
+                <option value="converted">✅ Converted</option>
+              </select>
+              <select class="filter-select" id="filterScore" onchange="loadLeads()">
+                <option value="">All Scores</option>
+                <option value="80">Score ≥ 80</option>
+                <option value="60">Score ≥ 60</option>
+                <option value="40">Score ≥ 40</option>
+              </select>
+              <input type="date" class="filter-input" id="filterDate" onchange="renderLeads()" style="width: auto;">
+              <select class="filter-select" id="filterTime" onchange="renderLeads()">
+                <option value="">All Times</option>
+              </select>
+              <input type="text" class="filter-input" id="filterSearch" placeholder="Search content, author..."
+                oninput="debounceSearch()">
+              <div class="filter-spacer"></div>
+              <button class="btn" onclick="clearAllLeads()"
+                style="font-size:0.85rem;padding:8px 14px;background:linear-gradient(135deg,#ef4444,#dc2626);color:white;border:none;">
+                🗑️ Clear
+              </button>
+              <span class="leads-count" id="leadsCount">0 leads</span>
+            </div>
+
+            <!-- Clean Grid for Leads -->
+            <div class="leads-clean-grid" id="leadsGrid">
+              <div class="empty-state">Chưa có dữ liệu</div>
+            </div>
           </div>
-          <div class="kanban-board" id="kanbanBoard">
-            <!-- Priority Deals (Hot & High Ticket) -->
-            <div class="kanban-col kanban-hot">
-              <div class="kanban-header">
-                <div class="kh-title">🏆 Priority Deals</div>
-                <span class="col-count" id="count-hot">0</span>
-              </div>
-              <div class="kanban-list" id="col-hot">
-                <div class="empty-state" id="empty-hot">Chưa có deal HOT</div>
-              </div>
-            </div>
 
-            <!-- Warm Leads (Nurturing) -->
-            <div class="kanban-col kanban-warm">
-              <div class="kanban-header">
-                <div class="kh-title">⚡ Warm Leads</div>
-                <span class="col-count" id="count-warm">0</span>
-              </div>
-              <div class="kanban-list" id="col-warm">
-                <div class="empty-state" id="empty-warm">Chưa có lead tiềm năng</div>
-              </div>
-            </div>
-
-            <!-- Inquiries & Cold -->
-            <div class="kanban-col kanban-cold">
-              <div class="kanban-header">
-                <div class="kh-title">💬 Inquiries (Ao)</div>
-                <span class="col-count" id="count-cold">0</span>
-              </div>
-              <div class="kanban-list" id="col-cold">
-                <div class="empty-state" id="empty-cold">Chưa có thắc mắc</div>
-              </div>
-            </div>
+          <!-- ── OVERLAY DETAIL VIEW (The War Room) ── -->
+          <div id="leadDetailView" style="display: none;">
+            <!-- Rendered via JS -->
           </div>
         </div>
 

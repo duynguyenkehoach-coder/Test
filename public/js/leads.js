@@ -9,77 +9,110 @@ function getPostDate(lead) {
 }
 
 function renderLeadsList(leadsArray, gridId = 'leadsGrid') {
-  if (gridId === 'leadsGrid') {
-    renderKanbanBoard(leadsArray);
-  } else {
-    // Fallback for Ignored/Inbox tabs
-    const grid = document.getElementById(gridId);
-    if (!leadsArray || leadsArray.length === 0) {
-      grid.innerHTML = `<div class="empty-state"><div class="empty-state-icon">✅</div><h3>Không có dữ liệu</h3></div>`;
-      return;
-    }
+  const grid = document.getElementById(gridId);
+  if (!grid) return;
 
-    let html = '';
-    for (const lead of leadsArray) {
-      html += renderLeadCard(lead);
-    }
-    grid.innerHTML = html;
+  if (!leadsArray || leadsArray.length === 0) {
+    grid.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🔍</div><h3>No leads found</h3><p>Try adjusting filters or run a new scan.</p></div>`;
+    return;
   }
-}
 
-function renderKanbanBoard(leadsArray) {
-  const colHot = document.getElementById('col-hot');
-  const colWarm = document.getElementById('col-warm');
-  const colCold = document.getElementById('col-cold');
-  const cntHot = document.getElementById('count-hot');
-  const cntWarm = document.getElementById('count-warm');
-  const cntCold = document.getElementById('count-cold');
-
-  if (!colHot || !colWarm || !colCold) return;
-
-  // Apply filters
+  // Apply Date & Time Filters
   const filterDate = document.getElementById('filterDate')?.value;
   const filterTime = document.getElementById('filterTime')?.value;
 
   const filteredLeads = leadsArray.filter(lead => {
+    if (gridId === 'ignoredGrid') return true;
     if (!filterDate && !filterTime) return true;
+
     const dt = getPostDate(lead);
     const d = dt.toLocaleDateString('sv-SE');
     const h = String(dt.getHours()).padStart(2, '0');
     const t = `${h}:00`;
+
     if (filterDate && d !== filterDate) return false;
     if (filterTime && t !== filterTime) return false;
     return true;
   });
 
-  // Buckets
-  const hotLeads = [];
-  const warmLeads = [];
-  const coldLeads = [];
+  if (filteredLeads.length === 0) {
+    grid.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🔍</div><h3>No leads match filter</h3><p>Try changing your date or time selection.</p></div>`;
+    return;
+  }
 
+  // Render Grid format
+  let html = '';
   for (const lead of filteredLeads) {
-    const isHot = lead.profit_estimate || lead.score >= 80;
-    const isWarm = (lead.score >= 50 && lead.score < 80) || lead.pain_score > 0;
-
-    if (isHot) {
-      hotLeads.push(lead);
-    } else if (isWarm) {
-      warmLeads.push(lead);
+    if (gridId === 'leadsGrid') {
+      html += renderCompactLeadCard(lead);
     } else {
-      coldLeads.push(lead);
+      html += renderLeadCard(lead);
     }
   }
 
-  // Update Counters
-  cntHot.textContent = hotLeads.length;
-  cntWarm.textContent = warmLeads.length;
-  cntCold.textContent = coldLeads.length;
-
-  // Render HTML
-  colHot.innerHTML = hotLeads.length ? hotLeads.map(l => renderLeadCard(l, 'hot')).join('') : `<div class="empty-state">Không có deal ưu tiên</div>`;
-  colWarm.innerHTML = warmLeads.length ? warmLeads.map(l => renderLeadCard(l, 'warm')).join('') : `<div class="empty-state">Chưa có lead tiềm năng</div>`;
-  colCold.innerHTML = coldLeads.length ? coldLeads.map(l => renderLeadCard(l, 'cold')).join('') : `<div class="empty-state">Chưa có thông tin hỏi giá</div>`;
+  grid.innerHTML = html;
 }
+
+// ═══ MASTER-DETAIL VIEW LOGIC ═══
+
+function renderCompactLeadCard(lead) {
+  const scoreClass = lead.score >= 80 ? 'score-high' : lead.score >= 60 ? 'score-med' : 'score-low';
+  const platformIcons = { facebook: '📘', instagram: '📷', tiktok: '🎵' };
+  const dt = getPostDate(lead);
+  const timeStr = dt.toLocaleDateString('sv-SE') + ' ' + String(dt.getHours()).padStart(2, '0') + ':' + String(dt.getMinutes()).padStart(2, '0');
+  const author = escapeHtml(lead.author_name || 'Unknown');
+
+  // Truncate content for summary
+  const shortContent = escapeHtml(lead.content || '').substring(0, 100) + '...';
+
+  let moneyBadge = '';
+  if (lead.profit_estimate || lead.score >= 80) {
+    moneyBadge = `<div class="compact-money">💰 ${lead.profit_estimate || 'HOT'}</div>`;
+  }
+
+  const isClaimed = (lead.claimed_by || lead.assigned_to) ? 'compact-claimed' : '';
+
+  return `
+    <div class="compact-card ${scoreClass} ${isClaimed}" onclick="openLeadDetail(${lead.id})">
+      <div class="compact-header">
+        <span class="compact-score ${scoreClass}">${lead.score}</span>
+        <span class="compact-platform">${platformIcons[lead.platform] || '🌐'}</span>
+        <span class="compact-time">${timeStr}</span>
+        ${moneyBadge}
+      </div>
+      <div class="compact-author">${author}</div>
+      <div class="compact-gap">${escapeHtml(lead.gap_opportunity || lead.summary || shortContent)}</div>
+    </div>
+  `;
+}
+
+function openLeadDetail(leadId) {
+  const lead = AppState.leads.find(l => l.id === leadId) || AppState.ignoredLeads.find(l => l.id === leadId);
+  if (!lead) return;
+
+  // Hide Main View, Show Detail View
+  document.getElementById('leadsMainView').style.display = 'none';
+  const detailView = document.getElementById('leadDetailView');
+  detailView.style.display = 'block';
+
+  // Render the full War Room card plus a back button using the existing renderLeadCard logic
+  detailView.innerHTML = `
+    <div class="war-room-header">
+      <button class="back-btn" onclick="closeLeadDetail()">⬅️ Quay lại danh sách</button>
+      <div class="war-room-title">🎯 The Closing Room</div>
+    </div>
+    <div class="war-room-content">
+      ${renderLeadCard(lead, 'war-room')}
+    </div>
+  `;
+}
+
+function closeLeadDetail() {
+  document.getElementById('leadDetailView').style.display = 'none';
+  document.getElementById('leadsMainView').style.display = 'block';
+  document.getElementById('leadDetailView').innerHTML = '';
+}
+
 
 function renderLeads() {
   renderLeadsList(AppState.leads, 'leadsGrid');
