@@ -320,11 +320,23 @@ function extractGroupId(url) {
 // ═══════════════════════════════════════════════════════
 
 /**
- * Get posts from a Facebook group.
+ * Get posts from a Facebook group (with 2-minute timeout).
  * Uses authenticated Playwright session on www.facebook.com.
  * Output format matches SociaVault fbGetGroupPosts.
  */
 async function getGroupPosts(groupUrl, groupName) {
+    const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('⏰ Group timeout (2min)')), 120000)
+    );
+    try {
+        return await Promise.race([timeout, _getGroupPostsInner(groupUrl, groupName)]);
+    } catch (err) {
+        console.warn(`[FBScraper] ⚠️ ${groupName}: ${err.message}`);
+        return [];
+    }
+}
+
+async function _getGroupPostsInner(groupUrl, groupName) {
     const groupId = extractGroupId(groupUrl);
     if (!groupId) return [];
 
@@ -545,7 +557,7 @@ async function getPostComments(postUrl, source) {
         await page.evaluate(() => window.scrollBy(0, 2000));
         await delay(1500);
 
-        const comments = await page.evaluate((pUrl, src) => {
+        const comments = await page.evaluate(({ pUrl, src }) => {
             const results = [];
             const seen = new Set();
             const comEls = document.querySelectorAll('div[role="article"], ul li, div[aria-label*="comment"]');
@@ -582,7 +594,7 @@ async function getPostComments(postUrl, source) {
                 } catch { }
             }
             return results;
-        }, postUrl, source);
+        }, { pUrl: postUrl, src: source });
 
         console.log(`[FBScraper] ✅ ${comments.length} comments`);
         await page.close();

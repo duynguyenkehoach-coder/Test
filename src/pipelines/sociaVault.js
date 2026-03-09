@@ -104,6 +104,14 @@ const PROVIDER_SIGNALS = [
     'nhà phân phối', 'đại lý', 'reseller', 'wholesale', 'sỉ lẻ',
     'gate', 'happpy', 'happy international', 'sunnie bay',
     '0903', '0909', '0912', '0918', '0938', '0968', '0978',  // Vietnamese phone patterns
+    // Local food/restaurant sellers (NOT international shipping leads)
+    'pickup', 'ship xuyên bang', 'ship local', 'giao local',
+    'order ib', 'order inbox', 'order dm', 'order messenger',
+    'nhà làm', 'homemade', 'handmade', 'tự làm', 'tự nấu',
+    'bịch', 'hũ', 'hộp', 'lốc', 'thùng', 'kg', 'lbs',
+    'tóp mỡ', 'chả lụa', 'giò lụa', 'giò chả', 'bún bò', 'phở bò',
+    'chè', 'xôi', 'bánh cuốn', 'bánh mì', 'gỏi cuốn',
+    'cơm tấm', 'bún riêu', 'hủ tiếu', 'cháo', 'lẩu',
 ];
 
 // Buyer/seeker signals (people looking for services) — EXPANDED
