@@ -5,11 +5,13 @@
 // --- Global App State ---
 const AppState = {
     leads: [],
+    ignoredLeads: [],
     conversations: [],
     dataFiles: [],
     analytics: null,
     currentTab: 'leads',
     searchTimeout: null,
+    currentCategory: '',  // '' = All leads, set by sidebar clicks
 };
 
 // --- Tab Switching ---

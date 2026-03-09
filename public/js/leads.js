@@ -8,100 +8,205 @@ function getPostDate(lead) {
   return new Date(dateStr.endsWith('Z') ? dateStr : dateStr + 'Z');
 }
 
+
 function renderLeadsList(leadsArray, gridId = 'leadsGrid') {
   const grid = document.getElementById(gridId);
   if (!grid) return;
 
   if (!leadsArray || leadsArray.length === 0) {
-    grid.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🔍</div><h3>No leads found</h3><p>Try adjusting filters or run a new scan.</p></div>`;
+    grid.innerHTML = `<div class="ant-empty"><div class="ant-empty-icon">🔍</div><div class="ant-empty-text">Chưa có leads</div><div class="ant-empty-sub">Hãy chạy scan hoặc chọn mục khác</div></div>`;
     return;
   }
 
-  // Apply Date & Time Filters
-  const filterDate = document.getElementById('filterDate')?.value;
-  const filterTime = document.getElementById('filterTime')?.value;
+  const filterDate = document.getElementById('filterDate')?.value || '';
+  const filterTime = document.getElementById('filterTime')?.value || '';
+  const currentCat = AppState.currentCategory || '';
+  console.log('[THG] renderLeadsList:', leadsArray.length, 'in, cat:', currentCat, ', gridId:', gridId);
+
 
   const filteredLeads = leadsArray.filter(lead => {
     if (gridId === 'ignoredGrid') return true;
-
-    // Check Sidebar Category Filter
-    if (AppState.currentCategory && AppState.currentCategory !== 'All') {
-      const cat = lead.category || 'General';
-      if (AppState.currentCategory === 'Fulfill') {
-        const fulfillTypes = ['Fulfillment', 'POD', 'Dropship'];
-        if (!fulfillTypes.includes(cat)) return false;
-      } else if (AppState.currentCategory === 'Warehouse') {
+    if (currentCat && currentCat !== 'All') {
+      const cat = lead.category || '';
+      if (currentCat === 'Fulfill') {
+        if (!['THG Fulfillment', 'Fulfillment', 'POD', 'Dropship', 'THG Fulfill'].includes(cat)) return false;
+      } else if (currentCat === 'Express') {
+        if (cat !== 'Express' && cat !== 'THG Express') return false;
+      } else if (currentCat === 'Warehouse') {
         if (cat !== 'Warehouse' && cat !== 'THG Warehouse') return false;
-      } else if (AppState.currentCategory === 'General') {
-        const generalTypes = ['General', 'NotRelevant'];
-        if (!generalTypes.includes(cat) && cat !== '') return false;
-      } else {
-        if (cat !== AppState.currentCategory) return false;
+      } else if (currentCat === 'General') {
+        if (!['General', 'NotRelevant', ''].includes(cat)) return false;
       }
     }
-
     if (!filterDate && !filterTime) return true;
-
     const dt = getPostDate(lead);
     const d = dt.toLocaleDateString('sv-SE');
     const h = String(dt.getHours()).padStart(2, '0');
-    const t = `${h}:00`;
-
     if (filterDate && d !== filterDate) return false;
-    if (filterTime && t !== filterTime) return false;
+    if (filterTime && `${h}:00` !== filterTime) return false;
     return true;
   });
 
   if (filteredLeads.length === 0) {
-    grid.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🔍</div><h3>No leads match filter</h3><p>Try changing your date or time selection.</p></div>`;
+    grid.innerHTML = `<div class="ant-empty"><div class="ant-empty-icon">🔍</div><div class="ant-empty-text">Không có leads khớp filter</div><div class="ant-empty-sub">Thử thay đổi bộ lọc hoặc chọn All Leads</div></div>`;
     return;
   }
 
-  // Render Grid format
-  let html = '';
-  for (const lead of filteredLeads) {
-    if (gridId === 'leadsGrid') {
-      html += renderCompactLeadCard(lead);
-    } else {
-      html += renderLeadCard(lead);
-    }
-  }
+  const rows = filteredLeads.map(lead => {
+    try { return renderLeadTableRow(lead, gridId); } catch (e) { console.error(e); return ''; }
+  }).join('');
 
-  grid.innerHTML = html;
+  grid.innerHTML = `
+    <div class="ant-table-wrapper">
+      <table class="ant-table">
+        <thead class="ant-table-thead">
+          <tr>
+            <th class="ant-th" style="width:90px">Score</th>
+            <th class="ant-th" style="width:100px">Platform</th>
+            <th class="ant-th" style="width:140px">Seller</th>
+            <th class="ant-th">Summary / Opportunity</th>
+            <th class="ant-th" style="width:100px">Service</th>
+            <th class="ant-th" style="width:90px">Status</th>
+            <th class="ant-th" style="width:80px">Time</th>
+            <th class="ant-th" style="width:80px">Action</th>
+          </tr>
+        </thead>
+        <tbody class="ant-table-tbody">${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderLeadTableRow(lead, gridId) {
+  const score = lead.score || 0;
+  const scoreClass = score >= 80 ? 'score-tag-high' : score >= 60 ? 'score-tag-med' : 'score-tag-low';
+  const scoreLabel = score >= 80 ? '🔥 HOT' : score >= 60 ? '⚡ WARM' : '💤 LOW';
+
+  const platformMap = {
+    facebook: { icon: '📘', label: 'Facebook', color: '#4096ff' },
+    instagram: { icon: '📷', label: 'Instagram', color: '#e1306c' },
+    tiktok: { icon: '🎵', label: 'TikTok', color: '#ff0050' },
+  };
+  const platform = platformMap[lead.platform] || { icon: '🌐', label: lead.platform || 'Web', color: '#8c8c8c' };
+
+  const categoryMap = {
+    'THG Fulfillment': { label: 'Fulfill', color: '#722ed1' },
+    'Fulfillment': { label: 'Fulfill', color: '#722ed1' },
+    'POD': { label: 'POD', color: '#722ed1' },
+    'Dropship': { label: 'Dropship', color: '#722ed1' },
+    'THG Express': { label: 'Express', color: '#1890ff' },
+    'Express': { label: 'Express', color: '#1890ff' },
+    'THG Warehouse': { label: 'Warehouse', color: '#fa8c16' },
+    'Warehouse': { label: 'Warehouse', color: '#fa8c16' },
+  };
+  const catInfo = categoryMap[lead.category] || { label: lead.category || 'General', color: '#8c8c8c' };
+
+  const statusMap = {
+    'new': { label: '● New', color: '#52c41a', bg: 'rgba(82,196,26,0.1)' },
+    'contacted': { label: '● Contacted', color: '#faad14', bg: 'rgba(250,173,20,0.1)' },
+    'converted': { label: '● Converted', color: '#1890ff', bg: 'rgba(24,144,255,0.1)' },
+    'ignored': { label: '● Ignored', color: '#ff4d4f', bg: 'rgba(255,77,79,0.1)' },
+  };
+  const status = statusMap[lead.status] || statusMap['new'];
+
+  const author = escapeHtml(lead.author_name || 'Unknown');
+  const summary = escapeHtml((lead.gap_opportunity || lead.summary || lead.content || '').substring(0, 130));
+  const dt = getPostDate(lead);
+  const dateLabel = dt.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+  const timeLabel = String(dt.getHours()).padStart(2, '0') + ':' + String(dt.getMinutes()).padStart(2, '0');
+
+  const isClaimed = !!(lead.claimed_by || lead.assigned_to);
+  const urgencyDot = lead.urgency === 'critical' ? '<span class="urgency-dot urgency-critical" title="Critical"></span>' :
+    lead.urgency === 'high' ? '<span class="urgency-dot urgency-high" title="High urgency"></span>' : '';
+
+  return `
+    <tr class="ant-tr${isClaimed ? ' ant-tr-claimed' : ''}" onclick="openLeadDetail(${lead.id})" title="Click to open The Closing Room">
+      <td class="ant-td" style="text-align:center">
+        <div class="score-tag ${scoreClass}">
+          <span class="score-num">${score}</span>
+          <span class="score-lbl">${scoreLabel}</span>
+        </div>
+      </td>
+      <td class="ant-td">
+        <span style="color:${platform.color};font-weight:500;font-size:0.82rem">${platform.icon} ${platform.label}</span>
+      </td>
+      <td class="ant-td">
+        <div class="author-cell">
+          ${urgencyDot}
+          <span class="author-name">${author}</span>
+          ${isClaimed ? '<span class="claimed-badge" title="Being handled">⚡</span>' : ''}
+        </div>
+      </td>
+      <td class="ant-td">
+        <div class="summary-cell">${summary}</div>
+      </td>
+      <td class="ant-td">
+        <span class="category-tag" style="color:${catInfo.color};border-color:${catInfo.color}55;background:${catInfo.color}18">${catInfo.label}</span>
+      </td>
+      <td class="ant-td">
+        <span class="status-tag" style="color:${status.color};background:${status.bg}">${status.label}</span>
+      </td>
+      <td class="ant-td" style="font-size:0.78rem;color:var(--text-secondary);line-height:1.4">
+        <div>${dateLabel}</div>
+        <div>${timeLabel}</div>
+      </td>
+      <td class="ant-td" onclick="event.stopPropagation()">
+        <button class="ant-btn-view" onclick="openLeadDetail(${lead.id})">View →</button>
+      </td>
+    </tr>
+  `;
 }
 
 // ═══ MASTER-DETAIL VIEW LOGIC ═══
 
 function renderCompactLeadCard(lead) {
-  const scoreClass = lead.score >= 80 ? 'score-high' : lead.score >= 60 ? 'score-med' : 'score-low';
-  const platformIcons = { facebook: '📘', instagram: '📷', tiktok: '🎵' };
-  const dt = getPostDate(lead);
-  const timeStr = dt.toLocaleDateString('sv-SE') + ' ' + String(dt.getHours()).padStart(2, '0') + ':' + String(dt.getMinutes()).padStart(2, '0');
-  const author = escapeHtml(lead.author_name || 'Unknown');
+  return renderLeadTableRow(lead, 'leadsGrid');
+}
 
-  // Truncate content for summary
-  const shortContent = escapeHtml(lead.content || '').substring(0, 100) + '...';
 
-  let moneyBadge = '';
-  if (lead.profit_estimate || lead.score >= 80) {
-    moneyBadge = `<div class="compact-money">💰 ${lead.profit_estimate || 'HOT'}</div>`;
+// Apply Date & Time Filters
+const filterDate = document.getElementById('filterDate')?.value;
+const filterTime = document.getElementById('filterTime')?.value;
+
+const filteredLeads = leadsArray.filter(lead => {
+  if (gridId === 'ignoredGrid') return true;
+
+  // Check Sidebar Category Filter
+  if (AppState.currentCategory && AppState.currentCategory !== 'All') {
+    const cat = lead.category || 'General';
+    if (AppState.currentCategory === 'Fulfill') {
+      const fulfillTypes = ['THG Fulfillment', 'Fulfillment', 'POD', 'Dropship', 'THG Fulfill'];
+      if (!fulfillTypes.includes(cat)) return false;
+    } else if (AppState.currentCategory === 'Express') {
+      if (cat !== 'Express' && cat !== 'THG Express') return false;
+    } else if (AppState.currentCategory === 'Warehouse') {
+      if (cat !== 'Warehouse' && cat !== 'THG Warehouse') return false;
+    } else if (AppState.currentCategory === 'General') {
+      const generalTypes = ['General', 'NotRelevant'];
+      if (!generalTypes.includes(cat) && cat !== '') return false;
+    } else {
+      if (cat !== AppState.currentCategory) return false;
+    }
   }
 
-  const isClaimed = (lead.claimed_by || lead.assigned_to) ? 'compact-claimed' : '';
+  if (!filterDate && !filterTime) return true;
 
-  return `
-    <div class="compact-card ${scoreClass} ${isClaimed}" onclick="openLeadDetail(${lead.id})">
-      <div class="compact-header">
-        <span class="compact-score ${scoreClass}">${lead.score}</span>
-        <span class="compact-platform">${platformIcons[lead.platform] || '🌐'}</span>
-        <span class="compact-time">${timeStr}</span>
-        ${moneyBadge}
-      </div>
-      <div class="compact-author">${author}</div>
-      <div class="compact-gap">${escapeHtml(lead.gap_opportunity || lead.summary || shortContent)}</div>
-    </div>
-  `;
+  const dt = getPostDate(lead);
+  const d = dt.toLocaleDateString('sv-SE');
+  const h = String(dt.getHours()).padStart(2, '0');
+  const t = `${h}:00`;
+
+  if (filterDate && d !== filterDate) return false;
+  if (filterTime && t !== filterTime) return false;
+  return true;
+});
+
+if (filteredLeads.length === 0) {
+  grid.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🔍</div><h3>No leads match filter</h3><p>Try changing your date or time selection.</p></div>`;
+  return;
 }
+
+
 
 function openLeadDetail(leadId) {
   const lead = AppState.leads.find(l => l.id === leadId) || AppState.ignoredLeads.find(l => l.id === leadId);
@@ -763,32 +868,21 @@ function toggleNavGroup(groupId) {
 }
 
 function filterByMenu(category, btnEl) {
-  // 1. Remove active state from all nav items
-  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  // 1. Remove active state from all sub-items
   document.querySelectorAll('.nav-sub-item').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.nav-item-header').forEach(el => el.classList.remove('active'));
 
-  // 2. Add active state to clicked sub-item and its header
+  // 2. Add active state to clicked sub-item and its parent header
   if (btnEl) {
     btnEl.classList.add('active');
     const groupHeader = btnEl.closest('.nav-item-group')?.querySelector('.nav-item-header');
     if (groupHeader) groupHeader.classList.add('active');
   }
 
-  // 3. Switch to leads tab if not already on it
-  const leadsTab = document.getElementById('leadsTab');
-  const ignoredTab = document.getElementById('ignoredTab');
-  if (leadsTab) leadsTab.style.display = 'block';
-  if (ignoredTab) ignoredTab.style.display = 'none';
-
-  // 4. Force filter reload
-  // Set a global variable to keep track of the chosen category since the dropdown is gone.
+  // 3. Set the category filter in global state
   AppState.currentCategory = category === 'All' ? '' : category;
 
-  // Fetch the fresh data from the backend to ensure we have the full scoped list
-  if (typeof loadLeads === 'function') {
-    loadLeads();
-  } else {
-    renderLeadsList(AppState.leads, 'leadsGrid');
-  }
+  // 4. Make sure we're on leads tab and reload from server
+  AppState.currentTab = 'leads';
+  loadLeads();
 }

@@ -37,14 +37,14 @@ async function loadStats() {
 async function loadLeads() {
     try {
         const params = new URLSearchParams();
-        const platform = document.getElementById('filterPlatform').value;
+        const platform = document.getElementById('filterPlatform')?.value || '';
         const category = AppState.currentCategory || '';
         const status = document.getElementById('filterStatus')?.value || '';
         const minScore = document.getElementById('filterScore')?.value || '';
         const search = document.getElementById('filterSearch')?.value || '';
 
         if (platform) params.set('platform', platform);
-        if (category && category !== 'All') params.set('category', category); // Let backend know we want a specific bucket or leave empty for all
+        if (category && category !== 'All') params.set('category', category);
         if (status) params.set('status', status);
         if (minScore) params.set('minScore', minScore);
         if (search) params.set('search', search);
@@ -55,8 +55,11 @@ async function loadLeads() {
         const res = await fetch(`/api/leads?${params}`);
         const { data, count } = await res.json();
         AppState.leads = data || [];
-        document.getElementById('leadsCount').textContent = `${count || 0} leads`;
-        document.getElementById('tabLeadsCount').textContent = count || 0;
+        console.log('[THG] loadLeads:', AppState.leads.length, 'leads, category:', AppState.currentCategory);
+        const leadsCountEl = document.getElementById('leadsCount');
+        const tabLeadsCountEl = document.getElementById('tabLeadsCount');
+        if (leadsCountEl) leadsCountEl.textContent = `${count || 0} leads`;
+        if (tabLeadsCountEl) tabLeadsCountEl.textContent = count || 0;
         renderLeads();
     } catch (err) {
         console.error('Failed to load leads:', err);

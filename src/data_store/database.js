@@ -229,9 +229,11 @@ const getLeads = (filters = {}) => {
   }
   if (filters.category) {
     if (filters.category === 'Fulfill') {
-      query += " AND category IN ('Fulfillment', 'POD', 'Dropship')";
+      query += " AND category IN ('THG Fulfillment', 'Fulfillment', 'POD', 'Dropship', 'THG Fulfill')";
+    } else if (filters.category === 'Express') {
+      query += " AND category IN ('THG Express', 'Express')";
     } else if (filters.category === 'Warehouse') {
-      query += " AND category IN ('Warehouse', 'THG Warehouse')";
+      query += " AND category IN ('THG Warehouse', 'Warehouse')";
     } else if (filters.category === 'General') {
       query += " AND (category IN ('General', 'NotRelevant') OR category IS NULL OR category = '')";
     } else {
