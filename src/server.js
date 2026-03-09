@@ -865,24 +865,28 @@ app.patch('/api/leads/:id', (req, res) => {
         );
         if (!Object.keys(updates).length) return res.status(400).json({ ok: false, error: 'No valid fields' });
 
-        // ═══ CLAIM & LOCK CHECK ═══
+        // ═══ MULTI-SALES CLAIM LOGIC ═══
+        let claimAction = null; // 'CLAIM' or 'UNCLAIM'
+        let actionStaff = req.body.action_staff;
+
         if (updates.claimed_by !== undefined) {
-            const current = database.db.prepare('SELECT claimed_by, status FROM leads WHERE id = ?').get(id);
-            if (current && current.claimed_by && updates.claimed_by && current.claimed_by !== updates.claimed_by) {
-                // Someone else already claimed this lead → LOCK
-                return res.status(403).json({
-                    ok: false, locked: true,
-                    by: current.claimed_by,
-                    error: `Lead đã được ${current.claimed_by} tiếp nhận`
-                });
+            const current = database.db.prepare('SELECT claimed_by FROM leads WHERE id = ?').get(id);
+            const oldStaffArr = (current?.claimed_by || '').split(',').map(s => s.trim()).filter(Boolean);
+            const newStaffArr = (updates.claimed_by || '').split(',').map(s => s.trim()).filter(Boolean);
+
+            if (actionStaff) {
+                if (newStaffArr.includes(actionStaff) && !oldStaffArr.includes(actionStaff)) {
+                    claimAction = 'CLAIM';
+                } else if (!newStaffArr.includes(actionStaff) && oldStaffArr.includes(actionStaff)) {
+                    claimAction = 'UNCLAIM';
+                }
             }
-            // Auto-manage claim state
-            if (updates.claimed_by) {
+
+            if (newStaffArr.length > 0) {
                 updates.claimed_at = new Date().toISOString();
                 if (!updates.status) updates.status = 'claimed';
-                updates.assigned_to = updates.claimed_by; // Keep assigned_to in sync
+                updates.assigned_to = updates.claimed_by;
             } else {
-                // Unclaim
                 updates.claimed_at = '';
                 if (!updates.status || updates.status === 'claimed') updates.status = 'new';
                 updates.assigned_to = '';
@@ -911,20 +915,23 @@ app.patch('/api/leads/:id', (req, res) => {
             }
         }
 
-        // ═══ AUTO-LOG to sales_activities ═══
-        if (updates.claimed_by) {
+        // ═══ AUTO-LOG to sales_activities (Multi-Sales) ═══
+        if (claimAction && actionStaff) {
             try {
                 database.db.prepare(
-                    `INSERT INTO sales_activities (lead_id, staff_name, action_type, note) VALUES (?, ?, 'CLAIM', ?)`
-                ).run(id, updates.claimed_by, `Claimed lead #${id}`);
+                    `INSERT INTO sales_activities (lead_id, staff_name, action_type, note) VALUES (?, ?, ?, ?)`
+                ).run(id, actionStaff, claimAction, `${claimAction === 'CLAIM' ? 'Tham gia tiếp nhận' : 'Nhả'} lead #${id}`);
             } catch (e) { /* ignore logging errors */ }
         }
         if (updates.status === 'contacted' && lead?.claimed_by) {
-            try {
-                database.db.prepare(
-                    `INSERT INTO sales_activities (lead_id, staff_name, action_type, note) VALUES (?, ?, 'CONTACT', ?)`
-                ).run(id, lead.claimed_by, `Contacted lead #${id}`);
-            } catch (e) { /* ignore */ }
+            const primaryStaff = lead.claimed_by.split(',')[0].trim();
+            if (primaryStaff) {
+                try {
+                    database.db.prepare(
+                        `INSERT INTO sales_activities (lead_id, staff_name, action_type, note) VALUES (?, ?, 'CONTACT', ?)`
+                    ).run(id, primaryStaff, `Contacted lead #${id}`);
+                } catch (e) { /* ignore */ }
+            }
         }
 
         res.json({ ok: true, ...lead });

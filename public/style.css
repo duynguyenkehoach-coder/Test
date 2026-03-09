@@ -175,6 +175,15 @@ body {
   flex-shrink: 0;
 }
 
+.staff-pill--active {
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.2), rgba(14, 165, 233, 0.15)) !important;
+  color: #22d3ee !important;
+  border: 1px solid rgba(34, 211, 238, 0.4) !important;
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.2) !important;
+  font-weight: 800 !important;
+  transform: scale(1.05);
+}
+
 .scan-status-box {
   display: flex;
   align-items: center;
@@ -2083,40 +2092,167 @@ body.light-mode .feedback-btn {
   }
 }
 
-.gap-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 3px 10px;
-  border-radius: 10px;
-  font-size: 11px;
-  font-weight: 700;
-  background: rgba(245, 158, 11, 0.12);
-  color: #fbbf24;
-  border: 1px solid rgba(245, 158, 11, 0.2);
+/* ═══════════════════════════════════════════════════
+   REVENUE DASHBOARD V2 (MONEY-MAKER)
+═══════════════════════════════════════════════════ */
+.revenue-dashboard-panel {
+  margin: 12px 0;
+  padding: 12px;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(30, 41, 59, 0.8));
+  border: 1px solid rgba(234, 179, 8, 0.2);
+  border-radius: 12px;
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5), 0 0 15px rgba(234, 179, 8, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+  overflow: hidden;
 }
 
-.speed-counter {
+.revenue-dashboard-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(to bottom, #fbbf24, #f59e0b);
+  box-shadow: 0 0 10px #fbbf24;
+}
+
+.revenue-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.speed-counter-v2 {
   font-size: 11px;
   font-weight: 600;
   color: #94a3b8;
-  opacity: 0.8;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
 }
 
-.winner-badge {
-  display: inline-flex;
-  align-items: center;
+.quality-badges {
+  display: flex;
+  gap: 6px;
+}
+
+.revenue-money-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.huge-profit-box {
+  background: rgba(234, 179, 8, 0.05);
+  border: 1px dashed rgba(234, 179, 8, 0.3);
+  padding: 10px 14px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 4px;
-  padding: 3px 10px;
-  border-radius: 10px;
-  font-size: 12px;
-  font-weight: 800;
-  background: linear-gradient(135deg, rgba(234, 179, 8, 0.2), rgba(245, 158, 11, 0.15));
-  color: #fbbf24;
-  border: 1px solid rgba(234, 179, 8, 0.3);
-  box-shadow: 0 0 10px rgba(234, 179, 8, 0.15);
 }
 
+.profit-label {
+  font-size: 10px;
+  font-weight: 800;
+  color: #fbbf24;
+  letter-spacing: 1px;
+}
+
+.profit-value {
+  font-size: 24px;
+  font-weight: 900;
+  color: #fef3c7;
+  text-shadow: 0 0 15px rgba(251, 191, 36, 0.8), 0 0 30px rgba(245, 158, 11, 0.4);
+  letter-spacing: 0.5px;
+}
+
+.gap-insight-box {
+  background: rgba(16, 185, 129, 0.05);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  padding: 8px 12px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gap-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #34d399;
+  letter-spacing: 0.5px;
+}
+
+.gap-value {
+  font-size: 13px;
+  color: #a7f3d0;
+  line-height: 1.4;
+}
+
+.revenue-action-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.close-deal-huge-btn {
+  width: 100%;
+  padding: 10px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.4);
+  transition: all 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  animation: pulseGold 2s infinite;
+}
+
+.close-deal-huge-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.6);
+  filter: brightness(1.1);
+}
+
+@keyframes pulseGold {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
+  }
+
+  70% {
+    box-shadow: 0 0 0 10px rgba(245, 158, 11, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+}
+
+.winner-display {
+  width: 100%;
+  text-align: center;
+  padding: 10px;
+  background: rgba(234, 179, 8, 0.15);
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  border-radius: 8px;
+  color: #fef3c7;
+  font-size: 14px;
+  font-weight: 800;
+  box-shadow: 0 0 20px rgba(234, 179, 8, 0.2) inset;
+}
+
+/* ═══════════════════════════════════════════════════
+   MULTI-SALES STAFF PILLS
+═══════════════════════════════════════════════════ */
 .pain-score-badge {
   display: inline-flex;
   align-items: center;

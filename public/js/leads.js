@@ -166,20 +166,24 @@ function renderLeadCard(lead) {
   const hotPercent = Math.min(lead.score || 0, 100);
   const hotLabel = hotPercent >= 80 ? '🔥 HOT' : hotPercent >= 60 ? '⚡ WARM' : '💤 LOW';
 
-  // ═══ CLAIM & LOCK PILLS ═══
+  // ═══ MULTI-SALES CLAIM PILLS ═══
   const STAFF = ['Trang', 'Min', 'Moon', 'Lê Huyền', 'Ngọc Huyền'];
-  const claimedBy = lead.claimed_by || lead.assigned_to || '';
-  const isClaimed = !!claimedBy;
+  const claimedByArr = (lead.claimed_by || lead.assigned_to || '').split(',').map(s => s.trim()).filter(Boolean);
+  const isClaimed = claimedByArr.length > 0;
+
   const staffPills = STAFF.map(name => {
-    const isMe = claimedBy === name;
-    const lockedClass = isClaimed && !isMe ? 'staff-pill--locked' : '';
-    const claimedClass = isMe ? 'staff-pill--claimed' : '';
-    const disabled = isClaimed && !isMe ? 'disabled' : '';
-    return `<button class="staff-pill ${claimedClass} ${lockedClass}" 
+    const isMe = claimedByArr.includes(name);
+    // Any active staff gets the glowing class, no more 'locked/disabled'
+    const activeClass = isMe ? 'staff-pill--active' : '';
+    return `<button class="staff-pill ${activeClass}" 
       onclick="claimLead(${lead.id}, '${name}', this)" 
-      ${disabled}
-      title="${isMe ? 'Nhả lead' : isClaimed ? `🔒 ${claimedBy} đang xử lý` : `Tiếp nhận lead`}">${name}${isMe ? ' 🛡️' : ''}</button>`;
+      title="${isMe ? 'Nhả lead' : 'Cùng tiếp nhận'}">${name}${isMe ? ' ⚡' : ''}</button>`;
   }).join('');
+
+  // ═══ WINNER / CLOSE DEAL BUTTON ═══
+  const winnerSection = lead.winner_staff
+    ? `<div class="winner-display">🏆 ${escapeHtml(lead.winner_staff)} chốt đơn ($${lead.deal_value || 0})</div>`
+    : `<button class="close-deal-huge-btn" onclick="showCloseDealModal(${lead.id})">🏆 BÁO CÁO CHỐT ĐƠN</button>`;
 
   // ═══ NEURAL RESPONSE TEMPLATES ═══
   const templateButtons = `
@@ -208,7 +212,7 @@ function renderLeadCard(lead) {
             <span class="category-tag">${categoryEmojis[lead.category] || '🏷️'} ${lead.category || 'N/A'}</span>
             ${lead.role === 'buyer' ? '<span class="category-tag" style="background:rgba(16,185,129,0.15);color:#10b981;">🎯 Buyer</span>' : ''}
             ${sentimentTag}
-            ${isClaimed ? `<span class="claim-status-badge">🛡️ ${claimedBy}</span>` : ''}
+            ${isClaimed ? `<span class="claim-status-badge">👥 ${claimedByArr.join(', ')}</span>` : ''}
             <span class="category-tag" style="opacity:0.8;color:#94a3b8;">🕐 ${timeStr}</span>
           </div>
 
@@ -218,14 +222,34 @@ function renderLeadCard(lead) {
             <span class="hot-meter-label">${hotLabel}</span>
           </div>
 
-          <!-- Revenue Insights -->
-          <div class="revenue-insights">
-            ${lead.profit_estimate ? `<span class="profit-badge">💰 ${escapeHtml(lead.profit_estimate)}</span>` : ''}
-            ${lead.gap_opportunity ? `<span class="gap-tag">🔍 ${escapeHtml(lead.gap_opportunity)}</span>` : ''}
-            <span class="speed-counter" data-created="${postDateStr}">⏱️ ${timeStr}</span>
-            ${lead.winner_staff ? `<span class="winner-badge">🏆 ${escapeHtml(lead.winner_staff)} — $${lead.deal_value || 0}</span>` : ''}
-            ${(lead.pain_score > 0) ? `<span class="pain-score-badge" title="Điểm đau của buyer — càng cao càng chất">⚡ Pain:${lead.pain_score}</span>` : ''}
-            ${(lead.spam_score > 0) ? `<span class="spam-score-badge" title="Điểm nghi ngờ Provider — nếu cao mà vẫn lọt, cần review">🚨 Spam:${lead.spam_score}</span>` : ''}
+          <!-- 💎 REVENUE DASHBOARD V2 💎 -->
+          <div class="revenue-dashboard-panel">
+            <div class="revenue-top-row">
+              <span class="speed-counter-v2" data-created="${postDateStr}">⏱️ Speed-to-lead: ${timeStr}</span>
+              <div class="quality-badges">
+                ${(lead.pain_score > 0) ? `<span class="pain-score-badge" title="Điểm đau của buyer">⚡ Pain:${lead.pain_score}</span>` : ''}
+                ${(lead.spam_score > 0) ? `<span class="spam-score-badge" title="Tín hiệu rác">🚨 Spam:${lead.spam_score}</span>` : ''}
+              </div>
+            </div>
+            
+            <div class="revenue-money-row">
+              ${lead.profit_estimate ? `
+                <div class="huge-profit-box">
+                  <div class="profit-label">KỲ VỌNG DOANH THU</div>
+                  <div class="profit-value">💰 ${escapeHtml(lead.profit_estimate)}</div>
+                </div>
+              ` : ''}
+              ${lead.gap_opportunity ? `
+                <div class="gap-insight-box">
+                  <div class="gap-label">CƠ HỘI SELL (GAP)</div>
+                  <div class="gap-value">🔍 ${escapeHtml(lead.gap_opportunity)}</div>
+                </div>
+              ` : ''}
+            </div>
+
+            <div class="revenue-action-row">
+              ${winnerSection}
+            </div>
           </div>
 
           <!-- Author -->
@@ -251,10 +275,9 @@ function renderLeadCard(lead) {
             <button class="lab-btn ${lead.status === 'converted' ? 'lab-active-green' : ''}" onclick="convertLead(${lead.id})" title="Converted">✅</button>
             <button class="lab-btn ${lead.status === 'ignored' ? 'lab-active-red' : ''}" onclick="updateStatus(${lead.id}, 'ignored')" title="Ignore">⛔</button>
             <button class="lab-btn" onclick="deleteLead(${lead.id})" title="Xóa" style="color:#ef4444;">🗑️</button>
-            ${!lead.winner_staff ? `<button class="lab-btn close-deal-btn" onclick="showCloseDealModal(${lead.id})" title="Chốt đơn">🏆</button>` : ''}
             <div style="flex:1"></div>
-            <!-- Staff Claim & Lock -->
-            <div class="staff-assign" title="Tiếp nhận lead">${staffPills}</div>
+            <!-- Staff Claim (Multi-Sales) -->
+            <div class="staff-assign" title="Tham gia tiếp nhận lead (không chặn nhau)">${staffPills}</div>
           </div>
 
           <!-- ─── TABBED FOOTER ─── -->
@@ -327,57 +350,69 @@ function switchLeadTab(leadId, tab, btnEl) {
 }
 
 // ═══════════════════════════════════════════════════════
-// Claim & Lock — Neon Cyan Staff Assignment
+// Multi-Sales Claim — Neon Active Staff Assignment (No Blocking)
 // ═══════════════════════════════════════════════════════
 async function claimLead(leadId, staffName, pillBtn) {
   const card = document.getElementById(`lead-${leadId}`);
   const allPills = card?.querySelectorAll('.staff-pill');
-  const isMyClaim = pillBtn?.classList.contains('staff-pill--claimed');
-  const newClaim = isMyClaim ? '' : staffName; // Toggle off if same
+  const isMyClaim = pillBtn?.classList.contains('staff-pill--active');
+
+  // 1. Gather current active staff from DOM
+  let currentClaims = [];
+  allPills?.forEach(p => {
+    if (p.classList.contains('staff-pill--active')) {
+      const name = p.textContent.replace(' ⚡', '').trim();
+      if (name) currentClaims.push(name);
+    }
+  });
+
+  // 2. Toggle current staff
+  if (isMyClaim) {
+    currentClaims = currentClaims.filter(n => n !== staffName);
+  } else {
+    if (!currentClaims.includes(staffName)) currentClaims.push(staffName);
+  }
+
+  const newClaimedBy = currentClaims.join(', ');
 
   try {
     const resp = await fetch(`/api/leads/${leadId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ claimed_by: newClaim }),
+      body: JSON.stringify({
+        claimed_by: newClaimedBy,
+        action_staff: staffName // Tell API who clicked
+      }),
     });
     const data = await resp.json();
 
-    if (resp.status === 403 && data.locked) {
-      // Someone else claimed — show lock feedback
-      showToast(`🔒 Lead đã được ${data.by} tiếp nhận`, 'warning');
-      return;
-    }
-
     if (data.ok) {
-      // Update pills UI
-      allPills?.forEach(p => {
-        p.classList.remove('staff-pill--claimed', 'staff-pill--locked');
-        p.disabled = false;
-        p.textContent = p.textContent.replace(' 🛡️', '');
-      });
-
-      if (newClaim) {
-        // Claim: light up claimed pill, dim others
-        pillBtn?.classList.add('staff-pill--claimed');
-        pillBtn.textContent = staffName + ' 🛡️';
-        allPills?.forEach(p => {
-          if (p !== pillBtn) {
-            p.classList.add('staff-pill--locked');
-            p.disabled = true;
-          }
-        });
-        card?.classList.add('lead-card--claimed');
-        showToast(`🛡️ ${staffName} đã tiếp nhận lead`, 'success');
+      // 3. Update UI on success
+      if (isMyClaim) {
+        pillBtn?.classList.remove('staff-pill--active');
+        pillBtn.textContent = staffName;
       } else {
-        // Unclaim
-        card?.classList.remove('lead-card--claimed');
-        showToast(`🔓 Lead đã được nhả`, 'info');
+        pillBtn?.classList.add('staff-pill--active');
+        pillBtn.textContent = staffName + ' ⚡';
       }
+
+      const claimBadge = card?.querySelector('.claim-status-badge');
+      if (currentClaims.length > 0) {
+        card?.classList.add('lead-card--claimed');
+        if (claimBadge) claimBadge.innerHTML = '👥 ' + currentClaims.join(', ');
+      } else {
+        card?.classList.remove('lead-card--claimed');
+        if (claimBadge) claimBadge.innerHTML = ''; // hide badge if empty
+      }
+
+      showToast(`${isMyClaim ? 'Nhả' : 'Tiếp nhận'} lead thành công!`, 'success');
+      loadAgentStats(); // Refresh header stats
+    } else {
+      showToast('Lỗi tiếp nhận lead', 'error');
     }
   } catch (err) {
     console.error('claimLead error:', err);
-    showToast('❌ Lỗi khi tiếp nhận lead', 'error');
+    showToast('Lỗi mạng', 'error');
   }
 }
 
