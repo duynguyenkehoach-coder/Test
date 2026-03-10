@@ -3,12 +3,51 @@ name: Deploy to VPS
 on:
   push:
     branches: [main]
+    paths:              # Skip deploy for docs/config-only changes
+      - 'src/**'
+      - 'public/**'
+      - 'scripts/**'
+      - 'package*.json'
+      - 'ecosystem.config.js'
+      - '.github/workflows/**'
+
+# Cancel in-progress deploy when a newer commit arrives on the same branch
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
 
 jobs:
-  deploy:
+  # ─── Stage 1: CI — Validate BEFORE deploying ──────────────────────────────
+  ci:
+    name: 🔍 CI — Syntax Check
     runs-on: ubuntu-latest
     steps:
-      - name: 🚀 Deploy to VPS via SSH
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js with npm cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'           # Caches ~/.npm — skips re-download if package-lock.json unchanged
+
+      - name: Install dependencies
+        run: npm ci --production
+
+      - name: Syntax check critical files
+        run: |
+          node --check src/server.js
+          node --check src/index.js
+          node --check src/data_store/database.js
+          echo "✅ All syntax checks passed"
+
+  # ─── Stage 2: CD — Deploy to VPS (only if CI passes) ─────────────────────
+  deploy:
+    name: 🚀 CD — Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: ci
+    steps:
+      - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -19,25 +58,39 @@ jobs:
             set -e
             cd /root/THG_tool
 
-            echo "📥 Pulling latest changes..."
+            echo "━━━ 📥 Pull latest code ━━━"
             git fetch origin main
             git reset --hard origin/main
 
-            echo "📦 Installing dependencies..."
+            echo "━━━ 📦 Install deps ━━━"
             npm ci --production 2>/dev/null || npm install --production
 
-            echo "📝 Injecting sprint config..."
+            echo "━━━ ⚙️  Inject .env sprint config ━━━"
             sed -i '/^ENABLED_PLATFORMS=/d;/^MAX_POSTS_PER_SCAN=/d;/^SV_DAILY_LIMIT=/d;/^SCRAPE_MODE=/d;/^FB_EMAIL=/d;/^FB_PASSWORD=/d' .env 2>/dev/null || true
             printf 'ENABLED_PLATFORMS=facebook\nMAX_POSTS_PER_SCAN=200\nSV_DAILY_LIMIT=1100\nSCRAPE_MODE=self-hosted\nFB_EMAIL=manyhope0502@gmail.com\nFB_PASSWORD=anhdeptrai7788\n' >> .env
 
-            echo "🗑️ Resetting groups cache..."
+            echo "━━━ 🗑️  Reset groups cache ━━━"
             rm -f data/groups.db data/groups.db-shm data/groups.db-wal
 
-            echo "🔄 Reloading PM2..."
+            echo "━━━ 🔄 Reload PM2 (zero-downtime) ━━━"
             pm2 reload ecosystem.config.js --update-env 2>/dev/null \
               || pm2 restart ecosystem.config.js --update-env 2>/dev/null \
               || (pm2 delete all 2>/dev/null || true && pm2 start ecosystem.config.js)
             pm2 save
 
-            echo "✅ Deploy complete!"
+            echo "━━━ 🏥 Health check ━━━"
+            PORT=$(grep '^PORT=' .env 2>/dev/null | cut -d= -f2 || echo 3000)
+            for i in 1 2 3; do
+              sleep 4
+              if curl -sf "http://localhost:${PORT}/api/stats" > /dev/null 2>&1; then
+                echo "✅ App healthy on port ${PORT}"; break
+              fi
+              echo "⏳ Waiting... attempt ${i}/3"
+              if [ "$i" = "3" ]; then
+                echo "⚠️  Health check inconclusive — check pm2 logs"
+                pm2 logs thg-lead-gen --lines 20 --nostream
+              fi
+            done
+
+            echo "━━━ ✅ Deploy #${{ github.run_number }} complete ━━━"
             pm2 list
