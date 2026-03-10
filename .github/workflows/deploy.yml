@@ -24,43 +24,20 @@ jobs:
             git reset --hard origin/main
 
             echo "📦 Installing dependencies..."
-            npm install --production --no-optional || npm install --production
+            npm ci --production 2>/dev/null || npm install --production
 
-            echo "🎭 Checking Playwright Chromium..."
-            if ! npx playwright install --dry-run chromium 2>/dev/null | grep -q "already installed"; then
-              echo "⬇️  Installing Playwright Chromium + system deps..."
-              npx playwright install --with-deps chromium || echo "⚠️  Playwright install warning (non-fatal)"
-            else
-              echo "✅ Chromium already installed, skipping"
-            fi
+            echo "📝 Injecting sprint config..."
+            sed -i '/^ENABLED_PLATFORMS=/d;/^MAX_POSTS_PER_SCAN=/d;/^SV_DAILY_LIMIT=/d;/^SCRAPE_MODE=/d;/^FB_EMAIL=/d;/^FB_PASSWORD=/d' .env 2>/dev/null || true
+            printf 'ENABLED_PLATFORMS=facebook\nMAX_POSTS_PER_SCAN=200\nSV_DAILY_LIMIT=1100\nSCRAPE_MODE=self-hosted\nFB_EMAIL=manyhope0502@gmail.com\nFB_PASSWORD=anhdeptrai7788\n' >> .env
 
-            echo "📝 Setting sprint config in .env..."
-            sed -i '/^ENABLED_PLATFORMS=/d' .env 2>/dev/null || true
-            sed -i '/^MAX_POSTS_PER_SCAN=/d' .env 2>/dev/null || true
-            sed -i '/^SV_DAILY_LIMIT=/d' .env 2>/dev/null || true
-            sed -i '/^SCRAPE_MODE=/d' .env 2>/dev/null || true
-            sed -i '/^FB_EMAIL=/d' .env 2>/dev/null || true
-            sed -i '/^FB_PASSWORD=/d' .env 2>/dev/null || true
-            echo "ENABLED_PLATFORMS=facebook" >> .env
-            echo "MAX_POSTS_PER_SCAN=200" >> .env
-            echo "SV_DAILY_LIMIT=1100" >> .env
-            echo "SCRAPE_MODE=self-hosted" >> .env
-            echo "FB_EMAIL=manyhope0502@gmail.com" >> .env
-            echo "FB_PASSWORD=anhdeptrai7788" >> .env
-            echo "✅ .env config:"
-            grep -E "^ENABLED_PLATFORMS=|^MAX_POSTS_PER_SCAN=|^SV_DAILY_LIMIT=|^SCRAPE_MODE=|^FB_EMAIL=" .env
-
-            echo "🗑️ Removing old groups.db to force re-seed..."
+            echo "🗑️ Resetting groups cache..."
             rm -f data/groups.db data/groups.db-shm data/groups.db-wal
 
-            echo "🔄 Restarting PM2 app..."
+            echo "🔄 Reloading PM2..."
             pm2 reload ecosystem.config.js --update-env 2>/dev/null \
               || pm2 restart ecosystem.config.js --update-env 2>/dev/null \
               || (pm2 delete all 2>/dev/null || true && pm2 start ecosystem.config.js)
-
             pm2 save
-            sleep 3
+
             echo "✅ Deploy complete!"
             pm2 list
-
-
