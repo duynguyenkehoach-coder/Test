@@ -1,40 +1,25 @@
-FROM node:20-slim
+FROM mcr.microsoft.com/playwright:v1.50.1-noble
 
-# Install system Chromium for Playwright (Debian Bookworm / node:20-slim)
-# Note: libasound2 was renamed libasound2t64 in Debian Bookworm
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    chromium \
-    libnss3 \
-    libatk-bridge2.0-0 \
-    libdrm2 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    libgbm1 \
-    libasound2t64 \
-    libxss1 \
-    libgtk-3-0 \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Tell Playwright to use system Chromium (no separate download needed)
-ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+# Switch to Node.js 20 (Playwright image uses Node 18 by default)
+# noble = Ubuntu 24.04 — all Chromium deps already installed
+# Playwright's Chromium is at /ms-playwright/chromium-*/chrome-linux/chrome
 
 WORKDIR /app
 
-# Install Node deps (cached layer — only rebuilds if package.json changes)
+# Install production Node deps only
 COPY package*.json ./
 RUN npm ci --production --silent
 
-# Copy application source
+# Copy app source
 COPY src/ ./src/
 COPY public/ ./public/
 COPY scripts/ ./scripts/
 
 # Ensure data & log dirs exist (volume-mounted in production)
 RUN mkdir -p data logs
+
+# Use system Chromium bundled by Playwright base image
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 EXPOSE 3000
 
