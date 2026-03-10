@@ -3,7 +3,7 @@ name: Deploy to VPS
 on:
   push:
     branches: [main]
-    paths:              # Skip deploy for docs/config-only changes
+    paths:
       - 'src/**'
       - 'public/**'
       - 'scripts/**'
@@ -11,43 +11,67 @@ on:
       - 'ecosystem.config.js'
       - '.github/workflows/**'
 
-# Cancel in-progress deploy when a newer commit arrives on the same branch
+# Cancel older deploy when a new commit arrives
 concurrency:
   group: deploy-main
   cancel-in-progress: true
 
 jobs:
-  # ─── Stage 1: CI — Validate BEFORE deploying ──────────────────────────────
+  # ─── CI: Validate before deploying ───────────────────────────────────────────
   ci:
-    name: 🔍 CI — Syntax Check
+    name: 🔍 CI Check
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js with npm cache
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'           # Caches ~/.npm — skips re-download if package-lock.json unchanged
+          cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install
         run: npm ci --production
 
-      - name: Syntax check critical files
+      - name: Syntax check
         run: |
           node --check src/server.js
           node --check src/index.js
           node --check src/data_store/database.js
-          echo "✅ All syntax checks passed"
+          echo "✅ Syntax OK"
 
-  # ─── Stage 2: CD — Deploy to VPS (only if CI passes) ─────────────────────
+      - name: Smoke test
+        run: |
+          node -e "require('./src/data_store/database'); require('./src/config'); console.log('✅ Modules OK');"
+
+  # ─── CD: Deploy to Production ─────────────────────────────────────────────
   deploy:
-    name: 🚀 CD — Deploy to VPS
+    name: 🚀 Deploy Production
     runs-on: ubuntu-latest
     needs: ci
+    environment: production           # ← GitHub Environment protection (add reviewers in repo settings)
     steps:
-      - name: Deploy via SSH
+      - name: Generate deploy info
+        id: info
+        run: |
+          echo "sha_short=$(echo '${{ github.sha }}' | cut -c1-7)" >> $GITHUB_OUTPUT
+          echo "actor=${{ github.actor }}" >> $GITHUB_OUTPUT
+          echo "run_num=${{ github.run_number }}" >> $GITHUB_OUTPUT
+          echo "Deploy #${{ github.run_number }} | ${{ github.actor }} | $(echo '${{ github.sha }}' | cut -c1-7)"
+
+      - name: 📲 Notify Telegram — Deploy started
+        if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="HTML" \
+            -d text="🚀 <b>Deploy #${{ github.run_number }} Started</b>
+          👤 <b>By:</b> ${{ github.actor }}
+          🌿 <b>Branch:</b> main
+          📝 <b>Commit:</b> <code>$(echo '${{ github.sha }}' | cut -c1-7)</code>
+          💬 <b>Message:</b> ${{ github.event.head_commit.message }}
+          🔗 <a href='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'>View Run</a>"
+
+      - name: 🚀 SSH Deploy to VPS
+        id: ssh_deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -58,39 +82,82 @@ jobs:
             set -e
             cd /root/THG_tool
 
-            echo "━━━ 📥 Pull latest code ━━━"
+            # Save current commit for rollback
+            PREV_SHA=$(git rev-parse HEAD)
+            echo "🔖 Saving rollback point: ${PREV_SHA:0:7}"
+            echo $PREV_SHA > /root/.thg_last_good_deploy
+
+            echo "━━━ 📥 Pull: ${{ github.sha }}"
             git fetch origin main
             git reset --hard origin/main
 
-            echo "━━━ 📦 Install deps ━━━"
+            echo "━━━ 📦 Install deps"
             npm ci --production 2>/dev/null || npm install --production
 
-            echo "━━━ ⚙️  Inject .env sprint config ━━━"
+            echo "━━━ ⚙️  Inject .env config"
             sed -i '/^ENABLED_PLATFORMS=/d;/^MAX_POSTS_PER_SCAN=/d;/^SV_DAILY_LIMIT=/d;/^SCRAPE_MODE=/d;/^FB_EMAIL=/d;/^FB_PASSWORD=/d' .env 2>/dev/null || true
             printf 'ENABLED_PLATFORMS=facebook\nMAX_POSTS_PER_SCAN=200\nSV_DAILY_LIMIT=1100\nSCRAPE_MODE=self-hosted\nFB_EMAIL=manyhope0502@gmail.com\nFB_PASSWORD=anhdeptrai7788\n' >> .env
 
-            echo "━━━ 🗑️  Reset groups cache ━━━"
+            echo "━━━ 🗑️  Reset groups cache"
             rm -f data/groups.db data/groups.db-shm data/groups.db-wal
 
-            echo "━━━ 🔄 Reload PM2 (zero-downtime) ━━━"
+            echo "━━━ 🔄 Reload PM2 (zero-downtime)"
             pm2 reload ecosystem.config.js --update-env 2>/dev/null \
               || pm2 restart ecosystem.config.js --update-env 2>/dev/null \
               || (pm2 delete all 2>/dev/null || true && pm2 start ecosystem.config.js)
             pm2 save
 
-            echo "━━━ 🏥 Health check ━━━"
+            echo "━━━ 🏥 Health check (3 attempts)"
             PORT=$(grep '^PORT=' .env 2>/dev/null | cut -d= -f2 || echo 3000)
             for i in 1 2 3; do
-              sleep 4
-              if curl -sf "http://localhost:${PORT}/api/stats" > /dev/null 2>&1; then
-                echo "✅ App healthy on port ${PORT}"; break
+              sleep 5
+              STATUS=$(curl -so /dev/null -w "%{http_code}" "http://localhost:${PORT}/api/stats" 2>/dev/null || echo "000")
+              if [ "$STATUS" = "200" ]; then
+                echo "✅ Healthy (HTTP 200) on port ${PORT}"
+                exit 0
               fi
-              echo "⏳ Waiting... attempt ${i}/3"
-              if [ "$i" = "3" ]; then
-                echo "⚠️  Health check inconclusive — check pm2 logs"
-                pm2 logs thg-lead-gen --lines 20 --nostream
-              fi
+              echo "⏳ Attempt ${i}/3 — HTTP ${STATUS}"
             done
 
-            echo "━━━ ✅ Deploy #${{ github.run_number }} complete ━━━"
-            pm2 list
+            # Health check failed — auto rollback
+            echo "🔴 Health check failed — rolling back to ${PREV_SHA:0:7}..."
+            git reset --hard $PREV_SHA
+            npm ci --production 2>/dev/null || true
+            pm2 reload ecosystem.config.js --update-env 2>/dev/null || pm2 restart ecosystem.config.js 2>/dev/null || true
+            echo "⚠️  ROLLBACK COMPLETE — reverted to ${PREV_SHA:0:7}"
+            exit 1
+
+      - name: 📊 GitHub Deploy Summary
+        if: always()
+        run: |
+          if [ "${{ steps.ssh_deploy.outcome }}" = "success" ]; then
+            ICON="✅"; STATUS="Success"
+          else
+            ICON="❌"; STATUS="Failed (auto-rollback triggered)"
+          fi
+          echo "## ${ICON} Deploy #${{ github.run_number }} — ${STATUS}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`$(echo '${{ github.sha }}' | cut -c1-7)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Author | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | main |" >> $GITHUB_STEP_SUMMARY
+          echo "| Message | ${{ github.event.head_commit.message }} |" >> $GITHUB_STEP_SUMMARY
+
+      - name: 📲 Notify Telegram — Deploy result
+        if: ${{ always() && secrets.TELEGRAM_BOT_TOKEN != '' }}
+        run: |
+          if [ "${{ steps.ssh_deploy.outcome }}" = "success" ]; then
+            MSG="✅ <b>Deploy #${{ github.run_number }} SUCCESS</b>
+          👤 ${{ github.actor }} | <code>$(echo '${{ github.sha }}' | cut -c1-7)</code>
+          🌐 App is live and healthy!"
+          else
+            MSG="🔴 <b>Deploy #${{ github.run_number }} FAILED</b>
+          👤 ${{ github.actor }} | <code>$(echo '${{ github.sha }}' | cut -c1-7)</code>
+          ⚠️ Auto-rollback triggered. Check logs:
+          🔗 https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="HTML" \
+            -d text="$MSG"

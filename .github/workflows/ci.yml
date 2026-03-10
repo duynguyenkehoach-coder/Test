@@ -1,0 +1,64 @@
+name: CI — Pull Request Check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'scripts/**'
+      - 'package*.json'
+
+concurrency:
+  group: ci-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: 🔍 Validate Code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --production
+
+      - name: Syntax check
+        run: |
+          echo "🔍 Checking syntax..."
+          node --check src/server.js
+          node --check src/index.js
+          node --check src/data_store/database.js
+          echo "✅ All syntax checks passed"
+
+      - name: Runtime smoke test
+        run: |
+          echo "💨 Smoke test — require all modules..."
+          node -e "
+            require('./src/data_store/database');
+            require('./src/config');
+            console.log('✅ Core modules load OK');
+          "
+
+      - name: Comment PR with result
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ job.status }}' === 'success' ? '✅' : '❌';
+            const msg = status === '✅'
+              ? '### ✅ CI Passed\nAll syntax checks and module imports passed. Ready to merge.'
+              : '### ❌ CI Failed\nPlease fix errors before merging. Check the logs above.';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: msg
+            });
