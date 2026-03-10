@@ -1,38 +1,34 @@
-# ─── Stage 1: Dependencies ────────────────────────────────────────────────────
+# ─── Stage 1: Install production dependencies ────────────────────────────────
 FROM mcr.microsoft.com/playwright/node:20-jammy AS deps
-# Uses Microsoft's official Playwright+Node image — Chromium already installed!
-# No need to run `npx playwright install` ever again.
-
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --production --silent
 
-# ─── Stage 2: Production image ────────────────────────────────────────────────
+# ─── Stage 2: Production runtime ─────────────────────────────────────────────
 FROM mcr.microsoft.com/playwright/node:20-jammy AS runner
+# This base image has Chromium + all system deps pre-installed.
+# No `playwright install` ever needed!
 
 WORKDIR /app
 
-# Copy node_modules from deps stage (layered for cache efficiency)
+# Copy installed dependencies from deps stage
 COPY --from=deps /app/node_modules ./node_modules
 
-# Copy app source
+# Copy application source (order matters for layer caching)
 COPY src/ ./src/
 COPY public/ ./public/
-COPY scripts/ ./scripts/
 COPY ecosystem.config.js ./
 COPY nginx/ ./nginx/
 
-# Create data & logs directories
-RUN mkdir -p data logs
+# Copy scripts if they exist
+COPY scripts/ ./scripts/ 2>/dev/null || true
 
-# Non-root user for security
-RUN groupadd -r thg && useradd -r -g thg thg \
-    && chown -R thg:thg /app
-USER thg
+# Ensure data & log dirs exist (they'll be volume-mounted in production)
+RUN mkdir -p data logs
 
 EXPOSE 3000
 
-# Health check — nginx uses this to determine if container is healthy
+# Health check — Docker and nginx use this to verify app is alive
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:3000/api/stats || exit 1
 
