@@ -20,9 +20,7 @@ services:
       resources:
         limits:
           memory: 900M
-          cpus: '1.5'
-        reservations:
-          memory: 256M
+          cpus: '0.9'
 
     ports:
       - "127.0.0.1:3000:3000"   # Only expose to localhost (nginx proxies externally)
