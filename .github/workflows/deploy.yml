@@ -48,9 +48,6 @@ jobs:
             docker restart thg-lead-gen
             sleep 10
 
-            echo "=== Installing Playwright Chromium ==="
-            docker exec thg-lead-gen sh -c "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0 npx playwright install chromium" || true
-
             echo "=== Syncing group list from production ==="
             docker exec thg-lead-gen node scripts/sync-groups.js || true
 
