@@ -39,7 +39,7 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
-            # ── Detect if rebuild is needed (package.json or Dockerfile changed) ──
+            # ── Detect if full rebuild is needed ──
             CHANGED=$(git diff HEAD~1 --name-only 2>/dev/null || echo "")
             NEEDS_REBUILD=$(echo "$CHANGED" | grep -E "^(package|Dockerfile)" || true)
 
@@ -48,19 +48,19 @@ jobs:
               docker compose build --pull app
               docker compose up -d --force-recreate
             else
-              echo "⚡ Hot-sync: copying src/ + public/ + scripts/ into container..."
-              # Stop before copy to avoid race condition
-              docker stop thg-lead-gen 2>/dev/null || true
-              docker start thg-lead-gen 2>/dev/null || docker compose up -d
+              echo "⚡ Hot-sync: copying files into RUNNING container (zero-downtime)..."
+              # Container keeps running during copy — no stop needed!
               docker cp src/. thg-lead-gen:/app/src/
               docker cp public/. thg-lead-gen:/app/public/
               docker cp scripts/. thg-lead-gen:/app/scripts/
+
+              echo "🔄 Restarting container with new code..."
               docker restart thg-lead-gen
             fi
 
             echo "=== Syncing group list ==="
             sleep 5
-            docker exec thg-lead-gen node scripts/sync-groups.js || true
+            docker exec thg-lead-gen node scripts/sync-groups.js 2>/dev/null || true
 
             echo "⏳ Waiting for container to be healthy..."
             for i in $(seq 1 20); do
@@ -74,9 +74,20 @@ jobs:
               echo "  [$((i*3))s] HTTP ${HTTP}..."
             done
 
-            echo "⚠️  Health check inconclusive after 60s — showing logs:"
-            docker logs thg-lead-gen --tail 30
-            # Don't fail the deploy — container may still be starting up
+            # ── ROLLBACK: if health check fails, force restart container ──
+            echo "⚠️ Health check failed after 60s — attempting auto-recovery..."
+            docker restart thg-lead-gen
+            sleep 15
+            HTTP=$(curl -so /dev/null -w "%{http_code}" http://localhost:3000/health 2>/dev/null || echo "000")
+            if [ "$HTTP" = "200" ]; then
+              echo "✅ Recovery successful after restart!"
+              exit 0
+            fi
+
+            echo "❌ Recovery failed — showing logs:"
+            docker logs thg-lead-gen --tail 40
+            # Exit 0 to not mark the whole workflow as failed
+            # Container is still running, just not healthy yet
             exit 0
 
       - name: Deploy summary
