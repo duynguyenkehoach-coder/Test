@@ -49,14 +49,25 @@ body {
   overflow: hidden;
 }
 
+/* === MAIN CONTENT AREA === */
+.main-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
 /* === SIDEBAR === */
 .sidebar {
   width: 260px;
+  height: 100vh;
   background: var(--bg-card);
   border-right: 1px solid var(--glass-border);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  overflow: hidden;
   z-index: 100;
 }
 
