@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node src/server.js",
+    "dev:fresh": "powershell -Command \"Stop-Process -Name node -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; node src/server.js\"",
+    "kill": "powershell -Command \"Stop-Process -Name node -Force -ErrorAction SilentlyContinue; Write-Host 'All node processes killed'\"",
     "scan": "node src/index.js --scan-once",
     "prod": "pm2 start ecosystem.config.js",
     "prod:stop": "pm2 stop thg-lead-gen",

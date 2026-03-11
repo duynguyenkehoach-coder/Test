@@ -55,6 +55,27 @@ app.get('/signup', (req, res) => res.sendFile(path.join(__dirname, '..', 'public
 // ── Auth API (no JWT needed) ────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 
+// ── Dev Console — Log Viewer (password protected, no JWT) ───────────────────
+app.get('/api/dev/logs', (req, res) => {
+    const pw = req.query.password || '';
+    if (pw !== DEV_PASSWORD) return res.status(401).json({ error: 'Unauthorized' });
+    const level = req.query.level || '';
+    const limit = Math.min(parseInt(req.query.limit) || 500, 1000);
+    let logs = logBuffer;
+    if (level) logs = logs.filter(l => l.level === level);
+    res.json({ data: logs.slice(-limit), total: logBuffer.length });
+});
+
+// Trigger manual scan from dev console
+app.post('/api/dev/scan', async (req, res) => {
+    const pw = req.query.password || req.body?.password || '';
+    if (pw !== DEV_PASSWORD) return res.status(401).json({ error: 'Unauthorized' });
+    res.json({ ok: true, msg: 'Scan triggered — check logs' });
+    // Run scan in background — manualTrigger=true bypasses 23h-13h time window
+    const { runFullScan } = require('./pipelines/scraperEngine');
+    runFullScan({ manualTrigger: true }).catch(e => console.error('[DevConsole] Scan error:', e.message));
+});
+
 
 // CORS — cho phép admin panel ở domain khác gọi API
 app.use((req, res, next) => {
@@ -730,12 +751,40 @@ ${intentEmojis[intent] || '💬'} *Intent:* ${intent}
 
 function startServer() {
     const port = config.PORT;
-    server = app.listen(port, () => {
-        logger.info('Server', `Dashboard: http://localhost:${port}`);
-        logger.info('Server', `Webhook:   http://localhost:${port}/webhook`);
-        logger.info('Server', `Health:    http://localhost:${port}/health`);
-        logger.info('Server', `CSV Export: http://localhost:${port}/api/leads/export`);
+    const http = require('http');
+    const httpServer = http.createServer(app);
+    let retryCount = 0;
+    const MAX_RETRIES = 10;
+
+    function doListen() {
+        httpServer.listen({ port, host: '::', ipv6Only: false }, () => {
+            server = httpServer;
+            logger.info('Server', `Dashboard: http://localhost:${port}`);
+            logger.info('Server', `Webhook:   http://localhost:${port}/webhook`);
+            logger.info('Server', `Health:    http://localhost:${port}/health`);
+            logger.info('Server', `CSV Export: http://localhost:${port}/api/leads/export`);
+        });
+    }
+
+    httpServer.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            retryCount++;
+            if (retryCount > MAX_RETRIES) {
+                logger.error('Server', `Port ${port} still busy after ${MAX_RETRIES} retries. Run "task" to restart.`);
+                process.exit(1);
+            }
+            logger.warn('Server', `Port ${port} busy (${retryCount}/${MAX_RETRIES}) — retrying in 3s...`);
+            setTimeout(() => {
+                httpServer.close();
+                doListen();
+            }, 3000);
+        } else {
+            throw err;
+        }
     });
+
+    doListen();
+    server = httpServer;
     return app;
 }
 

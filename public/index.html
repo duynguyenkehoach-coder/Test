@@ -29,9 +29,12 @@
           </div>
         </div>
         <!-- Auth User Badge -->
-        <div id="authUserBadge" style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding:8px 10px;background:rgba(139,92,246,0.1);border:1px solid rgba(139,92,246,0.2);border-radius:10px;font-size:0.78rem;">
+        <div id="authUserBadge"
+          style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding:8px 10px;background:rgba(139,92,246,0.1);border:1px solid rgba(139,92,246,0.2);border-radius:10px;font-size:0.78rem;">
           <div style="display:flex;align-items:center;gap:7px;">
-            <div style="width:26px;height:26px;background:linear-gradient(135deg,#a78bfa,#60a5fa);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;">&#9786;</div>
+            <div
+              style="width:26px;height:26px;background:linear-gradient(135deg,#a78bfa,#60a5fa);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;">
+              &#9786;</div>
             <span id="headerUserName" style="color:#e2e8f0;font-weight:500;">...</span>
           </div>
           <div style="display:flex;align-items:center;gap:2px;">
@@ -49,159 +52,163 @@
         </div>
 
 
-      <nav class="sidebar-nav">
-        <!-- NEW: ANT DESIGN NESTED MENU FOR LEADS -->
-        <div class="nav-item-group" id="navGroupLeads">
-          <div class="nav-item-header active" onclick="toggleNavGroup('leads')">
-            <span class="nav-icon">📊</span>
-            <span class="nav-text">Leads Database</span>
-            <span class="nav-arrow">▼</span>
+        <nav class="sidebar-nav">
+          <!-- NEW: ANT DESIGN NESTED MENU FOR LEADS -->
+          <div class="nav-item-group" id="navGroupLeads">
+            <div class="nav-item-header active" onclick="toggleNavGroup('leads')">
+              <span class="nav-icon">📊</span>
+              <span class="nav-text">Leads Database</span>
+              <span class="nav-arrow">▼</span>
+            </div>
+            <div class="nav-submenu" id="submenuLeads">
+              <!-- THG Fulfill -->
+              <button class="nav-sub-item" onclick="filterByMenu('Fulfill', this)">
+                <span class="nav-text">📦 THG Fulfill</span>
+              </button>
+              <!-- THG Express -->
+              <button class="nav-sub-item" onclick="filterByMenu('Express', this)">
+                <span class="nav-text">✈️ THG Express</span>
+              </button>
+              <!-- THG Warehouse -->
+              <button class="nav-sub-item" onclick="filterByMenu('Warehouse', this)">
+                <span class="nav-text">🏢 THG Warehouse</span>
+              </button>
+              <!-- General / Others removed - merged into Agent Training -->
+              <button class="nav-sub-item active" onclick="filterByMenu('All', this)">
+                <span class="nav-text">🌐 All Leads</span>
+              </button>
+            </div>
           </div>
-          <div class="nav-submenu" id="submenuLeads" style="max-height: 500px;">
-            <!-- THG Fulfill -->
-            <button class="nav-sub-item" onclick="filterByMenu('Fulfill', this)">
-              <span class="nav-text">📦 THG Fulfill</span>
-            </button>
-            <!-- THG Express -->
-            <button class="nav-sub-item" onclick="filterByMenu('Express', this)">
-              <span class="nav-text">✈️ THG Express</span>
-            </button>
-            <!-- THG Warehouse -->
-            <button class="nav-sub-item" onclick="filterByMenu('Warehouse', this)">
-              <span class="nav-text">🏢 THG Warehouse</span>
-            </button>
-            <!-- General / Others removed - merged into Agent Training -->
-            <button class="nav-sub-item active" onclick="filterByMenu('All', this)">
-              <span class="nav-text">🌐 All Leads</span>
-            </button>
+
+          <!-- LEADERBOARD NAV ITEM -->
+          <button class="nav-item" id="tabLeaderboard" onclick="switchTab('leaderboard')">
+            <span class="nav-icon">🏆</span>
+            <span class="nav-text">Leaderboard</span>
+            <span class="nav-badge" id="tabLbBadge"
+              style="margin-left:auto;background:rgba(245,158,11,0.15);color:#f59e0b">LIVE</span>
+          </button>
+
+
+          <!-- ANT DESIGN NESTED MENU FOR INBOX -->
+          <div class="nav-item-group" id="navGroupInbox">
+            <div class="nav-item-header" onclick="toggleNavGroup('inbox')">
+              <span class="nav-icon">📬</span>
+              <span class="nav-text">Inbox</span>
+              <span class="nav-badge badge-accent" id="tabInboxCount" style="margin-left:auto;margin-right:6px">0</span>
+              <span class="nav-arrow">▼</span>
+            </div>
+            <div class="nav-submenu" id="submenuInbox">
+
+              <!-- === Agents === -->
+              <div class="nav-sub-section-label">🤖 Agents</div>
+              <button class="nav-sub-item nav-sub-item--deep" id="tabAgent-Trang" onclick="switchTab('agent','Trang')">
+                <span class="nav-text">💜 Trang</span>
+              </button>
+              <button class="nav-sub-item nav-sub-item--deep" id="tabAgent-Min" onclick="switchTab('agent','Min')">
+                <span class="nav-text">💙 Min</span>
+              </button>
+              <button class="nav-sub-item nav-sub-item--deep" id="tabAgent-Moon" onclick="switchTab('agent','Moon')">
+                <span class="nav-text">🩵 Moon</span>
+              </button>
+              <button class="nav-sub-item nav-sub-item--deep" id="tabAgent-LeHuyen"
+                onclick="switchTab('agent','Lê Huyền')">
+                <span class="nav-text">🧡 Lê Huyền</span>
+              </button>
+              <button class="nav-sub-item nav-sub-item--deep" id="tabAgent-NgocHuyen"
+                onclick="switchTab('agent','Ngọc Huyền')">
+                <span class="nav-text">💚 Ngọc Huyền</span>
+              </button>
+
+              <!-- === Sales Inbox === -->
+              <div class="nav-sub-section-label" style="margin-top:6px">💼 Sales Inbox</div>
+              <button class="nav-sub-item nav-sub-item--deep" id="tabSales-Trang"
+                onclick="switchTab('salesInbox','Trang')">
+                <span class="nav-text">Trang</span>
+              </button>
+              <button class="nav-sub-item nav-sub-item--deep" id="tabSales-Min" onclick="switchTab('salesInbox','Min')">
+                <span class="nav-text">Min</span>
+              </button>
+              <button class="nav-sub-item nav-sub-item--deep" id="tabSales-Moon"
+                onclick="switchTab('salesInbox','Moon')">
+                <span class="nav-text">Moon</span>
+              </button>
+              <button class="nav-sub-item nav-sub-item--deep" id="tabSales-LeHuyen"
+                onclick="switchTab('salesInbox','Lê Huyền')">
+                <span class="nav-text">Lê Huyền</span>
+              </button>
+              <button class="nav-sub-item nav-sub-item--deep" id="tabSales-NgocHuyen"
+                onclick="switchTab('salesInbox','Ngọc Huyền')">
+                <span class="nav-text">Ngọc Huyền</span>
+              </button>
+
+            </div>
           </div>
-        </div>
-
-        <!-- LEADERBOARD NAV ITEM -->
-        <button class="nav-item" id="tabLeaderboard" onclick="switchTab('leaderboard')">
-          <span class="nav-icon">🏆</span>
-          <span class="nav-text">Leaderboard</span>
-          <span class="nav-badge" id="tabLbBadge"
-            style="margin-left:auto;background:rgba(245,158,11,0.15);color:#f59e0b">LIVE</span>
-        </button>
 
 
-        <!-- ANT DESIGN NESTED MENU FOR INBOX -->
-        <div class="nav-item-group" id="navGroupInbox">
-          <div class="nav-item-header" onclick="toggleNavGroup('inbox')">
-            <span class="nav-icon">📬</span>
-            <span class="nav-text">Inbox</span>
-            <span class="nav-badge badge-accent" id="tabInboxCount" style="margin-left:auto;margin-right:6px">0</span>
-            <span class="nav-arrow">▼</span>
+          <!-- ANT DESIGN NESTED MENU FOR DATA & TOOLS -->
+          <div class="nav-item-group" id="navGroupData">
+            <div class="nav-item-header" onclick="toggleNavGroup('data')">
+              <span class="nav-icon">🗂️</span>
+              <span class="nav-text">Data & Tools</span>
+              <span class="nav-arrow">▼</span>
+            </div>
+            <div class="nav-submenu" id="submenuData">
+              <button class="nav-sub-item" id="tabData" onclick="switchTab('data')">
+                <span class="nav-text">📁 Data & Archives</span>
+                <span class="nav-badge" id="tabDataCount" style="margin-left:auto">0</span>
+              </button>
+              <button class="nav-sub-item" id="tabAnalytics" onclick="switchTab('analytics')">
+                <span class="nav-text">📈 Analytics</span>
+              </button>
+
+              <button class="nav-sub-item" id="tabGroups" onclick="switchTab('groups')">
+                <span class="nav-text" style="color:#0ea5e9">👥 Group Discovery</span>
+                <span class="nav-badge" id="tabGroupsCount"
+                  style="margin-left:auto;background:rgba(14,165,233,0.1);color:#0ea5e9">0</span>
+              </button>
+            </div>
           </div>
-          <div class="nav-submenu" id="submenuInbox" style="max-height: 800px;">
 
-            <!-- === Agents === -->
-            <div class="nav-sub-section-label">🤖 Agents</div>
-            <button class="nav-sub-item nav-sub-item--deep" id="tabAgent-Trang" onclick="switchTab('agent','Trang')">
-              <span class="nav-text">💜 Trang</span>
-            </button>
-            <button class="nav-sub-item nav-sub-item--deep" id="tabAgent-Min" onclick="switchTab('agent','Min')">
-              <span class="nav-text">💙 Min</span>
-            </button>
-            <button class="nav-sub-item nav-sub-item--deep" id="tabAgent-Moon" onclick="switchTab('agent','Moon')">
-              <span class="nav-text">🩵 Moon</span>
-            </button>
-            <button class="nav-sub-item nav-sub-item--deep" id="tabAgent-LeHuyen"
-              onclick="switchTab('agent','Lê Huyền')">
-              <span class="nav-text">🧡 Lê Huyền</span>
-            </button>
-            <button class="nav-sub-item nav-sub-item--deep" id="tabAgent-NgocHuyen"
-              onclick="switchTab('agent','Ngọc Huyền')">
-              <span class="nav-text">💚 Ngọc Huyền</span>
-            </button>
+          <button class="nav-item" id="tabIgnored" onclick="filterByMenu('General', this)">
+            <span class="nav-icon" style="color:#ef4444">⛔</span>
+            <span class="nav-text" style="color:#ef4444">Agent Training</span>
+            <span class="nav-badge" id="tabIgnoredCount" style="background:rgba(239,68,68,0.1);color:#ef4444">0</span>
+          </button>
 
-            <!-- === Sales Inbox === -->
-            <div class="nav-sub-section-label" style="margin-top:6px">💼 Sales Inbox</div>
-            <button class="nav-sub-item nav-sub-item--deep" id="tabSales-Trang"
-              onclick="switchTab('salesInbox','Trang')">
-              <span class="nav-text">Trang</span>
-            </button>
-            <button class="nav-sub-item nav-sub-item--deep" id="tabSales-Min" onclick="switchTab('salesInbox','Min')">
-              <span class="nav-text">Min</span>
-            </button>
-            <button class="nav-sub-item nav-sub-item--deep" id="tabSales-Moon" onclick="switchTab('salesInbox','Moon')">
-              <span class="nav-text">Moon</span>
-            </button>
-            <button class="nav-sub-item nav-sub-item--deep" id="tabSales-LeHuyen"
-              onclick="switchTab('salesInbox','Lê Huyền')">
-              <span class="nav-text">Lê Huyền</span>
-            </button>
-            <button class="nav-sub-item nav-sub-item--deep" id="tabSales-NgocHuyen"
-              onclick="switchTab('salesInbox','Ngọc Huyền')">
-              <span class="nav-text">Ngọc Huyền</span>
-            </button>
+          <button class="nav-item" id="tabCrawbot" onclick="switchTab('crawbot')">
+            <span class="nav-icon">🏗️</span>
+            <span class="nav-text">Tổng Quan Hệ Thống</span>
+            <span class="nav-badge"
+              style="margin-left:auto;background:rgba(139,92,246,0.2);color:#a78bfa;font-size:0.65rem">AI</span>
+          </button>
 
+          <div class="nav-divider"></div>
+          <button class="nav-item" onclick="toggleTheme()">
+            <span class="nav-icon" id="themeIcon">🌙</span>
+            <span class="nav-text" id="themeText">Dark Mode</span>
+          </button>
+
+          <!-- SCAN SECTION — inside nav so it scrolls and is always accessible -->
+          <div class="nav-divider" style="margin:4px 0"></div>
+          <div
+            style="padding:8px 6px 4px; display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-secondary)">
+            <div class="status-indicator"></div>
+            <span class="scan-status" id="scanStatus">System Ready</span>
           </div>
-        </div>
-
-
-        <!-- ANT DESIGN NESTED MENU FOR DATA & TOOLS -->
-        <div class="nav-item-group" id="navGroupData">
-          <div class="nav-item-header" onclick="toggleNavGroup('data')">
-            <span class="nav-icon">🗂️</span>
-            <span class="nav-text">Data & Tools</span>
-            <span class="nav-arrow">▼</span>
+          <div class="scan-countdown" id="scanCountdownContainer"
+            style="display:none; padding:0 6px 4px; font-size:12px; color:var(--text-muted);">
+            <small>Next auto-scan in: </small>
+            <strong id="scanCountdownTime" style="color:var(--accent)">--:--</strong>
           </div>
-          <div class="nav-submenu" id="submenuData" style="max-height: 500px;">
-            <button class="nav-sub-item" id="tabData" onclick="switchTab('data')">
-              <span class="nav-text">📁 Data & Archives</span>
-              <span class="nav-badge" id="tabDataCount" style="margin-left:auto">0</span>
-            </button>
-            <button class="nav-sub-item" id="tabAnalytics" onclick="switchTab('analytics')">
-              <span class="nav-text">📈 Analytics</span>
-            </button>
-            
-            <button class="nav-sub-item" id="tabGroups" onclick="switchTab('groups')">
-              <span class="nav-text" style="color:#0ea5e9">👥 Group Discovery</span>
-              <span class="nav-badge" id="tabGroupsCount"
-                style="margin-left:auto;background:rgba(14,165,233,0.1);color:#0ea5e9">0</span>
-            </button>
-          </div>
-        </div>
-
-        <button class="nav-item" id="tabIgnored" onclick="filterByMenu('General', this)">
-          <span class="nav-icon" style="color:#ef4444">⛔</span>
-          <span class="nav-text" style="color:#ef4444">Agent Training</span>
-          <span class="nav-badge" id="tabIgnoredCount" style="background:rgba(239,68,68,0.1);color:#ef4444">0</span>
-        </button>
-
-        <button class="nav-item" id="tabCrawbot" onclick="switchTab('crawbot')">
-          <span class="nav-icon">🏗️</span>
-          <span class="nav-text">Tổng Quan Hệ Thống</span>
-          <span class="nav-badge"
-            style="margin-left:auto;background:rgba(139,92,246,0.2);color:#a78bfa;font-size:0.65rem">AI</span>
-        </button>
-
-        <div class="nav-divider"></div>
-        <button class="nav-item" onclick="toggleTheme()">
-          <span class="nav-icon" id="themeIcon">🌙</span>
-          <span class="nav-text" id="themeText">Dark Mode</span>
-        </button>
-      </nav>
+          <button class="btn btn-primary btn-scan" id="scanBtn" onclick="triggerScan()"
+            title="Scan Facebook, Instagram, TikTok" style="margin:4px 0 8px">
+            🔍 Keyword Scan
+          </button>
+        </nav>
 
 
 
 
-      <div class="sidebar-footer">
-        <div class="scan-status-box">
-          <div class="status-indicator"></div>
-          <span class="scan-status" id="scanStatus">System Ready</span>
-        </div>
-        <div class="scan-countdown" id="scanCountdownContainer" style="display: none;">
-          <small>Next auto-scan in:</small>
-          <strong id="scanCountdownTime">--:--</strong>
-        </div>
-        <button class="btn btn-primary btn-scan" id="scanBtn" onclick="triggerScan()"
-          title="Scan Facebook, Instagram, TikTok">
-          🔍 Keyword Scan
-        </button>
-      </div>
     </aside>
 
     <!-- ============================== -->
@@ -859,7 +866,7 @@
   <script src="js/inbox.js"></script>
   <script src="js/dataFiles.js"></script>
   <script src="js/analytics.js"></script>
-    <script src="js/api.js"></script>
+  <script src="js/api.js"></script>
   <script src="js/groups.js"></script>
   <script src="js/agents.js"></script>
   <script src="js/leaderboard.js"></script>
@@ -867,27 +874,39 @@
   <script src="js/app.js"></script>
 
 
-    <!-- Change Password Modal -->
-  <div id="changePwModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:9999;align-items:center;justify-content:center;">
-    <div style="background:#1e1b4b;border:1px solid rgba(167,139,250,0.35);border-radius:18px;padding:32px 36px;width:380px;max-width:94vw;box-shadow:0 24px 60px rgba(0,0,0,0.5);">
+  <!-- Change Password Modal -->
+  <div id="changePwModal"
+    style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:9999;align-items:center;justify-content:center;">
+    <div
+      style="background:#1e1b4b;border:1px solid rgba(167,139,250,0.35);border-radius:18px;padding:32px 36px;width:380px;max-width:94vw;box-shadow:0 24px 60px rgba(0,0,0,0.5);">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
         <span style="font-size:1.4rem;">&#128273;</span>
         <h3 style="margin:0;font-size:1.1rem;font-weight:700;color:#c4b5fd;">&#272;&#7893;i M&#7853;t Kh&#7849;u</h3>
       </div>
-      <p style="margin:0 0 22px;font-size:0.85rem;color:#94a3b8;line-height:1.5;">Nh&#7853;p m&#7853;t kh&#7849;u hi&#7879;n t&#7841;i, sau &#273;&#243; &#273;&#7863;t m&#7853;t kh&#7849;u m&#7899;i.</p>
+      <p style="margin:0 0 22px;font-size:0.85rem;color:#94a3b8;line-height:1.5;">Nh&#7853;p m&#7853;t kh&#7849;u
+        hi&#7879;n t&#7841;i, sau &#273;&#243; &#273;&#7863;t m&#7853;t kh&#7849;u m&#7899;i.</p>
 
-      <div id="changePwErr" style="display:none;margin-bottom:14px;padding:10px 14px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.35);border-radius:8px;color:#fca5a5;font-size:0.85rem;"></div>
-      <div id="changePwOk" style="display:none;margin-bottom:14px;padding:10px 14px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.35);border-radius:8px;color:#6ee7b7;font-size:0.85rem;"></div>
+      <div id="changePwErr"
+        style="display:none;margin-bottom:14px;padding:10px 14px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.35);border-radius:8px;color:#fca5a5;font-size:0.85rem;">
+      </div>
+      <div id="changePwOk"
+        style="display:none;margin-bottom:14px;padding:10px 14px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.35);border-radius:8px;color:#6ee7b7;font-size:0.85rem;">
+      </div>
 
       <div style="margin-bottom:14px;">
-        <label style="display:block;font-size:0.85rem;font-weight:600;color:#e2e8f0;margin-bottom:7px;">M&#7853;t kh&#7849;u hi&#7879;n t&#7841;i</label>
-        <input type="password" id="cpCurrent" placeholder="Nh&#7853;p m&#7853;t kh&#7849;u c&#361;" autocomplete="current-password"
+        <label style="display:block;font-size:0.85rem;font-weight:600;color:#e2e8f0;margin-bottom:7px;">M&#7853;t
+          kh&#7849;u hi&#7879;n t&#7841;i</label>
+        <input type="password" id="cpCurrent" placeholder="Nh&#7853;p m&#7853;t kh&#7849;u c&#361;"
+          autocomplete="current-password"
           style="width:100%;padding:11px 14px;border:1.5px solid rgba(167,139,250,0.25);background:rgba(255,255,255,0.06);color:#f1f5f9;border-radius:10px;outline:none;font-size:0.95rem;transition:border 0.2s;box-sizing:border-box;"
           onfocus="this.style.borderColor='#a78bfa'" onblur="this.style.borderColor='rgba(167,139,250,0.25)'">
       </div>
       <div style="margin-bottom:24px;">
-        <label style="display:block;font-size:0.85rem;font-weight:600;color:#e2e8f0;margin-bottom:7px;">M&#7853;t kh&#7849;u m&#7899;i <span style="font-weight:400;color:#94a3b8;">(t&#7889;i thi&#7875;u 6 k&#253; t&#7921;)</span></label>
-        <input type="password" id="cpNew" placeholder="Nh&#7853;p m&#7853;t kh&#7849;u m&#7899;i" autocomplete="new-password"
+        <label style="display:block;font-size:0.85rem;font-weight:600;color:#e2e8f0;margin-bottom:7px;">M&#7853;t
+          kh&#7849;u m&#7899;i <span style="font-weight:400;color:#94a3b8;">(t&#7889;i thi&#7875;u 6 k&#253;
+            t&#7921;)</span></label>
+        <input type="password" id="cpNew" placeholder="Nh&#7853;p m&#7853;t kh&#7849;u m&#7899;i"
+          autocomplete="new-password"
           style="width:100%;padding:11px 14px;border:1.5px solid rgba(167,139,250,0.25);background:rgba(255,255,255,0.06);color:#f1f5f9;border-radius:10px;outline:none;font-size:0.95rem;transition:border 0.2s;box-sizing:border-box;"
           onfocus="this.style.borderColor='#a78bfa'" onblur="this.style.borderColor='rgba(167,139,250,0.25)'">
       </div>
@@ -899,51 +918,52 @@
         </button>
         <button onclick="document.getElementById('changePwModal').style.display='none'"
           style="flex:1;padding:12px;background:rgba(255,255,255,0.08);color:#e2e8f0;border:1.5px solid rgba(255,255,255,0.15);border-radius:10px;font-size:0.95rem;font-weight:600;cursor:pointer;transition:all 0.2s;"
-          onmouseover="this.style.background='rgba(255,255,255,0.14)'" onmouseout="this.style.background='rgba(255,255,255,0.08)'">
+          onmouseover="this.style.background='rgba(255,255,255,0.14)'"
+          onmouseout="this.style.background='rgba(255,255,255,0.08)'">
           H&#7911;y
         </button>
       </div>
     </div>
   </div>
   <script>
-  function openChangePw() {
-    document.getElementById('cpCurrent').value='';
-    document.getElementById('cpNew').value='';
-    document.getElementById('changePwErr').style.display='none';
-    document.getElementById('changePwOk').style.display='none';
-    document.getElementById('changePwModal').style.display='flex';
-    setTimeout(()=>document.getElementById('cpCurrent').focus(),100);
-  }
-  async function doChangePassword() {
-    const btn=document.getElementById('cpBtn');
-    const errEl=document.getElementById('changePwErr');
-    const okEl=document.getElementById('changePwOk');
-    errEl.style.display='none'; okEl.style.display='none';
-    const cur=document.getElementById('cpCurrent').value;
-    const nw=document.getElementById('cpNew').value;
-    if(!cur){errEl.textContent='Vui l&#242;ng nh&#7853;p m&#7853;t kh&#7849;u hi&#7879;n t&#7841;i.';errEl.style.display='block';return;}
-    if(nw.length<6){errEl.textContent='M&#7853;t kh&#7849;u m&#7899;i ph&#7843;i &#237;t nh&#7845;t 6 k&#253; t&#7921;.';errEl.style.display='block';return;}
-    btn.disabled=true; btn.textContent='&#8987;...';
-    try {
-      const res=await authFetch('/api/auth/change-password',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({currentPassword:cur,newPassword:nw})
-      });
-      const d=await res.json();
-      if(d.ok){
-        okEl.textContent='&#10004; '+d.message;
-        okEl.style.display='block';
-        setTimeout(()=>document.getElementById('changePwModal').style.display='none',1800);
-      } else {
-        errEl.textContent=d.error; errEl.style.display='block';
-      }
-    } catch {
-      errEl.textContent='L&#7895;i k&#7871;t n&#7889;i server.';
-      errEl.style.display='block';
+    function openChangePw() {
+      document.getElementById('cpCurrent').value = '';
+      document.getElementById('cpNew').value = '';
+      document.getElementById('changePwErr').style.display = 'none';
+      document.getElementById('changePwOk').style.display = 'none';
+      document.getElementById('changePwModal').style.display = 'flex';
+      setTimeout(() => document.getElementById('cpCurrent').focus(), 100);
     }
-    btn.disabled=false; btn.textContent='&#10004; L&#432;u';
-  }
+    async function doChangePassword() {
+      const btn = document.getElementById('cpBtn');
+      const errEl = document.getElementById('changePwErr');
+      const okEl = document.getElementById('changePwOk');
+      errEl.style.display = 'none'; okEl.style.display = 'none';
+      const cur = document.getElementById('cpCurrent').value;
+      const nw = document.getElementById('cpNew').value;
+      if (!cur) { errEl.textContent = 'Vui l&#242;ng nh&#7853;p m&#7853;t kh&#7849;u hi&#7879;n t&#7841;i.'; errEl.style.display = 'block'; return; }
+      if (nw.length < 6) { errEl.textContent = 'M&#7853;t kh&#7849;u m&#7899;i ph&#7843;i &#237;t nh&#7845;t 6 k&#253; t&#7921;.'; errEl.style.display = 'block'; return; }
+      btn.disabled = true; btn.textContent = '&#8987;...';
+      try {
+        const res = await authFetch('/api/auth/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ currentPassword: cur, newPassword: nw })
+        });
+        const d = await res.json();
+        if (d.ok) {
+          okEl.textContent = '&#10004; ' + d.message;
+          okEl.style.display = 'block';
+          setTimeout(() => document.getElementById('changePwModal').style.display = 'none', 1800);
+        } else {
+          errEl.textContent = d.error; errEl.style.display = 'block';
+        }
+      } catch {
+        errEl.textContent = 'L&#7895;i k&#7871;t n&#7889;i server.';
+        errEl.style.display = 'block';
+      }
+      btn.disabled = false; btn.textContent = '&#10004; L&#432;u';
+    }
   </script>
 </body>
 

@@ -85,8 +85,11 @@ function isInActiveWindow() {
  * Ưu tiên: trust_score cao → ít dùng gần đây → proxy sẵn sàng
  * @returns {object|null} account row or null
  */
-function getNextAccount() {
-    if (!isInActiveWindow()) {
+function getNextAccount(options = {}) {
+    // manualTrigger=true: human clicked Scan → always run regardless of time
+    // Auto cron scan → respect 23h-13h VN time window
+    const bypass = options.manualTrigger === true || process.env.BYPASS_TIME_WINDOW === 'true';
+    if (!bypass && !isInActiveWindow()) {
         console.log(`[AccountManager] 🌙 Ngoài giờ hoạt động (${ACTIVE_HOUR_START}h-${ACTIVE_HOUR_END}h VN) — CrawBot nghỉ ngơi`);
         return null;
     }

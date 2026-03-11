@@ -74,6 +74,8 @@ body {
 .sidebar-header {
   padding: 24px 20px;
   border-bottom: 1px solid var(--glass-border);
+  flex-shrink: 0;
+  flex-basis: auto;
 }
 
 .logo {
@@ -112,12 +114,17 @@ body {
 
 .sidebar-nav {
   padding: 16px 12px;
-  flex: 1;
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
   overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
+  /* Footer removed — nav fills full height minus header only */
+  max-height: calc(100vh - 120px);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 
 /* Sidebar footer — always pinned at bottom, never pushed off screen */
@@ -194,6 +201,18 @@ body {
 
 .btn-scan:active {
   transform: translateY(0);
+}
+
+/* === NAV SUBMENU (collapse/expand) === */
+.nav-submenu {
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+  max-height: 1000px;
+  /* open state */
+}
+
+.nav-item-group.collapsed .nav-submenu {
+  max-height: 0 !important;
 }
 
 .nav-item {

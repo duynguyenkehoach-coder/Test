@@ -248,6 +248,30 @@ async function getAuthContext(account = null) {
     if (activeContext && isLoggedIn) return activeContext;
 
     // ── Build launch options ──
+    const PROFILE_DIR = path.join(__dirname, '..', '..', 'data', 'fb_browser_profile');
+
+    // Persistent context: use profile from task fb:login if available (most stable)
+    if (!activeContext && fs.existsSync(PROFILE_DIR) && !accProxy) {
+        try {
+            console.log(`[FBScraper] 📁 Using persistent browser profile (${accEmail})`);
+            const persistCtx = await chromium.launchPersistentContext(PROFILE_DIR, {
+                headless: true,
+                args: ['--no-sandbox', '--disable-dev-shm-usage'],
+            });
+            activeContext = persistCtx;
+            activeBrowser = null; // persistent context manages its own browser
+            isLoggedIn = true;
+            sessionAge = 0;
+            console.log(`[FBScraper] ✅ Persistent session loaded`);
+            return activeContext;
+        } catch (err) {
+            console.warn(`[FBScraper] ⚠️ Persistent context failed: ${err.message} — falling back to cookie session`);
+            activeContext = null;
+        }
+    }
+
+
+    // Cookie-based session fallback — build launch options
     const launchOptions = { headless: true };
 
     // Per-account proxy (1 account : 1 proxy — prevents Chain-ban)
@@ -390,15 +414,17 @@ function extractGroupId(url) {
  * Get posts from a Facebook group (with 2-minute timeout).
  * Uses AccountManager for multi-account rotation.
  */
-async function getGroupPosts(groupUrl, groupName) {
+async function getGroupPosts(groupUrl, groupName, options = {}) {
     // ── Time window check: only scrape during active hours ──
-    if (!accountManager.isInActiveWindow()) {
+    // manualTrigger bypasses both the local check and accountManager time window
+    const bypass = options.manualTrigger === true || process.env.BYPASS_TIME_WINDOW === 'true';
+    if (!bypass && !accountManager.isInActiveWindow()) {
         console.log(`[CrawBot] 🌙 Ngoài giờ hoạt động (8h-23h VN) — bỏ qua ${groupName}`);
         return [];
     }
 
     // ── Get next available account ──
-    const account = accountManager.getNextAccount();
+    const account = accountManager.getNextAccount(options);
     if (!account) {
         console.log(`[CrawBot] ❌ Không có tài khoản nào sẵn sàng — bỏ qua ${groupName}`);
         return [];
@@ -437,13 +463,28 @@ async function _getGroupPostsInner(groupUrl, groupName, account = null) {
         // Wait for React to hydrate (2.5s — faster, still reliable)
         await delay(2500);
 
-        // Check for login redirect
-        if (page.url().includes('/login')) {
-            console.warn(`[FBScraper] 🔒 Session expired`);
+        // ── Immediate checkpoint/login detection (OpenClaw technique) ──
+        const landedUrl = page.url();
+        if (landedUrl.includes('checkpoint') || landedUrl.includes('two_step')) {
+            console.log(`[FBScraper] 🚨 CHECKPOINT after goto ${groupName} — stopping`);
+            if (account) accountManager.reportCheckpoint(account.id);
+            await page.close();
+            return [];
+        }
+        if (landedUrl.includes('/login')) {
+            console.warn(`[FBScraper] 🔒 Redirected to login for ${groupName} — session expired`);
             isLoggedIn = false;
             await page.close();
             return [];
         }
+        const pageTitle = await page.title();
+        if (['security check', 'checkpoint', 'log in'].some(kw => pageTitle.toLowerCase().includes(kw))) {
+            console.log(`[FBScraper] 🚨 Checkpoint page detected: "${pageTitle}" for ${groupName}`);
+            if (account) accountManager.reportCheckpoint(account.id);
+            await page.close();
+            return [];
+        }
+
 
         // Wait for feed/articles to render
         try {
@@ -519,16 +560,25 @@ async function _getGroupPostsInner(groupUrl, groupName, account = null) {
             }
         }
 
-        // Smart scroll — minimum 3 scrolls, stops after 3 consecutive no-growth
+        // Smart scroll — scroll aggressively to load 30+ posts
+        // Stops early if: enough posts visible OR 5 consecutive no-growth
         let prevHeight = 0;
         let noGrowthCount = 0;
-        for (let i = 0; i < 20; i++) {
-            await page.evaluate(() => window.scrollBy(0, 3000));
-            await delay(350);
+        const TARGET_FEED_CHILDREN = maxPosts * 2; // Overshoot to ensure enough
+        for (let i = 0; i < 40; i++) {
+            await page.evaluate(() => window.scrollBy(0, 4000));
+            await delay(250);
             const curHeight = await page.evaluate(() => document.body.scrollHeight);
+
+            // Early stop: if we have enough feed children already visible
+            const feedCount = await page.evaluate(() =>
+                document.querySelectorAll('div[role="feed"] > div').length
+            );
+            if (feedCount >= TARGET_FEED_CHILDREN && i >= 5) break;
+
             if (curHeight === prevHeight) {
                 noGrowthCount++;
-                if (i >= 3 && noGrowthCount >= 3) break;
+                if (i >= 5 && noGrowthCount >= 5) break;
             } else {
                 noGrowthCount = 0;
             }
@@ -615,11 +665,62 @@ async function _getGroupPostsInner(groupUrl, groupName, account = null) {
                         if (imgEl) authorAvatar = imgEl.src || '';
                     }
 
-                    // Post URL — link containing /posts/ or story_fbid or permalink
+                    // Post URL — 4-pass fallback (OpenClaw technique)
                     let postUrl = '';
-                    const links = unit.querySelectorAll('a[href*="/posts/"], a[href*="story_fbid"], a[href*="permalink"]');
-                    if (links.length > 0) {
-                        postUrl = links[0].href;
+                    const isPostLink = (href) => href && (
+                        href.includes('/posts/') || href.includes('story_fbid') ||
+                        href.includes('permalink') || href.includes('/permalink/')
+                    );
+
+                    // Pass 1: direct post/story links
+                    for (const a of unit.querySelectorAll('a')) {
+                        if (isPostLink(a.href)) { postUrl = a.href; break; }
+                    }
+
+                    // Pass 2: timestamp links (aria-label with relative time)
+                    if (!postUrl) {
+                        const timeSelectors = [
+                            'a[aria-label*="giờ"]', 'a[aria-label*="phút"]', 'a[aria-label*="ngày"]',
+                            'a[aria-label*="tuần"]', 'a[aria-label*="tháng"]',
+                            'a[aria-label*="hour"]', 'a[aria-label*="minute"]',
+                            'a[aria-label*="day"]', 'a[aria-label*="week"]', 'a[aria-label*="month"]',
+                            'a abbr[title]',
+                        ];
+                        for (const sel of timeSelectors) {
+                            const el2 = sel.endsWith(']') && sel.includes(' ')
+                                ? unit.querySelector(sel)?.closest('a')
+                                : unit.querySelector(sel);
+                            if (el2 && isPostLink(el2.href)) { postUrl = el2.href; break; }
+                        }
+                    }
+
+                    // Pass 3: reconstruct from photo link set param (post ID hidden inside)
+                    // Facebook embeds post ID: /photo/?fbid=X&set=pcb.POSTID or set=gm.POSTID
+                    if (!postUrl) {
+                        for (const a of unit.querySelectorAll('a[href*="/photo/"]')) {
+                            const setMatch = (a.href || '').match(/[?&]set=(?:pcb|gm|pb|g)\.(\d+)/);
+                            if (setMatch) {
+                                const grpLink = unit.querySelector('a[href*="/groups/"][href*="/user/"]');
+                                if (grpLink) {
+                                    const grpMatch = grpLink.href.match(/\/groups\/(\d+)\//);
+                                    if (grpMatch) {
+                                        postUrl = `https://www.facebook.com/groups/${grpMatch[1]}/posts/${setMatch[1]}/`;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Pass 4: any /groups/.../posts/ link
+                    if (!postUrl) {
+                        const grpPostLink = unit.querySelector('a[href*="/groups/"][href*="/posts/"]');
+                        if (grpPostLink) postUrl = grpPostLink.href;
+                    }
+
+                    // Clean query params from URL
+                    if (postUrl) {
+                        try { const u = new URL(postUrl); u.search = ''; postUrl = u.toString(); } catch { }
                     }
 
                     // Time — look for timestamp in various places
@@ -959,9 +1060,12 @@ async function autoJoinGroups(groups = null) {
  * @param {number} maxPosts - max posts per group
  * @returns {Array} all posts from all groups
  */
-async function scrapeFacebookGroups(maxPosts = 30) {
+async function scrapeFacebookGroups(maxPosts = 20, options = {}, externalGroups = null) {
     const cfg = require('../config');
-    const groups = cfg.FB_TARGET_GROUPS || [];
+    // Use externally-provided groups (49 from prod) or fall back to config (19)
+    const groups = (externalGroups && externalGroups.length > 0)
+        ? externalGroups
+        : (cfg.FB_TARGET_GROUPS || []);
 
     if (groups.length === 0) {
         console.log('[FBScraper] ⚠️ No target groups configured');
@@ -977,7 +1081,7 @@ async function scrapeFacebookGroups(maxPosts = 30) {
         console.log(`[FBScraper] 📦 Batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(groups.length / BATCH_SIZE)}: ${batch.map(g => g.name).join(', ')}`);
 
         const results = await Promise.allSettled(
-            batch.map(g => getGroupPosts(g.url, g.name))
+            batch.map(g => getGroupPosts(g.url, g.name, options))
         );
 
         for (const r of results) {

@@ -274,6 +274,9 @@
         <button onclick="fetchLogs()" title="Refresh">🔄 Refresh</button>
         <button id="autoBtn" onclick="toggleAuto()" title="Auto-refresh">⏸️ Auto: OFF</button>
         <button onclick="scrollToBottom()">⬇️ Bottom</button>
+        <button onclick="triggerScan()" style="background:#1f6feb;border-color:#1f6feb;color:#fff"
+            title="Trigger scraper scan">🚀 Scan Now</button>
+        <button onclick="clearView()" style="background:#21262d;color:#8b949e">🗑️ Clear</button>
         <span class="spacer"></span>
         <span class="count" id="logCount">0 logs</span>
     </div>
@@ -390,6 +393,24 @@
         function scrollToBottom() {
             const c = document.getElementById('logContainer');
             c.scrollTop = c.scrollHeight;
+        }
+
+        async function triggerScan() {
+            try {
+                const resp = await fetch(`/api/dev/scan?password=${encodeURIComponent(password)}`, { method: 'POST' });
+                const data = await resp.json();
+                if (resp.ok) {
+                    alert('✅ Scan triggered! Check logs for progress.');
+                    if (!autoRefresh) toggleAuto();
+                } else {
+                    alert('❌ ' + (data.error || 'Failed'));
+                }
+            } catch (e) { alert('❌ Request failed: ' + e.message); }
+        }
+
+        function clearView() {
+            document.getElementById('logContainer').innerHTML = '';
+            document.getElementById('logCount').textContent = '0 logs (view cleared)';
         }
 
         function escapeHtml(s) {

@@ -1,0 +1,56 @@
+version: '3'
+
+dotenv: ['.env']
+
+vars:
+  PORT: 3000
+
+tasks:
+  default:
+    desc: Kill port 3000 và restart dev server
+    aliases: [dev, d]
+    cmds:
+      - npx kill-port {{.PORT}} || true
+      - powershell -ExecutionPolicy Bypass -File scripts/kill-port.ps1
+      - node src/server.js
+
+  kill:
+    desc: Chỉ kill port 3000
+    cmds:
+      - npx kill-port {{.PORT}} || true
+
+  scan:
+    desc: Chạy manual scan 1 lần (không start server)
+    cmds:
+      - node src/index.js --scan-once
+
+  sync:groups:
+    desc: Pull 49 groups từ production về local (data/prod_groups.json)
+    cmds:
+      - node scripts/sync-groups.js
+
+
+  reset:account:
+    desc: Reset FB account khi bị checkpoint/resting
+    cmds:
+      - node scripts/reset-account.js
+
+  fb:login:
+    desc: Login Facebook thủ công 1 lần — tạo persistent session (dùng sau khi bị checkpoint)
+    cmds:
+      - node scripts/fb-login.js
+
+  prod:
+    desc: Khởi động production với PM2
+    cmds:
+      - pm2 start ecosystem.config.js
+
+  prod:logs:
+    desc: Xem PM2 logs
+    cmds:
+      - pm2 logs thg-lead-gen
+
+  prod:restart:
+    desc: Restart PM2
+    cmds:
+      - pm2 restart thg-lead-gen

@@ -32,10 +32,27 @@ function dedup(posts) {
 }
 
 // ── Facebook ──────────────────────────────────────────────────────────────────
-async function scrapeFacebook(_keywords, maxPosts = 30) {
+const PROD_GROUPS_FILE = require('path').join(__dirname, '../../data/prod_groups.json');
+const fs = require('fs');
+
+async function scrapeFacebook(_keywords, maxPosts = 30, options = {}) {
     console.log('[Scraper:FB] 📘 Scraping Facebook via Playwright (self-hosted)...');
     try {
-        const posts = await fbScraper.scrapeFacebookGroups(maxPosts);
+        // Load groups: prod_groups.json (49 groups) > config fallback (19 groups)
+        let groups = config.FB_TARGET_GROUPS;
+        if (fs.existsSync(PROD_GROUPS_FILE)) {
+            try {
+                const prodGroups = JSON.parse(fs.readFileSync(PROD_GROUPS_FILE, 'utf8'));
+                if (prodGroups.length > 0) {
+                    groups = prodGroups;
+                    console.log(`[Scraper:FB] 📋 Loaded ${groups.length} groups từ production`);
+                }
+            } catch (e) {
+                console.warn('[Scraper:FB] ⚠️ Failed to load prod_groups.json, using config fallback');
+            }
+        }
+
+        const posts = await fbScraper.scrapeFacebookGroups(maxPosts, options, groups);
         const deduped = dedup(posts);
         console.log(`[Scraper:FB] ✅ ${deduped.length} posts (before dedup: ${posts.length})`);
         return deduped;
@@ -83,7 +100,7 @@ async function runFullScan(options = {}) {
             continue;
         }
         try {
-            results[platform] = await scraper.fn([], maxPerPlatform);
+            results[platform] = await scraper.fn([], maxPerPlatform, options);
             console.log(`[Scraper] ✅ ${platform}: ${results[platform].length} posts\n`);
         } catch (err) {
             console.error(`[Scraper] ❌ ${platform}: ${err.message}`);

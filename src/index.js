@@ -117,12 +117,8 @@ async function runPipeline(options = {}) {
         console.log('\n[Pipeline] 🔍 Step 1.5: Filtering spam/providers and deduplicating...');
         const existingUrls = database.getExistingPostUrls();
         const existingHashes = database.getExistingContentHashes();
-        const sv = require('./pipelines/sociaVault');
 
         const newPosts = allPosts.filter(post => {
-            // Pre-filter: Explicitly drop any post/comment offering services or leaving contact info
-            if (sv.isProviderText(post.content || '')) return false;
-
             // Check by URL first (most reliable)
             if (post.post_url && existingUrls.has(post.post_url)) return false;
             // Fallback: check by content fingerprint (first 100 chars)
@@ -264,6 +260,25 @@ async function runPipeline(options = {}) {
         console.log('\n[Pipeline] 💾 Step 5: Exporting to daily file...');
         saveLeadsToFile(withResponses);
 
+        // Step 5.5: Auto-push leads to production VPS
+        try {
+            const { pushLeadsToProd } = require('./pipelines/pushLeads');
+            const leadsForPush = withResponses.map(lead => ({
+                source_url: lead.post_url,
+                post_url: lead.post_url,
+                author_name: lead.author_name,
+                author_url: lead.author_url,
+                content: lead.content,
+                platform: lead.platform,
+                group_name: lead.group_name || '',
+                created_at: lead.post_created_at || lead.scraped_at,
+            }));
+            console.log(`\n[Pipeline] 🚀 Step 5.5: Pushing ${leadsForPush.length} leads to production...`);
+            await pushLeadsToProd(leadsForPush);
+        } catch (pushErr) {
+            console.warn(`[Pipeline] ⚠️ Push to prod failed (not critical): ${pushErr.message}`);
+        }
+
         // Step 6: Accumulate leads for daily Telegram digest (NOT every scan)
         stats.totalLeads = totalLeads;
         stats.duration = Math.round((Date.now() - startTime) / 1000);
@@ -383,18 +398,6 @@ async function main() {
     const unifiedCron = config.CRON_UNIFIED_SCAN || '0 8-22 * * *';
     console.log(`[Main] ⏰ Unified scan (TikTok + Facebook): ${unifiedCron}`);
     const scanJob = cron.schedule(unifiedCron, () => {
-        // Check credit budget before scanning
-        try {
-            const sv = require('./pipelines/sociaVault');
-            if (typeof sv.getBudgetInfo === 'function') {
-                const budget = sv.getBudgetInfo();
-                if (budget.remaining <= 0) {
-                    console.log(`[Main] 🛑 Budget exhausted (${budget.used}/${budget.limit}). Skipping scan.`);
-                    return;
-                }
-                console.log(`[Cron] 💰 Budget: ${budget.remaining}/${budget.limit} credits remaining`);
-            }
-        } catch { }
         console.log(`[Cron] Triggered scan (${config.ENABLED_PLATFORMS.join(', ')})...`);
         safeRunScan(() => runPipeline({
             platforms: config.ENABLED_PLATFORMS,
