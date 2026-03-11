@@ -44,9 +44,6 @@ services:
   # ── Scraper Worker (Playwright — Heavy) ──────────────────────────────
   scraper:
     image: ${DOCKER_IMAGE:-thg-lead-gen:latest}
-    build:
-      context: .
-      dockerfile: Dockerfile
     container_name: thg-scraper
     restart: unless-stopped
     command: ["node", "src/workers/scraperWorker.js"]
@@ -79,9 +76,6 @@ services:
   # ── AI Worker (Classification — I/O-bound) ───────────────────────────
   ai-worker:
     image: ${DOCKER_IMAGE:-thg-lead-gen:latest}
-    build:
-      context: .
-      dockerfile: Dockerfile
     container_name: thg-ai-worker
     restart: unless-stopped
     command: ["node", "src/workers/aiWorker.js"]
