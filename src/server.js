@@ -70,10 +70,9 @@ app.get('/api/dev/logs', (req, res) => {
 app.post('/api/dev/scan', async (req, res) => {
     const pw = req.query.password || req.body?.password || '';
     if (pw !== DEV_PASSWORD) return res.status(401).json({ error: 'Unauthorized' });
-    res.json({ ok: true, msg: 'Scan triggered — check logs' });
-    // Run scan in background — manualTrigger=true bypasses 23h-13h time window
-    const { runFullScan } = require('./pipelines/scraperEngine');
-    runFullScan({ manualTrigger: true }).catch(e => console.error('[DevConsole] Scan error:', e.message));
+    // Enqueue scan job — Scraper Worker will pick it up
+    database.enqueueScan('MANUAL_SCAN', { manualTrigger: true, platforms: ['facebook'] });
+    res.json({ ok: true, msg: 'Scan enqueued — Scraper Worker will process it. Check logs.' });
 });
 
 
@@ -309,7 +308,7 @@ app.delete('/api/leads', (req, res) => {
 
 app.get('/api/stats', (req, res) => {
     try {
-        const stats = database.getStats();
+        const stats = database.getStatsCached();
         const convStats = database.getConversationStats();
         res.json({ success: true, data: { ...stats, conversations: convStats } });
     } catch (err) {
@@ -349,13 +348,15 @@ app.get('/api/scans', (req, res) => {
 
 app.post('/api/scan', async (req, res) => {
     try {
-        const { runPipeline } = require('./index');
         const config = require('./config');
-        // Dùng config.ENABLED_PLATFORMS thay vì hardcode — FB-only mode
-        runPipeline({ platforms: config.ENABLED_PLATFORMS }).catch(console.error);
-        res.json({ success: true, message: `Scan started (${config.ENABLED_PLATFORMS.join(', ')})` });
+        // Enqueue scan job — Scraper Worker process will pick it up
+        database.enqueueScan('FULL_SCAN', {
+            platforms: config.ENABLED_PLATFORMS,
+            maxPosts: config.MAX_POSTS_PER_SCAN || 200,
+        });
+        res.json({ success: true, message: `Scan enqueued (${config.ENABLED_PLATFORMS.join(', ')}). Worker will process it.` });
     } catch (err) {
-        logger.error('Server', 'Manual scan trigger failed', { error: err.message });
+        logger.error('Server', 'Manual scan enqueue failed', { error: err.message });
         res.status(500).json({ success: false, error: err.message });
     }
 });
@@ -815,49 +816,10 @@ if (require.main === module) {
     startServer();
 }
 
-// ╔══════════════════════════════════════════════════════╗
-// ║  GROUP DISCOVERY DATABASE API                         ║
-// ╚══════════════════════════════════════════════════════╝
+// GROUP DISCOVERY routes (duplicate block removed — already defined at line 451-506)
+// Kept: initialization only
 const groupDiscovery = require('./agent/groupDiscovery');
-// Initialize on startup (seeds 107 groups if empty)
 try { groupDiscovery.getDb(); logger.info('GroupDB', `Group database initialized`); } catch (e) { logger.warn('GroupDB', e.message); }
-
-// GET /api/groups — List all groups with optional filters
-app.get('/api/groups', (req, res) => {
-    try {
-        const { category, status, limit } = req.query;
-        const groups = groupDiscovery.getAllGroups({ category, status, limit: limit ? parseInt(limit) : undefined });
-        res.json({ ok: true, data: groups, count: groups.length });
-    } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
-});
-
-// GET /api/groups/stats — Group database stats
-app.get('/api/groups/stats', (req, res) => {
-    try {
-        res.json({ ok: true, data: groupDiscovery.getStats() });
-    } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
-});
-
-// POST /api/groups — Add new group manually
-app.post('/api/groups', (req, res) => {
-    try {
-        const { name, url, category, relevance_score, notes } = req.body;
-        if (!name || !url) return res.status(400).json({ ok: false, error: 'name and url required' });
-        groupDiscovery.upsertGroup({ name, url, category: category || 'unknown', relevance_score: relevance_score || 50, notes });
-        res.json({ ok: true, message: `Group '${name}' added/updated` });
-    } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
-});
-
-// PATCH /api/groups/:id — Update group score or status
-app.patch('/api/groups/:id', (req, res) => {
-    try {
-        const { url, relevance_score, status } = req.body;
-        if (!url) return res.status(400).json({ ok: false, error: 'url required' });
-        if (relevance_score !== undefined) groupDiscovery.updateScore(url, relevance_score);
-        if (status) groupDiscovery.setStatus(url, status);
-        res.json({ ok: true });
-    } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
-});
 
 // ╔══════════════════════════════════════════════════════╗
 // ║  AGENT FEEDBACK API                                   ║
@@ -1662,55 +1624,15 @@ try {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CrawBot Import v2 — Async Worker + Dedup + Routing
+// CrawBot Import v2 — Enqueue only (Worker runs in separate process)
 //
 // Flow:
 //  1. POST /api/import/crawbot  → accept array, dedup by URL, enqueue PENDING
 //  2. Return 200 immediately (bot never hangs)
-//  3. Background worker processes PENDING rows:
-//     a. Regex pre-filter (PROVIDER / WRONG ROUTE / NO KEYWORDS) → REJECTED
-//     b. AI classifier (Groq/Gemini) score → if >= threshold → QUALIFIED
-//     c. Auto-assign to Sales by content keywords
-//     d. Insert into leads table (actual dashboard data)
+//  3. AI Worker process (src/workers/aiWorker.js) polls raw_leads and processes
 // ─────────────────────────────────────────────────────────────────────────────
 try {
-    const { classifyPost } = require('./prompts/leadQualifier');
-
-    // ── Routing rules ──────────────────────────────────────────────────────
-    const ROUTING_RULES = [
-        { pattern: /pod|print.on.demand|in.áo|in.theo|xưởng.in/i, assignTo: 'Trang' },
-        { pattern: /trung.quốc|china|tq|taobao|1688|quảng.châu|cn.→|cn\s/i, assignTo: 'Moon' },
-        { pattern: /kho.mỹ|warehouse|3pl|texas|pennsylvania|pa.kho|kho.us/i, assignTo: 'Khoa' },
-        { pattern: /fulfillment|fulfill|dropship|drop.ship/i, assignTo: 'Trang' },
-        { pattern: /epacket|chile|colombia|mexico|saudi|uae|úc|australia/i, assignTo: 'Linh' },
-    ];
-    const ROUND_ROBIN_SALES = ['Trang', 'Moon', 'Khoa', 'Linh'];
-    let rrIdx = 0;
-
-    function routeLead(content) {
-        const text = content || '';
-        for (const rule of ROUTING_RULES) {
-            if (rule.pattern.test(text)) return rule.assignTo;
-        }
-        // Round-robin fallback
-        const sales = ROUND_ROBIN_SALES[rrIdx % ROUND_ROBIN_SALES.length];
-        rrIdx++;
-        return sales;
-    }
-
-    // ── Regex pre-filters (mirrors leadQualifier.js) ─────────────────────
-    const PROVIDER_RE = /(chúng tôi nhận|bên em nhận|bên em chuyên|dịch vụ vận chuyển|nhận gửi hàng|nhận ship|offering fulfillment|we ship|we offer|lh em|ib em|inbox em|liên hệ em|zalo:|chỉ từ \d+k)/i;
-    const WRONG_ROUTE_RE = /(giao hàng nhanh nội|ship cod toàn|vận chuyển nội địa|gửi.*về việt nam|order.*về vn|nhập hàng.*về vn|ship.*từ mỹ.*về)/i;
-    const MUST_HAVE_RE = /(ship|vận chuyển|fulfillment|fulfill|pod|dropship|gửi hàng|kho|warehouse|giá|tìm|cần|logistics|3pl|fba|ecommerce|seller|tracking|forwarder|express|freight|order|tìm đơn vị)/i;
-
-    function preFilter(content) {
-        if (PROVIDER_RE.test(content)) return { pass: false, reason: 'Provider/quảng cáo' };
-        if (WRONG_ROUTE_RE.test(content)) return { pass: false, reason: 'Sai tuyến (nội địa/nhập về VN)' };
-        if (!MUST_HAVE_RE.test(content)) return { pass: false, reason: 'Không có từ khóa kinh doanh' };
-        return { pass: true };
-    }
-
-    // ── Normalize incoming CrawBot post ────────────────────────────────────
+    // ── Normalize incoming CrawBot post ────────────────────────────────────────
     function normalize(raw) {
         return {
             url: raw.url || raw.post_url || raw.link || '',
@@ -1721,89 +1643,6 @@ try {
             group_name: raw.group || raw.group_name || raw.source_name || '',
             scraped_at: raw.scraped_at || raw.date || raw.time || new Date().toISOString(),
         };
-    }
-
-    // ── Worker: process PENDING raw_leads ──────────────────────────────────
-    let workerRunning = false;
-    async function runWorker() {
-        if (workerRunning) return;
-        workerRunning = true;
-        try {
-            const batch = database.db.prepare(
-                `SELECT * FROM raw_leads WHERE status = 'PENDING' LIMIT 20`
-            ).all();
-
-            for (const row of batch) {
-                // Mark as PROCESSING
-                database.db.prepare(`UPDATE raw_leads SET status='PROCESSING' WHERE id=?`).run(row.id);
-
-                // Pre-filter (free, instant)
-                const pf = preFilter(row.content);
-                if (!pf.pass) {
-                    database.db.prepare(
-                        `UPDATE raw_leads SET status='REJECTED', reject_reason=? WHERE id=?`
-                    ).run(pf.reason, row.id);
-                    continue;
-                }
-
-                // AI Classify
-                try {
-                    const post = {
-                        platform: row.platform,
-                        author_name: row.author,
-                        author_url: row.author_url,
-                        content: row.content,
-                        post_url: row.url,
-                        post_created_at: row.scraped_at,
-                        item_type: 'post',
-                        group_name: row.group_name,
-                    };
-                    const result = await classifyPost(post);
-                    const score = result?.score || 0;
-                    const threshold = config.LEAD_SCORE_THRESHOLD || 60;
-
-                    if (score >= threshold) {
-                        const assignedTo = routeLead(row.content);
-
-                        // Save to leads table
-                        database.db.prepare(`
-                            INSERT OR IGNORE INTO leads
-                              (platform, author_name, author_url, content, post_url, post_created_at,
-                               item_type, group_name, score, summary, status, tags, response_draft, assigned_sales)
-                            VALUES (?, ?, ?, ?, ?, ?, 'post', ?, ?, ?, 'new', ?, ?, ?)
-                        `).run(
-                            row.platform, row.author, row.author_url, row.content,
-                            row.url, row.scraped_at, row.group_name,
-                            score, result?.summary || '',
-                            JSON.stringify(result?.tags || []),
-                            result?.response_draft || '',
-                            assignedTo,
-                        );
-
-                        database.db.prepare(
-                            `UPDATE raw_leads SET status='QUALIFIED', score=?, assigned_to=? WHERE id=?`
-                        ).run(score, assignedTo, row.id);
-
-                        console.log(`[CrawBot Worker] 🔥 LEAD ${score}đ → ${assignedTo}: ${row.author}`);
-                    } else {
-                        database.db.prepare(
-                            `UPDATE raw_leads SET status='REJECTED', score=?, reject_reason=? WHERE id=?`
-                        ).run(score, `AI score ${score} < ${threshold}`, row.id);
-                    }
-                } catch (aiErr) {
-                    database.db.prepare(
-                        `UPDATE raw_leads SET status='PENDING', reject_reason=? WHERE id=?`
-                    ).run('AI error: ' + aiErr.message, row.id);
-                }
-            }
-        } finally {
-            workerRunning = false;
-            // If still PENDING rows, schedule another pass
-            const remaining = database.db.prepare(
-                `SELECT COUNT(*) as c FROM raw_leads WHERE status='PENDING'`
-            ).get()?.c || 0;
-            if (remaining > 0) setTimeout(runWorker, 2000);
-        }
     }
 
     // ── POST /api/import/crawbot — JSON webhook ────────────────────────────
@@ -1831,11 +1670,8 @@ try {
             else duplicates++;
         }
 
-        // ✅ Return immediately — bot never hangs
+        // ✅ Return immediately — AI Worker process will handle classification
         res.json({ ok: true, enqueued, duplicates, invalid, total: rawPosts.length });
-
-        // Kick off background worker (non-blocking)
-        setImmediate(runWorker);
     });
 
     // ── GET /api/import/crawbot/status — queue stats ───────────────────────
@@ -1850,7 +1686,15 @@ try {
         res.json({ ok: true, queue: stats, recentQualified });
     });
 
-    console.log('[Server] ✅ CrawBot v2 pipeline loaded (/api/import/crawbot)');
+    // ── GET /api/scan/queue — scan queue status ───────────────────────────
+    app.get('/api/scan/queue', (req, res) => {
+        const queueStats = database.getScanQueueStatus();
+        const running = database.db.prepare(`SELECT * FROM scan_queue WHERE status = 'RUNNING' LIMIT 1`).get();
+        const recent = database.db.prepare(`SELECT id, job_type, status, created_at, started_at, finished_at FROM scan_queue ORDER BY id DESC LIMIT 10`).all();
+        res.json({ success: true, queue: queueStats, running: running || null, recent });
+    });
+
+    console.log('[Server] ✅ CrawBot v2 import loaded (/api/import/crawbot)');
 } catch (e) {
     console.warn('[Server] ⚠️ CrawBot import skipped:', e.message);
 }

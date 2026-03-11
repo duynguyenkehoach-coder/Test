@@ -1,373 +1,50 @@
+/**
+ * THG Lead Gen — API Server Entry Point (Lightweight)
+ * 
+ * This process ONLY runs:
+ *   1. Express API server (dashboard + webhooks)
+ *   2. Cron scheduler that ENQUEUES scan jobs to scan_queue
+ * 
+ * Heavy work is handled by separate worker processes:
+ *   - src/workers/scraperWorker.js  → Playwright scraping + classification
+ *   - src/workers/aiWorker.js       → AI classification of raw_leads (CrawBot)
+ */
 const cron = require('node-cron');
 const config = require('./config');
-const { runFullScan } = require('./pipelines/scraperEngine');
-const { classifyPosts } = require('./prompts/leadQualifier');
-const { generateResponses } = require('./prompts/salesCopilot');
-const { sendMessage, notifyAlert } = require('./integrations/telegramBot');
 const database = require('./data_store/database');
 const { startServer } = require('./server');
-const { cleanOldData, saveLeadsToFile } = require('./data_store/fileManager');
-
-// ═══ Daily Digest Accumulator ═══
-// Leads are buffered here. Digest is sent when: ≥3 leads OR new day starts.
-let pendingLeads = [];
-let lastDigestDate = new Date().toISOString().slice(0, 10);
 
 /**
- * Send a Telegram digest with all accumulated leads
- */
-async function sendTelegramDigest(leads, stats) {
-    if (leads.length === 0) return;
-
-    // Group by platform
-    const byPlatform = {};
-    leads.forEach(l => {
-        byPlatform[l.platform] = (byPlatform[l.platform] || 0) + 1;
-    });
-    const platformEmojis = { facebook: '📘', instagram: '📷', tiktok: '🎵' };
-    const platformLines = Object.entries(byPlatform)
-        .map(([p, count]) => `  ${platformEmojis[p] || '🌐'} ${p}: ${count} lead`)
-        .join('\n');
-
-    // Sort by score desc, take top 5
-    const topLeads = [...leads].sort((a, b) => b.score - a.score).slice(0, 5);
-    const topLeadLines = topLeads.map((l, i) => {
-        const emoji = platformEmojis[l.platform] || '🌐';
-        const author = (l.author_name || 'Unknown').substring(0, 25);
-        const summary = (l.summary || '').substring(0, 80);
-        const url = l.post_url ? `\n      🔗 <a href="${l.post_url}">Xem bài viết</a>` : '';
-        return `  <b>${i + 1}.</b> ${emoji} [${l.score}đ] ${escapeHtmlSimple(author)}\n      💡 ${escapeHtmlSimple(summary)}${url}`;
-    }).join('\n\n');
-
-    const time = new Date().toLocaleString('vi-VN');
-    const message = `
-📊 <b>BÁO CÁO LEAD HÀNG NGÀY</b>
-🕐 ${time}
-
-🏆 <b>Tổng lead mới:</b> ${leads.length}
-
-📱 <b>Theo nền tảng:</b>
-${platformLines}
-
-⭐ <b>Top ${topLeads.length} lead tiềm năng nhất:</b>
-
-${topLeadLines}
-
-${leads.length > 5 ? `\n📋 Còn ${leads.length - 5} lead khác → Xem chi tiết trên Dashboard` : ''}
-  `.trim();
-
-    const sent = await sendMessage(message);
-    if (sent) {
-        console.log(`[Notifier] ✅ Daily digest sent: ${leads.length} leads`);
-    }
-    return sent;
-}
-
-function escapeHtmlSimple(text) {
-    if (!text) return '';
-    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-/**
- * Main pipeline: scrape → classify → generate responses → save → notify
- */
-async function runPipeline(options = {}) {
-    const startTime = Date.now();
-
-    // 🧹 Auto-cleanup old data files (>7 days)
-    cleanOldData();
-
-    console.log('\n' + '='.repeat(60));
-    console.log(`[Pipeline] 🚀 Starting scan at ${new Date().toLocaleString()}`);
-    console.log(`[Pipeline] 📡 Platforms: ${(options.platforms || config.ENABLED_PLATFORMS).join(', ')}`);
-    console.log('='.repeat(60));
-
-    const scanLog = database.insertScanLog.run({
-        platform: 'all',
-        keywords_used: JSON.stringify(config.ENABLED_PLATFORMS),
-        posts_found: 0,
-        leads_detected: 0,
-        status: 'running',
-    });
-    const scanId = scanLog.lastInsertRowid;
-
-    let totalLeads = 0;
-    const stats = { totalLeads: 0, duration: 0, platforms: {} };
-
-    try {
-        // Step 1: Scrape all enabled platforms
-        console.log('\n[Pipeline] 📡 Step 1: Scraping social media...');
-        const scraped = await runFullScan(options);
-
-        // Flatten all posts from all platforms
-        const allPosts = [];
-        for (const [platform, posts] of Object.entries(scraped)) {
-            stats.platforms[platform] = { posts: posts.length, leads: 0 };
-            allPosts.push(...posts);
-        }
-        console.log(`[Pipeline] 📊 Total posts scraped: ${allPosts.length}`);
-
-        if (allPosts.length === 0) {
-            console.log('[Pipeline] ⚠️ No posts found, skipping classification');
-            database.updateScanLog.run({ id: scanId, posts_found: 0, leads_detected: 0, status: 'completed', error: null });
-            return stats;
-        }
-
-        // Step 1.5: Dedup & Pre-filter — Remove posts already in database or clear spam/providers BEFORE wasting AI credits
-        console.log('\n[Pipeline] 🔍 Step 1.5: Filtering spam/providers and deduplicating...');
-        const existingUrls = database.getExistingPostUrls();
-        const existingHashes = database.getExistingContentHashes();
-
-        const newPosts = allPosts.filter(post => {
-            // Check by URL first (most reliable)
-            if (post.post_url && existingUrls.has(post.post_url)) return false;
-            // Fallback: check by content fingerprint (first 100 chars)
-            const contentHash = (post.content || '').substring(0, 100);
-            if (contentHash && existingHashes.has(contentHash)) return false;
-            return true;
-        });
-
-        const dupeCount = allPosts.length - newPosts.length;
-        console.log(`[Pipeline] 🔍 Dedup: ${dupeCount} duplicates removed, ${newPosts.length} NEW posts → AI`);
-
-        if (newPosts.length === 0) {
-            console.log('[Pipeline] ℹ️ All posts already in database, skipping classification');
-            database.updateScanLog.run({ id: scanId, posts_found: allPosts.length, leads_detected: 0, status: 'completed', error: null });
-            return stats;
-        }
-
-        // Step 1.6: Filter out posts older than 30 days (saves AI credits)
-        // For comments, use parent_created_at (parent post age matters, not comment time)
-        const MAX_POST_AGE_DAYS = 30;
-        const nowMs = Date.now();
-        const freshPosts = newPosts.filter(post => {
-            const timeStr = (post.item_type === 'comment')
-                ? (post.parent_created_at || post.post_created_at)
-                : post.post_created_at;
-            if (!timeStr) return true; // Keep posts with no date
-            const postTimeMs = new Date(timeStr).getTime();
-            if (isNaN(postTimeMs)) return true;
-            const ageDays = (nowMs - postTimeMs) / (1000 * 60 * 60 * 24);
-            return ageDays <= MAX_POST_AGE_DAYS;
-        });
-        const oldDropped = newPosts.length - freshPosts.length;
-        if (oldDropped > 0) {
-            console.log(`[Pipeline] 🕐 Dropped ${oldDropped} posts older than ${MAX_POST_AGE_DAYS} days (saves AI credit)`);
-        }
-
-        if (freshPosts.length === 0) {
-            console.log('[Pipeline] ℹ️ All posts too old or already in database, skipping classification');
-            database.updateScanLog.run({ id: scanId, posts_found: allPosts.length, leads_detected: 0, status: 'completed', error: null });
-            return stats;
-        }
-
-        // Step 2: Classify with AI
-        console.log('\n[Pipeline] 🧠 Step 2: Classifying posts with AI...');
-        const classified = await classifyPosts(freshPosts);
-
-        // Apply Time-Decay Score Penalty (softened — keeps more value for older posts)
-        classified.forEach(post => {
-            if (post.score > 0) {
-                let ageDays = 60; // Default: assume 60 days old if no date
-                if (post.post_created_at) {
-                    const postTimeMs = new Date(post.post_created_at).getTime();
-                    if (!isNaN(postTimeMs)) {
-                        ageDays = (nowMs - postTimeMs) / (1000 * 60 * 60 * 24);
-                    }
-                }
-
-                let penaltyMultiplier = 1;
-                if (ageDays > 90) penaltyMultiplier = 0.3;      // -70% if older than 3 months
-                else if (ageDays > 30) penaltyMultiplier = 0.5;  // -50% if older than 1 month
-                else if (ageDays > 14) penaltyMultiplier = 0.7;  // -30% if older than 2 weeks
-                else if (ageDays > 7) penaltyMultiplier = 0.85;  // -15% if older than 1 week
-                else if (ageDays > 3) penaltyMultiplier = 0.95;  // -5% if older than 3 days
-
-                if (penaltyMultiplier < 1) {
-                    const originalScore = post.score;
-                    post.score = Math.round(originalScore * penaltyMultiplier);
-                    const dateInfo = post.post_created_at ? `${Math.round(ageDays)}d` : 'no date (assume 60d)';
-                    console.log(`[Decay] Post age ${dateInfo}: Score reduced ${originalScore} -> ${post.score}`);
-                    post.summary = `[CŨ: ${Math.round(ageDays)} ngày] ` + post.summary;
-                }
-            }
-        });
-
-        // Filter: only BUYERS with good scores (exclude providers/competitors)
-        const buyers = classified.filter(p => p.role === 'buyer');
-        const providers = classified.filter(p => p.role === 'provider');
-        const irrelevant = classified.filter(p => p.role !== 'buyer' && p.role !== 'provider');
-        const qualifiedLeads = buyers.filter(p => p.isLead && p.score >= config.LEAD_SCORE_THRESHOLD);
-
-        // DEBUG: Show classification results for ALL posts
-        console.log(`\n[Debug] 📋 Full classification breakdown:`);
-        classified.forEach((p, i) => {
-            const icon = p.role === 'buyer' ? '🎯' : p.role === 'provider' ? '🏢' : '⬜';
-            const content = (p.content || '').substring(0, 60).replace(/\n/g, ' ');
-            console.log(`[Debug]   ${icon} #${i + 1} [${p.role}] score=${p.score} | ${content}...`);
-        });
-        console.log('');
-
-        console.log(`[Pipeline] 📊 Buyers: ${buyers.length} | Providers (skipped): ${providers.length} | Irrelevant: ${irrelevant.length}`);
-        console.log(`[Pipeline] 🎯 Qualified leads (buyers with score ≥ ${config.LEAD_SCORE_THRESHOLD}): ${qualifiedLeads.length}`);
-
-        if (qualifiedLeads.length === 0) {
-            console.log('[Pipeline] ℹ️ No qualified leads found this scan');
-            database.updateScanLog.run({ id: scanId, posts_found: allPosts.length, leads_detected: 0, status: 'completed', error: null });
-            return stats;
-        }
-
-        // Step 3: Generate AI responses
-        console.log('\n[Pipeline] 💬 Step 3: Generating AI responses...');
-        const withResponses = await generateResponses(qualifiedLeads);
-
-        // Step 4: Save to database
-        console.log('\n[Pipeline] 💾 Step 4: Saving to database...');
-        for (const lead of withResponses) {
-            try {
-                database.insertLead.run({
-                    platform: lead.platform,
-                    post_url: lead.post_url,
-                    author_name: lead.author_name,
-                    author_url: lead.author_url,
-                    author_avatar: lead.author_avatar || '',
-                    content: lead.content,
-                    score: lead.score,
-                    category: lead.category,
-                    summary: lead.summary,
-                    urgency: lead.urgency,
-                    suggested_response: lead.suggested_response || '',
-                    role: lead.role || 'buyer',
-                    buyer_signals: lead.buyerSignals || '',
-                    scraped_at: lead.scraped_at,
-                    post_created_at: lead.post_created_at || lead.scraped_at,
-                    profit_estimate: lead.profitEstimate || '',
-                    gap_opportunity: lead.gapOpportunity || '',
-                    pain_score: lead.painScore || 0,
-                    spam_score: lead.spamScore || 0,
-                    item_type: lead.item_type || 'post',
-                });
-                totalLeads++;
-                if (stats.platforms[lead.platform]) stats.platforms[lead.platform].leads++;
-            } catch (err) {
-                if (!err.message.includes('UNIQUE constraint')) {
-                    console.error(`[Pipeline] ✗ Error saving lead:`, err.message);
-                }
-            }
-        }
-
-        // Step 5: Export to daily JSON file
-        console.log('\n[Pipeline] 💾 Step 5: Exporting to daily file...');
-        saveLeadsToFile(withResponses);
-
-        // Step 5.5: Auto-push leads to production VPS
-        try {
-            const { pushLeadsToProd } = require('./pipelines/pushLeads');
-            const leadsForPush = withResponses.map(lead => ({
-                source_url: lead.post_url,
-                post_url: lead.post_url,
-                author_name: lead.author_name,
-                author_url: lead.author_url,
-                content: lead.content,
-                platform: lead.platform,
-                group_name: lead.group_name || '',
-                created_at: lead.post_created_at || lead.scraped_at,
-            }));
-            console.log(`\n[Pipeline] 🚀 Step 5.5: Pushing ${leadsForPush.length} leads to production...`);
-            await pushLeadsToProd(leadsForPush);
-        } catch (pushErr) {
-            console.warn(`[Pipeline] ⚠️ Push to prod failed (not critical): ${pushErr.message}`);
-        }
-
-        // Step 6: Accumulate leads for daily Telegram digest (NOT every scan)
-        stats.totalLeads = totalLeads;
-        stats.duration = Math.round((Date.now() - startTime) / 1000);
-
-        // Add qualified leads to pending digest
-        const qualifiedForTelegram = withResponses.filter(l => l.score >= config.LEAD_SCORE_THRESHOLD);
-        pendingLeads.push(...qualifiedForTelegram);
-
-        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-        const shouldSendDigest = pendingLeads.length >= 3 || (lastDigestDate !== today && pendingLeads.length > 0);
-
-        if (shouldSendDigest) {
-            console.log(`\n[Pipeline] 📲 Step 6: Sending Telegram DIGEST (${pendingLeads.length} leads accumulated)...`);
-            await sendTelegramDigest(pendingLeads, stats);
-            pendingLeads.length = 0; // Clear after sending
-            lastDigestDate = today;
-        } else {
-            console.log(`[Pipeline] 📲 Digest pending: ${pendingLeads.length}/3 leads accumulated (send khi đủ 3 hoặc cuối ngày)`);
-        }
-
-        database.updateScanLog.run({ id: scanId, posts_found: allPosts.length, leads_detected: totalLeads, status: 'completed', error: null });
-
-        console.log('\n' + '='.repeat(60));
-        console.log(`[Pipeline] ✅ Scan complete! ${totalLeads} new leads saved (${stats.duration}s)`);
-        for (const [p, s] of Object.entries(stats.platforms)) {
-            console.log(`[Pipeline]    ${p}: ${s.posts} posts → ${s.leads} leads`);
-        }
-        console.log('='.repeat(60));
-
-        return stats;
-    } catch (err) {
-        console.error('[Pipeline] ❌ Pipeline error:', err);
-        database.updateScanLog.run({
-            id: scanId,
-            posts_found: Object.values(stats.platforms).reduce((s, p) => s + p.posts, 0),
-            leads_detected: totalLeads, status: 'error', error: err.message,
-        });
-        return stats;
-    }
-}
-
-/**
- * Main entry point
+ * Main entry point — API server + cron scheduler
  */
 async function main() {
     const args = process.argv.slice(2);
 
     console.log('╔══════════════════════════════════════════════════════╗');
-    console.log('║  🔍 THG Lead Detection Tool v4.0                    ║');
-    console.log('║  FB Groups • IG • TikTok • Page Comments            ║');
-    console.log('║  Powered by Apify + Groq/Gemini + Telegram          ║');
+    console.log('║  🔍 THG Lead Detection Tool v5.0                    ║');
+    console.log('║  3-Tier Architecture: API • Scraper • AI Worker     ║');
+    console.log('║  Powered by Groq/Gemini + Playwright + SQLite Queue ║');
     console.log('╚══════════════════════════════════════════════════════╝');
     console.log('');
 
-    // Initialize self-hosted scraper if enabled
-    const scrapeMode = config.SCRAPE_MODE || 'sociavault';
-    console.log(`[Main] 🔧 Scrape Mode: ${scrapeMode.toUpperCase()}`);
-    if (scrapeMode === 'self-hosted') {
-        console.log('[Main] 🆓 Self-hosted mode — loading free proxies...');
-        try {
-            const fbScraper = require('./agents/fbScraper');
-            await fbScraper.loadFreeProxies();
-            console.log('[Main] ✅ Self-hosted scraper ready (FREE, no credits!)');
-        } catch (err) {
-            console.warn(`[Main] ⚠️ Proxy init failed: ${err.message} — will retry later`);
-        }
-    }
-
-    // Parse platform flags
-    const platformFlags = args.filter(a => a.startsWith('--platform='));
-    const platformOptions = platformFlags.length
-        ? { platforms: platformFlags.map(f => f.split('=')[1]) }
-        : {};
-
+    // Single scan mode (CLI) — enqueue and exit
     if (args.includes('--scan-once')) {
-        console.log('[Main] Running single scan...');
-        await runPipeline(platformOptions);
-        console.log('[Main] Done.');
+        console.log('[Main] Enqueueing single scan...');
+        database.enqueueScan('MANUAL_SCAN', {
+            platforms: config.ENABLED_PLATFORMS,
+            maxPosts: config.MAX_POSTS_PER_SCAN || 200,
+        });
+        console.log('[Main] ✅ Scan enqueued. Start scraperWorker.js to process it.');
         process.exit(0);
     }
 
-    // Start dashboard server
+    // Start API server (lightweight — no Playwright, no AI)
     startServer();
 
     // ═══ Initialize Infrastructure Agent ═══
     try {
         const { infraAgent } = require('./agents/infraAgent');
         await infraAgent.init();
-        // Graceful shutdown
         process.on('SIGINT', async () => {
             await infraAgent.shutdown();
             process.exit(0);
@@ -376,52 +53,31 @@ async function main() {
         console.warn(`[Main] ⚠️ InfraAgent init skipped: ${err.message}`);
     }
 
-    // ═══ Scan Mutex — prevent overlapping scans ═══
-    let scanRunning = false;
-    let scanTag = '';
-    async function safeRunScan(fn, tag = 'scan') {
-        if (scanRunning) {
-            console.log(`[Main] ⛔ Scan "${scanTag}" already running, skip trigger: ${tag}`);
-            return;
-        }
-        scanRunning = true;
-        scanTag = tag;
-        console.log(`[Main] 🔒 Lock acquired: ${tag}`);
-        try { await fn(); }
-        finally {
-            scanRunning = false;
-            console.log(`[Main] 🔓 Lock released: ${tag}`);
-        }
-    }
-
-    // Schedule: Unified hourly scan 8:00-22:00 (TikTok + Facebook)
+    // ═══ Cron Scheduler — enqueues scan jobs ═══
+    // Jobs are picked up by scraperWorker.js (separate process)
     const unifiedCron = config.CRON_UNIFIED_SCAN || '0 8-22 * * *';
-    console.log(`[Main] ⏰ Unified scan (TikTok + Facebook): ${unifiedCron}`);
-    const scanJob = cron.schedule(unifiedCron, () => {
-        console.log(`[Cron] Triggered scan (${config.ENABLED_PLATFORMS.join(', ')})...`);
-        safeRunScan(() => runPipeline({
+    console.log(`[Main] ⏰ Scan schedule: ${unifiedCron} (enqueue to scan_queue)`);
+
+    cron.schedule(unifiedCron, () => {
+        console.log(`[Cron] 📡 Enqueueing scan (${config.ENABLED_PLATFORMS.join(', ')})...`);
+        database.enqueueScan('FULL_SCAN', {
             platforms: config.ENABLED_PLATFORMS,
-            maxPosts: config.MAX_POSTS_PER_SCAN || 30,
-        }), 'unified-hourly');
+            maxPosts: config.MAX_POSTS_PER_SCAN || 200,
+        });
+        console.log(`[Cron] ✅ Scan job enqueued. Worker will pick it up.`);
     });
 
-    global.getNextScanTime = () => {
-        if (!scanJob) return null;
-        return null;
-    };
-
-    console.log(`[Main] 🟢 System ready! Platforms: ${config.ENABLED_PLATFORMS.join(', ')}`);
-    console.log(`[Main] Dashboard: http://localhost:${config.PORT}`);
-    console.log(`[Main] 💰 Daily budget: ${config.SV_DAILY_LIMIT} credits`);
-    console.log('[Main] Use --scan-once to run immediately');
-    console.log('[Main] Use --platform=facebook to scan single platform');
-
-    // Run initial scan on startup
-    console.log('[Main] 🚀 Running initial scan...');
-    await safeRunScan(() => runPipeline({
+    // Enqueue initial scan on startup
+    console.log('[Main] 🚀 Enqueueing initial scan...');
+    database.enqueueScan('FULL_SCAN', {
         platforms: config.ENABLED_PLATFORMS,
-        maxPosts: config.MAX_POSTS_PER_SCAN || 30,
-    }), 'initial');
+        maxPosts: config.MAX_POSTS_PER_SCAN || 200,
+    });
+
+    console.log(`[Main] 🟢 API Server ready! Platforms: ${config.ENABLED_PLATFORMS.join(', ')}`);
+    console.log(`[Main] Dashboard: http://localhost:${config.PORT}`);
+    console.log(`[Main] 💡 Start workers: node src/workers/scraperWorker.js`);
+    console.log(`[Main] 💡                 node src/workers/aiWorker.js`);
 }
 
 main().catch(err => {
@@ -429,4 +85,4 @@ main().catch(err => {
     process.exit(1);
 });
 
-module.exports = { runPipeline };
+module.exports = {};

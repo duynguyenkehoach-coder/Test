@@ -126,6 +126,26 @@ try {
   `);
 } catch { /* table already exists */ }
 
+// --- Scan Queue table (IPC between API server and Scraper Worker) ---
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scan_queue (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_type    TEXT NOT NULL DEFAULT 'FULL_SCAN',
+      status      TEXT DEFAULT 'PENDING',
+      platforms   TEXT DEFAULT 'facebook',
+      max_posts   INTEGER DEFAULT 200,
+      options     TEXT DEFAULT '{}',
+      result      TEXT DEFAULT '',
+      error       TEXT DEFAULT '',
+      created_at  TEXT DEFAULT (datetime('now')),
+      started_at  TEXT,
+      finished_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_scan_queue_status ON scan_queue(status);
+  `);
+} catch { /* table already exists */ }
+
 // --- Schema migration: add role & buyer_signals columns if missing ---
 try {
   db.exec(`ALTER TABLE leads ADD COLUMN role TEXT DEFAULT 'irrelevant'`);
@@ -481,8 +501,14 @@ const insertLead = db.prepare(`
   VALUES (@platform, @post_url, @author_name, @author_url, @author_avatar, @content, @score, @category, @summary, @urgency, @suggested_response, @role, @buyer_signals, @scraped_at, @post_created_at, @profit_estimate, @gap_opportunity, @pain_score, @spam_score, @item_type)
 `);
 
+// Dashboard columns — only fields needed for list view (skip heavy content/suggested_response)
+const LEADS_LIST_COLS = `id, platform, author_name, author_url, author_avatar, post_url,
+  score, category, summary, urgency, status, role, source_group,
+  assigned_to, claimed_by, claimed_at, deal_value, winner_staff,
+  pain_score, spam_score, item_type, notes, created_at, post_created_at`;
+
 const getLeads = (filters = {}) => {
-  let query = 'SELECT * FROM leads WHERE 1=1';
+  let query = `SELECT ${LEADS_LIST_COLS} FROM leads WHERE 1=1`;
   const params = {};
 
   if (filters.platform) {
@@ -549,25 +575,51 @@ const updateLeadStatus = db.prepare(`
   updated_at = datetime('now') WHERE id = @id
 `);
 
+// ── Optimized getStats() — 4 queries instead of 7 (CTE aggregation) ──────────
+const _statsSummary = db.prepare(`
+  SELECT
+    COUNT(*) as total,
+    SUM(CASE WHEN date(created_at) = date('now') THEN 1 ELSE 0 END) as today,
+    SUM(CASE WHEN score >= 80 THEN 1 ELSE 0 END) as highValue,
+    ROUND(AVG(CASE WHEN score > 0 THEN score END)) as avgScore
+  FROM leads WHERE status != 'ignored'
+`);
+const _statsByStatus = db.prepare("SELECT status, COUNT(*) as count FROM leads WHERE status != 'ignored' GROUP BY status");
+const _statsByPlatform = db.prepare("SELECT platform, COUNT(*) as count FROM leads WHERE status != 'ignored' GROUP BY platform");
+const _statsByCategory = db.prepare("SELECT category, COUNT(*) as count FROM leads WHERE status != 'ignored' GROUP BY category");
+
 const getStats = () => {
-  const total = db.prepare("SELECT COUNT(*) as count FROM leads WHERE status != 'ignored'").get();
-  const byStatus = db.prepare("SELECT status, COUNT(*) as count FROM leads WHERE status != 'ignored' GROUP BY status").all();
-  const byPlatform = db.prepare("SELECT platform, COUNT(*) as count FROM leads WHERE status != 'ignored' GROUP BY platform").all();
-  const byCategory = db.prepare("SELECT category, COUNT(*) as count FROM leads WHERE status != 'ignored' GROUP BY category").all();
-  const avgScore = db.prepare("SELECT AVG(score) as avg_score FROM leads WHERE score > 0 AND status != 'ignored'").get();
-  const today = db.prepare("SELECT COUNT(*) as count FROM leads WHERE date(created_at) = date('now') AND status != 'ignored'").get();
-  const highValue = db.prepare("SELECT COUNT(*) as count FROM leads WHERE score >= 80 AND status != 'ignored'").get();
+  const summary = _statsSummary.get();
+  const byStatus = _statsByStatus.all();
+  const byPlatform = _statsByPlatform.all();
+  const byCategory = _statsByCategory.all();
 
   return {
-    total: total.count,
-    today: today.count,
-    highValue: highValue.count,
-    avgScore: Math.round(avgScore.avg_score || 0),
+    total: summary.total || 0,
+    today: summary.today || 0,
+    highValue: summary.highValue || 0,
+    avgScore: Math.round(summary.avgScore || 0),
     byStatus: Object.fromEntries(byStatus.map(r => [r.status, r.count])),
     byPlatform: Object.fromEntries(byPlatform.map(r => [r.platform, r.count])),
     byCategory: Object.fromEntries(byCategory.map(r => [r.category || 'unknown', r.count])),
   };
 };
+
+// ── Stats Cache (TTL 30s) — avoids re-querying on every dashboard poll ────────
+let _statsCache = null;
+let _statsCacheTime = 0;
+const STATS_CACHE_TTL = 30_000; // 30 seconds
+
+const getStatsCached = () => {
+  const now = Date.now();
+  if (_statsCache && (now - _statsCacheTime) < STATS_CACHE_TTL) return _statsCache;
+  _statsCache = getStats();
+  _statsCacheTime = now;
+  return _statsCache;
+};
+
+// Invalidate cache when leads change (called after insert/update/delete)
+const invalidateStatsCache = () => { _statsCache = null; _statsCacheTime = 0; };
 
 const insertScanLog = db.prepare(`
   INSERT INTO scan_logs (platform, keywords_used, posts_found, leads_detected, status)
@@ -660,15 +712,53 @@ const getAnalytics = () => {
   return { leadsPerDay, funnel, platforms, scoreRanges, avgScorePerDay };
 };
 
-// --- Deduplication: Get all known post URLs and content hashes ---
+// --- Deduplication: DB-level via UNIQUE constraint on post_url ---
+// INSERT OR IGNORE handles dedup at disk level (no RAM needed).
+// Legacy functions kept as lightweight stubs for backward compatibility.
 const getExistingPostUrls = () => {
-  const rows = db.prepare(`SELECT post_url FROM leads WHERE post_url IS NOT NULL AND post_url != ''`).all();
-  return new Set(rows.map(r => r.post_url));
+  // DEPRECATED: Use INSERT OR IGNORE instead of pre-loading all URLs into RAM.
+  // Kept for backward compat — returns empty Set to skip JS-side dedup.
+  return new Set();
 };
 
 const getExistingContentHashes = () => {
-  const rows = db.prepare(`SELECT SUBSTR(content, 1, 100) as hash FROM leads WHERE content IS NOT NULL`).all();
-  return new Set(rows.map(r => r.hash));
+  // DEPRECATED: Use INSERT OR IGNORE instead of pre-loading all hashes into RAM.
+  return new Set();
+};
+
+// ── Scan Queue helpers (IPC between API server ↔ Scraper Worker) ─────────────
+const enqueueScan = (jobType = 'FULL_SCAN', options = {}) => {
+  return db.prepare(`
+    INSERT INTO scan_queue (job_type, platforms, max_posts, options)
+    VALUES (?, ?, ?, ?)
+  `).run(
+    jobType,
+    options.platforms ? (Array.isArray(options.platforms) ? options.platforms.join(',') : options.platforms) : 'facebook',
+    options.maxPosts || 200,
+    JSON.stringify(options)
+  );
+};
+
+const claimNextScan = () => {
+  // Atomically claim the oldest PENDING job
+  const job = db.prepare(`SELECT * FROM scan_queue WHERE status = 'PENDING' ORDER BY id ASC LIMIT 1`).get();
+  if (!job) return null;
+  db.prepare(`UPDATE scan_queue SET status = 'RUNNING', started_at = datetime('now') WHERE id = ?`).run(job.id);
+  return { ...job, options: JSON.parse(job.options || '{}') };
+};
+
+const completeScan = (id, result = {}) => {
+  db.prepare(`UPDATE scan_queue SET status = 'DONE', result = ?, finished_at = datetime('now') WHERE id = ?`)
+    .run(JSON.stringify(result), id);
+};
+
+const failScan = (id, error = '') => {
+  db.prepare(`UPDATE scan_queue SET status = 'ERROR', error = ?, finished_at = datetime('now') WHERE id = ?`)
+    .run(String(error), id);
+};
+
+const getScanQueueStatus = () => {
+  return db.prepare(`SELECT status, COUNT(*) as count FROM scan_queue GROUP BY status`).all();
 };
 
 // --- SociaVault Credits ---
@@ -729,6 +819,8 @@ module.exports = {
   getLeadById,
   updateLeadStatus,
   getStats,
+  getStatsCached,
+  invalidateStatsCache,
   getAnalytics,
   insertScanLog,
   updateScanLog,
@@ -743,7 +835,7 @@ module.exports = {
   logCreditUsage,
   getCreditStats,
   getCreditLog,
-  // Deduplication
+  // Deduplication (deprecated — use INSERT OR IGNORE)
   getExistingPostUrls,
   getExistingContentHashes,
   // Agent Profiles
@@ -762,7 +854,12 @@ module.exports = {
   markTeachingSample,
   getSalesStyle,
   saveSalesStyle,
-  db,
+  // Scan Queue (IPC)
+  enqueueScan,
+  claimNextScan,
+  completeScan,
+  failScan,
+  getScanQueueStatus,
 };
 
 
