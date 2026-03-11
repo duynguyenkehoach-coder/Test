@@ -1,39 +1,25 @@
-name: Deploy to VPS
+name: THG Ultra-Fast Deploy
 
 on:
   push:
     branches: [main]
-    paths:
-      - 'src/**'
-      - 'public/**'
-      - 'scripts/**'
-      - 'package*.json'
-      - 'Dockerfile'
-      - 'docker-compose.yml'
-      - '.github/workflows/**'
-
-concurrency:
-  group: deploy-main
-  cancel-in-progress: true
-
-env:
-  IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
-  # ── Step 1: Build on GitHub Runner (fast internet + free CPU) ────────
+  # GIAI ĐOẠN 1: Build Image trên GitHub (Cực nhanh nhờ hạ tầng GitHub)
   build-and-push:
-    name: 🔨 Build & Push Image
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     permissions:
       contents: read
       packages: write
-
     steps:
       - uses: actions/checkout@v4
 
       - name: Login to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -43,21 +29,16 @@ jobs:
         with:
           context: .
           push: true
-          tags: |
-            ${{ env.IMAGE }}:latest
-            ${{ env.IMAGE }}:${{ github.sha }}
+          tags: ghcr.io/${{ github.repository }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ── Step 2: VPS only pulls + restarts (< 30s) ──────────────────────
+  # GIAI ĐOẠN 2: Pull & Run trên VPS (Chỉ mất vài giây)
   deploy:
-    name: 🚀 Deploy to VPS
     needs: build-and-push
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-
     steps:
-      - name: SSH Pull & Restart
+      - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -66,22 +47,26 @@ jobs:
           port: 2018
           command_timeout: 5m
           script: |
-            set -e
             cd /root/THG_tool
 
             # Pull latest compose file
             git fetch origin main
             git reset --hard origin/main
 
-            # Login to GHCR
+            # Login vào registry từ VPS
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-            # Pull pre-built image (only changed layers — fast!)
-            export DOCKER_IMAGE=${{ env.IMAGE }}:latest
+            # Set image name (lowercase)
+            export DOCKER_IMAGE=ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]'):latest
+
+            # Chỉ tải về những layer thay đổi (Rất nhanh)
             docker compose pull
 
-            # Restart all 3 services with new image
+            # Khởi động lại các container với image mới
             docker compose up -d --remove-orphans
+
+            # Dọn dẹp các image cũ
+            docker image prune -f
 
             # Quick health check
             echo "⏳ Waiting for API..."
@@ -91,23 +76,11 @@ jobs:
               if [ "$HTTP" = "200" ]; then
                 echo "✅ Deploy done! HTTP 200 in $((i*3))s"
                 docker compose ps
-                docker image prune -f
                 exit 0
               fi
               echo "  [$((i*3))s] HTTP ${HTTP}..."
             done
 
-            echo "⚠️ API not healthy after 30s — showing logs:"
-            docker compose logs --tail 20 api
+            echo "⚠️ API not ready after 30s — showing logs:"
+            docker compose logs --tail 20 api-server
             exit 0
-
-      - name: Deploy summary
-        if: always()
-        run: |
-          SHA=$(echo '${{ github.sha }}' | cut -c1-7)
-          echo "## 🚀 Deploy #${{ github.run_number }} — ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
-          echo "| | |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Image** | \`ghcr.io/${{ github.repository }}:${SHA}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Architecture** | 3-Tier (API + Scraper + AI Worker) |" >> $GITHUB_STEP_SUMMARY
-          echo "| **By** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY

@@ -1,33 +1,30 @@
 services:
-  # ── API Server (Lightweight) ───────────────────────────────────────
-  api:
-    image: ${DOCKER_IMAGE:-thg-lead-gen:latest}
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: thg-api
+  api: &base_service
+    image: ${DOCKER_IMAGE:-ghcr.io/davidanh98/thg-lead-gen:latest}
     restart: unless-stopped
-    command: ["node", "src/index.js"]
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./.env:/app/.env:ro
+    environment:
+      - NODE_ENV=production
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
 
+  api-server:
+    <<: *base_service
+    container_name: thg-api
+    command: ["node", "src/index.js"]
+    ports:
+      - "127.0.0.1:3000:3000"
     deploy:
       resources:
         limits:
           memory: 300M
           cpus: '0.3'
-
-    ports:
-      - "127.0.0.1:3000:3000"
-
-    environment:
-      - NODE_ENV=production
-
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:3000/health"]
       interval: 30s
@@ -35,69 +32,22 @@ services:
       retries: 3
       start_period: 30s
 
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "20m"
-        max-file: "5"
-
-  # ── Scraper Worker (Playwright — Heavy) ──────────────────────────────
   scraper:
-    image: ${DOCKER_IMAGE:-thg-lead-gen:latest}
+    <<: *base_service
     container_name: thg-scraper
-    restart: unless-stopped
     command: ["node", "src/workers/scraperWorker.js"]
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./.env:/app/.env:ro
-
     deploy:
       resources:
         limits:
           memory: 900M
           cpus: '0.8'
 
-    environment:
-      - NODE_ENV=production
-
-    # No port exposed — worker only uses SQLite
-    # No healthcheck — worker auto-recovers via polling
-
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "30m"
-        max-file: "3"
-
-  # ── AI Worker (Classification — I/O-bound) ───────────────────────────
   ai-worker:
-    image: ${DOCKER_IMAGE:-thg-lead-gen:latest}
+    <<: *base_service
     container_name: thg-ai-worker
-    restart: unless-stopped
     command: ["node", "src/workers/aiWorker.js"]
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./.env:/app/.env:ro
-
     deploy:
       resources:
         limits:
           memory: 300M
           cpus: '0.3'
-
-    environment:
-      - NODE_ENV=production
-
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "20m"
-        max-file: "3"

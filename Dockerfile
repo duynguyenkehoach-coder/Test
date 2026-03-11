@@ -1,30 +1,22 @@
-FROM mcr.microsoft.com/playwright:v1.58.2-noble
-
-# noble = Ubuntu 24.04 — all Chromium deps already installed
-# Playwright's Chromium is at /ms-playwright/chromium-*/chrome-linux/chrome
+# Sử dụng phiên bản ổn định, noble (Ubuntu 24.04) đã cài sẵn Chromium
+FROM mcr.microsoft.com/playwright:v1.48.0-noble
 
 WORKDIR /app
 
-# ── Layer 1: Dependencies (cached unless package*.json changes) ──
+# Chỉ copy package.json để cài dependencies trước (Layer này sẽ được cache)
 COPY package*.json ./
-RUN npm ci --production --silent && npm cache clean --force
+RUN npm ci --production --silent
 
-# ── Layer 2: Application source ──
-COPY src/ ./src/
-COPY public/ ./public/
-COPY scripts/ ./scripts/
+# Copy mã nguồn sau
+COPY . .
 
-# Ensure data & log dirs exist (volume-mounted in production)
-RUN mkdir -p data logs
-
-# Use system Chromium bundled by Playwright base image
+# Không tải thêm browser vì image base đã có sẵn
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV NODE_ENV=production
 
-EXPOSE 3000
+# Tạo thư mục dữ liệu nếu chưa có
+RUN mkdir -p data logs
 
-# Unified health check — uses /health endpoint (lightweight, no auth)
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD curl -sf http://localhost:3000/health || exit 1
+EXPOSE 3000
 
 CMD ["node", "src/index.js"]
