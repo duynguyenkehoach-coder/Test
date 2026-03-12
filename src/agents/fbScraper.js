@@ -383,8 +383,76 @@ async function getAuthContext(account = null) {
             return activeContext;
         }
 
-        console.log(`[FBScraper] ⚠️ Session expired: ${accEmail} — đăng nhập lại...`);
+        console.log(`[FBScraper] ⚠️ Session expired: ${accEmail} — trying FB_COOKIES fallback...`);
         await page.close();
+    }
+
+    // ── Fallback: FB_COOKIES from .env (pre-authenticated session) ──
+    // This avoids email/password login which triggers 2FA on datacenter IPs.
+    // FB_COOKIES format: "c_user=XXX; xs=XXX; datr=XXX; fr=XXX; sb=XXX"
+    const envCookies = process.env.FB_COOKIES || '';
+    if (envCookies && envCookies.includes('c_user=') && envCookies.includes('xs=')) {
+        console.log(`[FBScraper] 🍪 Trying FB_COOKIES from .env...`);
+        try {
+            // Parse raw cookie string → Playwright cookie objects
+            const playwrightCookies = envCookies.split(';')
+                .map(part => part.trim())
+                .filter(Boolean)
+                .map(part => {
+                    const eqIdx = part.indexOf('=');
+                    if (eqIdx < 0) return null;
+                    const name = part.substring(0, eqIdx).trim();
+                    const value = part.substring(eqIdx + 1).trim();
+                    if (!name) return null;
+                    return {
+                        name,
+                        value,
+                        domain: '.facebook.com',
+                        path: '/',
+                        httpOnly: true,
+                        secure: true,
+                        sameSite: 'None',
+                    };
+                })
+                .filter(Boolean);
+
+            if (playwrightCookies.length >= 2) {
+                await activeContext.addCookies(playwrightCookies);
+                console.log(`[FBScraper] 🍪 Injected ${playwrightCookies.length} cookies from FB_COOKIES env`);
+
+                // Validate session
+                const testPage = await activeContext.newPage();
+                await testPage.goto(`${FB_URL}`, { waitUntil: 'domcontentloaded', timeout: 25000 });
+                await delay(2000);
+
+                const testUrl = testPage.url();
+
+                // Checkpoint check
+                if (testUrl.includes('checkpoint') || testUrl.includes('two_step')) {
+                    console.warn(`[FBScraper] 🚨 FB_COOKIES session hit checkpoint — falling through to login`);
+                    await testPage.close();
+                } else {
+                    const hasNav = await testPage.$('div[role="navigation"], div[aria-label="Facebook"]');
+                    if (hasNav && !testUrl.includes('/login')) {
+                        console.log(`[FBScraper] ✅ FB_COOKIES session valid!`);
+                        isLoggedIn = true;
+                        // Save as account-specific session for next use
+                        try {
+                            const cookies = await activeContext.cookies();
+                            fs.mkdirSync(path.dirname(sessionPath), { recursive: true });
+                            fs.writeFileSync(sessionPath, JSON.stringify(cookies, null, 2));
+                            console.log(`[FBScraper] 💾 Session saved from FB_COOKIES → ${path.basename(sessionPath)}`);
+                        } catch { }
+                        await testPage.close();
+                        return activeContext;
+                    }
+                    console.warn(`[FBScraper] ⚠️ FB_COOKIES session not valid (no nav found) — falling through to login`);
+                    await testPage.close();
+                }
+            }
+        } catch (cookieErr) {
+            console.warn(`[FBScraper] ⚠️ FB_COOKIES fallback failed: ${cookieErr.message}`);
+        }
     }
 
     // ── Login ── (pass credentials directly, no env mutation needed)
