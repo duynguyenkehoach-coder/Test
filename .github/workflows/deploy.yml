@@ -6,24 +6,43 @@ on:
 
 jobs:
   build-and-deploy:
-    # Chạy trực tiếp trên VPS — build tại chỗ, dùng cache đĩa cứng
     runs-on: self-hosted
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Build Docker Images (Local — Super Fast)
+      - name: Build Docker Images (Optimized Cache)
         run: |
           cd ${{ github.workspace }}
 
-          echo "🔨 Building images locally (using disk cache)..."
-          
-          # Build cả 2 target song song
-          docker build --target runner-slim -t thg-api-slim:latest -f Dockerfile . &
-          docker build --target runner-heavy -t thg-scraper-heavy:latest -f Dockerfile . &
-          wait
+          # Bật BuildKit để dùng cache mount
+          export DOCKER_BUILDKIT=1
 
+          echo "🔨 Build builder stage trước (1 lần duy nhất)..."
+          # Build builder stage riêng để cache — 2 target bên dưới dùng chung
+          docker build \
+            --target builder \
+            --cache-from thg-builder:cache \
+            -t thg-builder:cache \
+            -f Dockerfile .
+
+          echo "🔨 Build 2 targets song song từ cache..."
+          docker build \
+            --target runner-slim \
+            --cache-from thg-builder:cache \
+            --cache-from thg-api-slim:latest \
+            -t thg-api-slim:latest \
+            -f Dockerfile . &
+
+          docker build \
+            --target runner-heavy \
+            --cache-from thg-builder:cache \
+            --cache-from thg-scraper-heavy:latest \
+            -t thg-scraper-heavy:latest \
+            -f Dockerfile . &
+
+          wait
           echo "✅ Both images built!"
           docker images | grep thg-
 
@@ -31,8 +50,13 @@ jobs:
         run: |
           cd /root/THG_tool
 
-          # Copy code mới vào thư mục deploy
-          rsync -a --delete --exclude='data' --exclude='logs' --exclude='.env' --exclude='node_modules' --exclude='.git' ${{ github.workspace }}/ /root/THG_tool/
+          rsync -a --delete \
+            --exclude='data' \
+            --exclude='logs' \
+            --exclude='.env' \
+            --exclude='node_modules' \
+            --exclude='.git' \
+            ${{ github.workspace }}/ /root/THG_tool/
 
           echo "🚀 Recreating containers..."
           docker compose down --timeout 10
@@ -40,7 +64,7 @@ jobs:
 
           echo "⏳ Waiting for API..."
           sleep 5
-          for i in 1 2 3 4 5 6 7 8 9 10; do
+          for i in $(seq 1 10); do
             sleep 2
             HTTP=$(curl -so /dev/null -w "%{http_code}" http://localhost:3000/health 2>/dev/null || echo "000")
             if [ "$HTTP" = "200" ]; then
@@ -51,6 +75,6 @@ jobs:
             echo "  [$((i*2+5))s] HTTP ${HTTP}..."
           done
 
-          # Cleanup
-          docker image prune -f
+          # Chỉ xóa images không dùng, GIỮ LẠI cache builder
+          docker image prune -f --filter "label!=cache=true"
           echo "🎉 THG Deploy hoàn tất!"
