@@ -256,6 +256,7 @@ async function getAuthContext(account = null) {
             console.log(`[FBScraper] 📁 Using persistent browser profile (${accEmail})`);
             const persistCtx = await chromium.launchPersistentContext(PROFILE_DIR, {
                 headless: true,
+                executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
                 args: ['--no-sandbox', '--disable-dev-shm-usage'],
             });
             activeContext = persistCtx;
@@ -272,7 +273,10 @@ async function getAuthContext(account = null) {
 
 
     // Cookie-based session fallback — build launch options
-    const launchOptions = { headless: true };
+    const launchOptions = {
+        headless: true,
+        executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
+    };
 
     // Per-account proxy (1 account : 1 proxy — prevents Chain-ban)
     if (accProxy) {

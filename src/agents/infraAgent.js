@@ -143,6 +143,7 @@ class InfraAgent {
         // Launch browser with proxy
         const launchOptions = {
             headless: true,
+            executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
         };
         if (ctx.proxyUrl) {
             launchOptions.proxy = require('../proxy/proxyPool').ProxyPool.parseProxyUrl(ctx.proxyUrl);
