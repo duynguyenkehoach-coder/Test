@@ -1341,12 +1341,9 @@ async function _scrapeAccountGroups(account, groups) {
             timezoneId: 'America/New_York',
         });
 
-        // Block heavy resources
-        await context.route('**/*', (route) => {
-            const type = route.request().resourceType();
-            if (['image', 'font', 'stylesheet', 'media'].includes(type)) return route.abort();
-            return route.continue();
-        });
+        // Note: resource blocking removed — was causing browser crashes
+        // (unhandled promise rejections in route handler kill context)
+        // 3GB container has enough RAM for full page loads
 
         // Load cookies (session file → JSON cookie file → .env)
         const accUsername = accEmail.split('@')[0];
