@@ -1308,6 +1308,7 @@ async function scrapeFacebookGroups(maxPosts = 20, options = {}, externalGroups 
                 '--disable-extensions',
                 '--disable-component-update',
                 '--no-first-run',
+                '--js-flags=--max-old-space-size=400',
             ],
         });
         console.log('[FBScraper] 🌐 Browser launched');
