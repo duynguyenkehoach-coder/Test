@@ -1419,8 +1419,38 @@ async function _scrapeAccountGroups(account, groups) {
                     await page.close(); break;
                 }
 
-                try { await page.waitForSelector('div[role="feed"], div[role="article"]', { timeout: 10000 }); }
-                catch { console.log(`${tag} ⚠️ ${group.name}: no feed`); await page.close(); continue; }
+                let hasFeed = false;
+                try { await page.waitForSelector('div[role="feed"], div[role="article"]', { timeout: 10000 }); hasFeed = true; }
+                catch {
+                    // Check if this is a "Join Group" page
+                    const pageText = await page.evaluate(() => document.body?.innerText?.substring(0, 500) || '');
+                    const isJoinPage = pageText.toLowerCase().includes('join group') || pageText.includes('Tham gia nh');
+
+                    if (isJoinPage) {
+                        console.log(`${tag} 🚪 ${group.name}: NOT A MEMBER — joining inline...`);
+                        try {
+                            const joinBtn = await page.$('div[role="button"]:has-text("Join"), div[role="button"]:has-text("Tham gia")');
+                            if (joinBtn) {
+                                await joinBtn.click();
+                                await delay(3000);
+                                const afterText = await page.evaluate(() => document.body?.innerText?.substring(0, 300) || '');
+                                if (afterText.includes('Pending') || afterText.includes('pending') || afterText.includes('Chờ')) {
+                                    console.log(`${tag} ⏳ ${group.name}: pending approval — skip`);
+                                    await page.close(); continue;
+                                }
+                                // Joined! Reload and try scraping
+                                console.log(`${tag} ✅ ${group.name}: Joined! Reloading...`);
+                                await page.goto(`https://www.facebook.com/groups/${groupId}?sorting_setting=CHRONOLOGICAL`, { waitUntil: 'domcontentloaded', timeout: 25000 });
+                                await delay(3000);
+                                try { await page.waitForSelector('div[role="feed"], div[role="article"]', { timeout: 8000 }); hasFeed = true; }
+                                catch { console.log(`${tag} ⚠️ ${group.name}: joined but feed not visible yet`); }
+                            }
+                        } catch (joinErr) { console.warn(`${tag} ⚠️ ${group.name}: join failed: ${joinErr.message.substring(0, 50)}`); }
+                    } else {
+                        console.log(`${tag} ⚠️ ${group.name}: no feed visible`);
+                    }
+                }
+                if (!hasFeed) { await page.close(); continue; }
 
                 // Scroll to load posts
                 for (let s = 0; s < 20; s++) {

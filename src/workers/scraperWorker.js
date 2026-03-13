@@ -365,28 +365,8 @@ async function main() {
             const fbScraper = require('../agents/fbScraper');
             await fbScraper.loadFreeProxies();
 
-            // 3. Auto-join groups for new accounts (never scanned before)
-            try {
-                const db = require('../data_store/database');
-                const newAccounts = db.db.prepare(
-                    `SELECT * FROM fb_accounts WHERE status='active' AND (last_scan IS NULL OR last_scan = '') LIMIT 3`
-                ).all();
-
-                if (newAccounts.length > 0) {
-                    console.log(`[ScraperWorker] 🚪 Found ${newAccounts.length} new account(s) — auto-joining groups...`);
-                    for (const acc of newAccounts) {
-                        console.log(`[ScraperWorker] 🚪 Auto-joining for: ${acc.email}`);
-                        try {
-                            await fbScraper.autoJoinGroups(null, acc);
-                            await fbScraper.closeBrowser();
-                        } catch (joinErr) {
-                            console.warn(`[ScraperWorker] ⚠️ Auto-join for ${acc.email}: ${joinErr.message}`);
-                        }
-                    }
-                }
-            } catch (joinErr) {
-                console.warn(`[ScraperWorker] ⚠️ Auto-join init: ${joinErr.message}`);
-            }
+            // Auto-join removed: now handled inline during scraping
+            // (join + scrape in 1 pass = saves ~10min per cycle)
 
             console.log('[ScraperWorker] ✅ Self-hosted scraper ready');
         } catch (err) {
