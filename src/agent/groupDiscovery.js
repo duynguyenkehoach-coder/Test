@@ -175,7 +175,7 @@ function seedGroups() {
         ['Cộng đồng Designer POD VN', 'https://www.facebook.com/groups/congdongpodseller', null, 0, 'ecommerce', 88],
         ['Merchize VN Community', 'https://www.facebook.com/groups/merchizevn', null, 0, 'ecommerce', 88],
         ['GearLaunch VN Print on Demand', 'https://www.facebook.com/groups/gearlaunch.vietnam.printondemand', null, 0, 'ecommerce', 85],
-        ['Việc Làm POD Dropship VN', 'https://www.facebook.com/groups/vieclampoddropshipvietnam', null, 0, 'ecommerce', 82],
+
 
         // === DROPSHIPPING / FULFILLMENT (VERIFIED) ===
         ['Dropshipping - POD Vietnam', 'https://www.facebook.com/groups/273760436440263', '273760436440263', 50000, 'ecommerce', 92],

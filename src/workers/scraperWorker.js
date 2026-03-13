@@ -203,10 +203,25 @@ async function runPipeline(options = {}) {
 
         const keywordRegex = new RegExp(THG_KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i');
 
+        // Job/hiring keywords to EXCLUDE even if THG keywords match
+        const JOB_EXCLUSION_KEYWORDS = [
+            'tìm việc', 'tuyển dụng', 'hiring', 'job opening', 'remote job',
+            'tuyển nhân viên', 'cần tuyển', 'tìm nhân sự', 'ứng tuyển',
+            'cv', 'resume', 'salary', 'lương', 'mức lương',
+            'cần thêm việc', 'xin việc', 'freelance', 'part.?time', 'full.?time',
+            'roas\\s*\\d', 'ads\\s*fb', 'chạy ads', 'facebook ads', 'quảng cáo fb',
+            'google ads', 'tiktok ads', 'media buyer', 'performance marketing',
+        ];
+        const jobExcludeRegex = new RegExp(JOB_EXCLUSION_KEYWORDS.join('|'), 'i');
+
         const relevantPosts = freshPosts.filter(post => {
             const text = (post.content || '').toLowerCase();
             const group = (post.group_name || post.source_group || '').toLowerCase();
-            return keywordRegex.test(text) || keywordRegex.test(group);
+            // Must match THG keywords
+            if (!keywordRegex.test(text) && !keywordRegex.test(group)) return false;
+            // Must NOT match job exclusion keywords
+            if (jobExcludeRegex.test(text)) return false;
+            return true;
         });
 
         const kwDropped = freshPosts.length - relevantPosts.length;
