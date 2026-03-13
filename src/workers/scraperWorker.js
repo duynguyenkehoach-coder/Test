@@ -160,10 +160,67 @@ async function runPipeline(options = {}) {
             database.updateScanLog.run({ id: scanId, posts_found: allPosts.length, leads_detected: 0, status: 'completed', error: null });
             return stats;
         }
+        // Step 1.7: Keyword pre-filter — only keep posts about THG's services
+        console.log('\n[Pipeline] 🔑 Step 1.7: Keyword pre-filter (POD/dropship/fulfillment/logistics)...');
+        const THG_KEYWORDS = [
+            // === POD / Print on Demand ===
+            'pod', 'print on demand', 'print-on-demand', 'printondemand',
+            'xưởng in', 'in áo', 'in ấn', 'in sản phẩm', 'mockup', 'dtg', 'dtf',
+            'all over print', 'alloverprint', 'sublimation',
+            // === Dropship ===
+            'dropship', 'drop ship', 'dropshipping', 'drop shipping',
+            // === Fulfillment / Warehouse / 3PL ===
+            'fulfillment', 'fulfilment', 'fulfill', 'fulfil',
+            '3pl', 'third party logistics', 'kho hàng', 'lưu kho', 'kho mỹ', 'kho us',
+            'kho pa', 'kho tx', 'kho ca', 'warehouse', 'warehousing',
+            'prep center', 'prep service', 'fba prep', 'fbm',
+            'cross dock', 'cross-dock', 'pick and pack', 'pick & pack',
+            // === Amazon FBA ===
+            'fba', 'amazon fba', 'ship to amazon', 'gửi amazon', 'send to fba',
+            'amazon warehouse', 'amazon seller', 'amazon us',
+            // === Shipping / Logistics / Vận chuyển ===
+            'ship đi mỹ', 'ship sang mỹ', 'gửi hàng mỹ', 'gửi đi mỹ',
+            'ship us', 'ship to us', 'ship to usa', 'shipping to us',
+            'vận chuyển', 'van chuyen', 'logistics', 'freight', 'cargo',
+            'đường biển', 'đường hàng không', 'air freight', 'sea freight',
+            'lcl', 'fcl', 'ddp', 'ddu', 'epacket',
+            'thông quan', 'customs', 'customs clearance', 'hải quan',
+            'xuất khẩu', 'xuat khau', 'export',
+            // === Shipping to UK/EU ===
+            'ship uk', 'ship to uk', 'gửi anh', 'gửi đức', 'ship germany', 'ship france',
+            'amazon.de', 'amazon.co.uk', 'amazon.fr', 'amazon eu',
+            'fulfillment uk', 'fulfillment eu', 'kho châu âu',
+            // === Sourcing from China ===
+            'order từ trung', 'hàng trung quốc', 'hàng tq', 'nguồn hàng tq',
+            'mua hàng trung', 'đặt hàng trung', 'nhà cung cấp trung',
+            '1688', 'taobao', 'alibaba', 'yiwu', 'canton fair',
+            'sourcing', 'supplier', 'nguồn hàng',
+            // === Need/Search signals ===
+            'cần tìm', 'tìm bên', 'ai biết', 'giới thiệu', 'cho hỏi',
+            'giúp mình', 'mình đang', 'mình cần', 'cần đi hàng',
+            'tìm đối tác', 'xin giá', 'báo giá', 'quote',
+        ];
+
+        const keywordRegex = new RegExp(THG_KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i');
+
+        const relevantPosts = freshPosts.filter(post => {
+            const text = (post.content || '').toLowerCase();
+            const group = (post.group_name || post.source_group || '').toLowerCase();
+            return keywordRegex.test(text) || keywordRegex.test(group);
+        });
+
+        const kwDropped = freshPosts.length - relevantPosts.length;
+        console.log(`[Pipeline] 🔑 Kept ${relevantPosts.length} relevant posts, dropped ${kwDropped} off-topic`);
+
+        if (relevantPosts.length === 0) {
+            console.log('[Pipeline] ℹ️ No keyword-matched posts, skipping classification');
+            database.updateScanLog.run({ id: scanId, posts_found: allPosts.length, leads_detected: 0, status: 'completed', error: null });
+            return stats;
+        }
 
         // Step 2: Classify with AI
         console.log('\n[Pipeline] 🧠 Step 2: Classifying posts with AI...');
-        const classified = await classifyPosts(freshPosts);
+        const classified = await classifyPosts(relevantPosts);
 
         // Apply Time-Decay Score Penalty
         classified.forEach(post => {
