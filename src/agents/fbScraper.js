@@ -970,22 +970,42 @@ async function getPostComments(postUrl, source) {
  * Navigates to each group and clicks "Join Group" button.
  * Handles: already joined, pending approval, answer questions.
  */
-async function autoJoinGroups(groups = null) {
+/**
+ * Auto-join all target Facebook groups for a specific account.
+ * @param {Array|null} groups - Target groups (defaults to config)
+ * @param {object|null} account - Specific FB account to use (from accountManager)
+ */
+async function autoJoinGroups(groups = null, account = null) {
     const config = require('../config');
-    const targetGroups = groups || config.FB_TARGET_GROUPS || [];
+    const fs = require('fs');
+    const PROD_GROUPS_FILE = path.join(__dirname, '..', '..', 'data', 'prod_groups.json');
+
+    // Load groups: prod_groups.json > passed groups > config fallback
+    let targetGroups = groups;
+    if (!targetGroups || targetGroups.length === 0) {
+        try {
+            if (fs.existsSync(PROD_GROUPS_FILE)) {
+                targetGroups = JSON.parse(fs.readFileSync(PROD_GROUPS_FILE, 'utf8'));
+            }
+        } catch { }
+    }
+    if (!targetGroups || targetGroups.length === 0) {
+        targetGroups = config.FB_TARGET_GROUPS || [];
+    }
 
     if (targetGroups.length === 0) {
         console.log('[FBScraper] ⚠️ No target groups to join');
         return { joined: 0, already: 0, pending: 0, failed: 0 };
     }
 
-    console.log(`[FBScraper] 🚀 Auto-joining ${targetGroups.length} groups...`);
+    const accLabel = account?.email || 'default';
+    console.log(`[FBScraper] 🚀 Auto-joining ${targetGroups.length} groups for ${accLabel}...`);
 
     const stats = { joined: 0, already: 0, pending: 0, failed: 0 };
     let page = null;
 
     try {
-        const context = await getAuthContext();
+        const context = await getAuthContext(account);
         page = await context.newPage();
 
         for (let i = 0; i < targetGroups.length; i++) {
