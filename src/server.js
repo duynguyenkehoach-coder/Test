@@ -480,12 +480,15 @@ app.post('/api/groups', (req, res) => {
         if (!name || !url) return res.status(400).json({ success: false, error: 'Name and URL are required' });
 
         const groupDb = require('./agent/groupDiscovery');
+        const autoCategory = (!category || category === 'unknown')
+            ? groupDb.autoClassifyCategory(name)
+            : category;
         groupDb.upsertGroup({
             name,
             url,
-            category: category || 'unknown',
-            relevance_score: 50, // Default for new
-            notes: notes || '',
+            category: autoCategory,
+            relevance_score: 80,
+            notes: notes || 'Added by Sales team',
         });
         res.json({ success: true, message: 'Group added successfully' });
     } catch (err) {

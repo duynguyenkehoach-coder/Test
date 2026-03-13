@@ -50,6 +50,67 @@ function initSchema() {
         seedGroups();
         console.log('[GroupDB] 🌱 Seeded', _db.prepare('SELECT COUNT(*) as c FROM fb_groups').get().c, 'groups');
     }
+    // Always sync prod_groups.json → DB
+    try { syncProdGroups(); } catch (e) { console.warn('[GroupDB] ⚠️ syncProdGroups:', e.message); }
+}
+
+// ════════════════════════════════════════════════════════
+// Auto-classify group category by name
+// ════════════════════════════════════════════════════════
+function autoClassifyCategory(name) {
+    const n = (name || '').toLowerCase();
+    // POD
+    if (/pod|print.on.demand|in ấn|xưởng in|gearlaunch|merchize|customily|burgerprints/i.test(n)) return 'pod';
+    // Dropship
+    if (/dropship|drop.ship/i.test(n)) return 'dropship';
+    // Fulfillment / Warehouse
+    if (/fulfil|fulfill|kho .*(mỹ|us|pa|tx)|warehouse|3pl|prep.center/i.test(n)) return 'fulfillment';
+    // Amazon FBA
+    if (/fba|amazon/i.test(n)) return 'fba';
+    // Shipping / Logistics
+    if (/vận chuyển|logistics|shipping|freight|xuất nhập khẩu|xnk|hàng hoá/i.test(n)) return 'shipping';
+    // Sourcing from China
+    if (/trung quốc|tq|1688|taobao|alibaba|đặt hàng|order hàng|nguồn hàng/i.test(n)) return 'sourcing';
+    // TikTok Shop
+    if (/tiktok|tik tok/i.test(n)) return 'tiktok_shop';
+    // Etsy
+    if (/etsy/i.test(n)) return 'etsy';
+    // Shopify
+    if (/shopify|shopbase/i.test(n)) return 'shopify';
+    // EU markets
+    if (/uk|united kingdom|ebay.*uk/i.test(n)) return 'ecommerce-uk';
+    if (/france|français|entraide/i.test(n)) return 'ecommerce-fr';
+    if (/deutschland|deutsch|österreich/i.test(n)) return 'ecommerce-de';
+    if (/europe|eu.*seller/i.test(n)) return 'ecommerce-eu';
+    // E-commerce general
+    if (/ecommerce|e-commerce|seller|bán hàng/i.test(n)) return 'ecommerce';
+    return 'unknown';
+}
+
+// ════════════════════════════════════════════════════════
+// Sync prod_groups.json → groups.db (runs on every startup)
+// ════════════════════════════════════════════════════════
+function syncProdGroups() {
+    const prodFile = path.join(DATA_DIR, 'prod_groups.json');
+    if (!fs.existsSync(prodFile)) return;
+    const groups = JSON.parse(fs.readFileSync(prodFile, 'utf8'));
+    let added = 0;
+    for (const g of groups) {
+        if (!g.url) continue;
+        const existing = _db.prepare('SELECT id FROM fb_groups WHERE url = ?').get(g.url);
+        if (!existing) {
+            const cat = autoClassifyCategory(g.name);
+            upsertGroup({
+                name: g.name,
+                url: g.url,
+                category: cat,
+                relevance_score: 80,
+                notes: 'Auto-synced from prod_groups.json',
+            });
+            added++;
+        }
+    }
+    if (added > 0) console.log(`[GroupDB] 🔄 Synced ${added} new groups from prod_groups.json`);
 }
 
 // ════════════════════════════════════════════════════════
@@ -284,4 +345,6 @@ module.exports = {
     getStats,
     extractGroupId,
     deactivateGroup,
+    syncProdGroups,
+    autoClassifyCategory,
 };

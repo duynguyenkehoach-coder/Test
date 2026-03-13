@@ -12,11 +12,21 @@ function formatMemberCount(num) {
 
 function formatCategory(cat) {
     const map = {
-        'logistics': '✈️ Logistics',
-        'ecommerce': '📦 E-commerce',
-        'tq-goods': '🇨🇳 TQ Goods',
-        'viet-kieu': '🇺🇸 Việt Kiều',
-        'marketplace': '🛒 Marketplace',
+        'pod': '🖨️ POD',
+        'dropship': '📦 Dropship',
+        'fulfillment': '🏭 Fulfillment',
+        'fba': '📦 Amazon FBA',
+        'shipping': '✈️ Shipping/Logistics',
+        'sourcing': '🇨🇳 Sourcing TQ',
+        'tiktok_shop': '🎵 TikTok Shop',
+        'etsy': '🎨 Etsy',
+        'shopify': '🛒 Shopify',
+        'ecommerce': '🛍️ E-commerce',
+        'ecommerce-uk': '🇬🇧 UK Market',
+        'ecommerce-fr': '🇫🇷 France Market',
+        'ecommerce-de': '🇩🇪 Germany Market',
+        'ecommerce-eu': '🇪🇺 EU Market',
+        'cross-border': '🌏 Cross-border',
         'unknown': '❓ Khác'
     };
     return map[cat] || cat;
