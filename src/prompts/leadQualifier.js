@@ -104,9 +104,12 @@ function computePainScore(content = '') {
 
 // International route boost: THG serves VN/CN → US/World
 const US_ROUTE_REGEX = /(mỹ|\bus\b|\busa\b|america|amazon|tiktok shop us|fba|đi mỹ|ship mỹ|kho mỹ|warehouse us|pennsylvania|texas|fulfill us|line us|美国|发美国)/i;
-const INTL_ROUTE_REGEX = /(nhật bản|\bjapan\b|đi nhật|ship nhật|gửi.{0,10}nhật|hàn quốc|\bkorea\b|đi hàn|ship hàn|gửi.{0,10}hàn|đức|\bgermany\b|đi đức|ship đức|pháp|\bfrance\b|đi pháp|ship pháp|úc|\baustralia\b|đi úc|ship úc|anh|\buk\b|\bengland\b|đi anh|ship anh|đài loan|\btaiwan\b|uae|dubai|saudi|chile|colombia|mexico)/i;
+// UK/FR/DE = secondary markets (same priority as US)
+const EU_ROUTE_REGEX = /(đức|\bgermany\b|đi đức|ship đức|kho đức|warehouse de|pháp|\bfrance\b|đi pháp|ship pháp|kho pháp|anh|\buk\b|\bengland\b|đi anh|ship anh|kho anh|warehouse uk|fulfillment uk|fulfillment eu|amazon\.de|amazon\.fr|amazon\.co\.uk|châu âu|europe|european market)/i;
+const INTL_ROUTE_REGEX = /(nhật bản|\bjapan\b|đi nhật|ship nhật|gửi.{0,10}nhật|hàn quốc|\bkorea\b|đi hàn|ship hàn|gửi.{0,10}hàn|úc|\baustralia\b|đi úc|ship úc|đài loan|\btaiwan\b|uae|dubai|saudi|chile|colombia|mexico)/i;
 const US_ROUTE_BOOST = 25;
-const INTL_ROUTE_BOOST = 15;  // Lower than US but still significant
+const EU_ROUTE_BOOST = 20;  // UK/FR/DE = secondary market, nearly same as US
+const INTL_ROUTE_BOOST = 15;
 
 // ═══════════════════════════════════════════════════════
 // Lead Intent Analyzer — Multilingual (EN/VN/CN)
@@ -538,8 +541,14 @@ async function classifyPosts(posts) {
                     merged.buyerSignals = `${merged.buyerSignals || ''} [US-Route +${US_ROUTE_BOOST}]`.trim();
                     merged.isUSRoute = true;
                 }
-                // International route boost: JP/KR/DE/FR/AU/UK/TW/UAE/etc.
-                if (merged.role === 'buyer' && !merged.isUSRoute && INTL_ROUTE_REGEX.test(batch[j].content || '')) {
+                // EU route boost: UK/FR/DE = secondary market (same tier as US)
+                if (merged.role === 'buyer' && !merged.isUSRoute && EU_ROUTE_REGEX.test(batch[j].content || '')) {
+                    merged.score = Math.min(100, (merged.score || 0) + EU_ROUTE_BOOST);
+                    merged.buyerSignals = `${merged.buyerSignals || ''} [EU-Route +${EU_ROUTE_BOOST}]`.trim();
+                    merged.isEURoute = true;
+                }
+                // Other international route boost: JP/KR/AU/TW/UAE/etc.
+                if (merged.role === 'buyer' && !merged.isUSRoute && !merged.isEURoute && INTL_ROUTE_REGEX.test(batch[j].content || '')) {
                     merged.score = Math.min(100, (merged.score || 0) + INTL_ROUTE_BOOST);
                     merged.buyerSignals = `${merged.buyerSignals || ''} [INTL-Route +${INTL_ROUTE_BOOST}]`.trim();
                 }

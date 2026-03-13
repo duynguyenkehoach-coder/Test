@@ -126,34 +126,43 @@ module.exports = {
   // ════════════════════════════════════════════════════
 
   THG_CONTEXT: `
-THG là công ty logistics, express, fulfillment và warehouse chuyên vận chuyển CHIỀU ĐI:
-- VN/CN → MỸ (US) ← TUYẾN CHÍNH
-- VN/CN → Thế giới (Úc, UK, UAE, Đài Loan, Saudi, Chile, Colombia, Mexico)
+THG là công ty logistics thương mại điện tử, chuyên phục vụ SELLER (POD, Dropship, Fulfillment, Amazon FBA).
+Khách hàng mục tiêu: SELLER đang bán trên Amazon, TikTok Shop, Etsy, Shopify, eBay cần:
+- In ấn sản phẩm (POD/Print on Demand)
+- Tìm nguồn hàng từ Trung Quốc (1688, Taobao, xưởng TQ) để ship đi phương Tây
+- Fulfillment/3PL tại Mỹ hoặc châu Âu
+- Vận chuyển quốc tế VN/CN → Mỹ, Anh, Pháp, Đức
 
-⛔ THG KHÔNG phục vụ: ship hàng VỀ Việt Nam, nhập hàng TQ→VN, vận chuyển nội địa VN, giao hàng nhanh trong nước.
+📍 TUYẾN PHỤC VỤ:
+- TUYẾN CHÍNH: VN/CN → MỸ (US)
+- TUYẾN PHỤ: VN/CN → Anh (UK), Pháp (France), Đức (Germany)
+- TUYẾN MỞ RỘNG: Úc, UAE, Đài Loan, Chile, Colombia, Mexico
 
-Dịch vụ THG:
-1. THG Express: VN/CN → Mỹ, Úc, UK, UAE, Đài Loan, Saudi, Chile, Colombia, Mexico — tuyến bay riêng, rẻ hơn DHL/FedEx
-2. THG Fulfill (POD): Seller gửi thiết kế → THG in tại xưởng VN/CN/US → đóng gói → ship ĐI MỸ/THẾ GIỚI
-3. THG Fulfill (Dropship): Seller gửi link Taobao/1688 → THG mua hộ → ship QUỐC TẾ (không phải về VN)
-4. THG Warehouse/3PL: Kho Mỹ (PA + TX) — fulfill từ $1.2/đơn, 2-5 ngày, free lưu kho 90 ngày
+⛔ THG KHÔNG phục vụ: ship hàng VỀ Việt Nam, nhập hàng TQ→VN, vận chuyển nội địa VN.
+
+🎯 DỊCH VỤ THG:
+1. THG Fulfill (POD): Seller gửi thiết kế → THG in tại xưởng VN/CN/US → ship đi Mỹ/UK/EU
+2. THG Fulfill (Dropship): Seller gửi link 1688/Taobao → THG mua hộ + ship QUỐC TẾ
+3. THG Express: Vận chuyển VN/CN → Mỹ/UK/EU — tuyến bay riêng, rẻ hơn DHL/FedEx
+4. THG Warehouse/3PL: Kho Mỹ (PA + TX) — fulfill $1.2/đơn, giao 2-5 ngày, free lưu kho 90 ngày
 5. E-packet: Chile, Colombia, Mexico, Saudi, UAE, Úc, Đài Loan
 
-BUYER INTENT — score cao:
-- "tìm đối tác POD/dropship", "cần kho US", "tìm 3PL", "tìm supplier fulfill"
-- "ship VN→Mỹ giá rẻ", "cần đơn vị vận chuyển", "recommend đơn vị ship"
-- "TikTok tracking không active", "khách hủy đơn vì giao lâu", "phí fulfill đắt quá"
-- "cần line epacket Chile/Colombia/Mexico/UAE/Saudi"
-- Comment ngắn dưới post đối thủ: "giá bao nhiêu?", "ship mấy ngày?", "có kho US không?", "inbox em"
+🔥 LEAD CHUẨN (score cao) — ĐÚNG đối tượng THG phục vụ:
+- Seller POD/Print on Demand đang tìm xưởng in, basecost rẻ, supplier fulfill
+- Seller Dropship tìm nguồn hàng TQ (1688/Taobao) để ship đi Mỹ/EU
+- Seller Amazon FBA cần kho US, FBA prep, 3PL
+- Seller e-commerce cần ship hàng VN/CN → Mỹ/UK/FR/DE
+- Seller đang phàn nàn dịch vụ hiện tại (giao chậm, mất hàng, phí đắt)
+- Comment ngắn dưới post logistics: "xin giá", "inbox", "rate?", "có kho US không?"
+- "tìm đối tác POD", "cần fulfillment center US", "ai biết ship VN→Mỹ"
+- "tìm kho UK", "fulfillment châu Âu", "ship hàng đi Đức/Pháp/Anh"
 
-PROVIDER — bỏ qua (score = 0):
-- Bài quảng cáo: "bên em nhận ship", "chúng tôi cung cấp", "lh em"
-- Post tự quảng cáo của Boxme/Merchize/Printify/Shopify
-- Comment vô nghĩa: "🔥🔥", "Let's go", "Yayyyy", "Ayyyyyye", "One can't succeed alone"
-
-SAI TUYẾN — bỏ qua (score = 0):
-- Bài nhập hàng TQ về VN: "order taobao về VN", "nhập hàng 1688", "ship TQ→VN"
-- Bài vận chuyển nội địa VN: "giao hàng nhanh", "ship COD", "chuyển phát nội tỉnh"
-- Bài gửi hàng từ Mỹ về VN: "gửi đồ về Việt Nam", "ship hàng về quê"
+❌ KHÔNG PHẢI LEAD (score = 0):
+- Bài quảng cáo dịch vụ: "bên em nhận ship", "chúng tôi cung cấp", "lh em"
+- Post chia sẻ kiến thức, hướng dẫn, khoe doanh số
+- Bài tuyển dụng, tìm việc
+- Bài nhập hàng TQ về VN (sai tuyến)
+- Bài vận chuyển nội địa VN (sai tuyến)
+- Bài gửi hàng từ Mỹ về VN (sai tuyến)
   `.trim(),
 };
