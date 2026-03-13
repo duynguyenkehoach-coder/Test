@@ -736,7 +736,7 @@ async function _getGroupPostsInner(groupUrl, groupName, account = null) {
         // Stops early if: enough posts visible OR 5 consecutive no-growth
         let prevHeight = 0;
         let noGrowthCount = 0;
-        const TARGET_FEED_CHILDREN = maxPosts * 2; // Overshoot to ensure enough
+        const TARGET_FEED_CHILDREN = 60; // ~30 posts × 2 overshoot
         for (let i = 0; i < 40; i++) {
             await page.evaluate(() => window.scrollBy(0, 4000));
             await delay(250);
