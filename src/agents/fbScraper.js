@@ -1296,9 +1296,11 @@ async function scrapeFacebookGroups(maxPosts = 20, options = {}, externalGroups 
         console.log(`[FBScraper]   📧 ${account.email}: ${accGroups.length} groups`);
     }
 
-    // Run all accounts IN PARALLEL — each with its own browser
-    const accountTasks = Object.values(accountGroupMap).map(({ account, groups: accGroups }) =>
-        _scrapeAccountGroups(account, accGroups)
+    // Run accounts in parallel with 5s stagger (avoid OOM from simultaneous browser launches)
+    const entries = Object.values(accountGroupMap);
+    const accountTasks = entries.map(({ account, groups: accGroups }, idx) =>
+        new Promise(resolve => setTimeout(resolve, idx * 5000))
+            .then(() => _scrapeAccountGroups(account, accGroups))
     );
 
     const results = await Promise.allSettled(accountTasks);
