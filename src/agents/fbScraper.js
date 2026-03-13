@@ -1255,9 +1255,9 @@ async function autoJoinGroups(groups = null, account = null) {
 // ═══════════════════════════════════════════════════════
 
 /**
- * Single-browser multi-context Facebook scraper.
- * 1 Chromium + N incognito contexts (each with own cookies).
- * Saves ~30-40% RAM vs N separate browsers.
+ * Single-browser Facebook scraper with batched contexts.
+ * 1 Chromium + max 2 contexts at a time (3 causes crashes).
+ * 4GB RAM + 4GB swap = enough for full page loads without resource blocking.
  */
 async function scrapeFacebookGroups(maxPosts = 20, options = {}, externalGroups = null) {
     const cfg = require('../config');
@@ -1287,7 +1287,7 @@ async function scrapeFacebookGroups(maxPosts = 20, options = {}, externalGroups 
         accountGroupMap[acc.email].groups.push(group);
     });
 
-    console.log(`[FBScraper] 🚀 Single-browser ${allAccounts.length}-context scraping ${groups.length} groups`);
+    console.log(`[FBScraper] 🚀 Scraping ${groups.length} groups across ${allAccounts.length} accounts`);
     for (const { account, groups: g } of Object.values(accountGroupMap)) {
         console.log(`[FBScraper]   📧 ${account.email}: ${g.length} groups`);
     }
@@ -1308,19 +1308,25 @@ async function scrapeFacebookGroups(maxPosts = 20, options = {}, externalGroups 
                 '--disable-extensions',
                 '--disable-component-update',
                 '--no-first-run',
-                '--js-flags=--max-old-space-size=400',
             ],
         });
-        console.log('[FBScraper] 🌐 Single browser launched');
+        console.log('[FBScraper] 🌐 Browser launched');
 
-        // Run ALL accounts as contexts in the SAME browser
+        // Run max 2 contexts at a time (3 causes OOM/crash)
+        const MAX_PARALLEL = 2;
         const entries = Object.values(accountGroupMap);
-        const tasks = entries.map(({ account, groups: accGroups }) =>
-            _scrapeWithContext(browser, account, accGroups)
-        );
-        const results = await Promise.allSettled(tasks);
-        for (const r of results) {
-            if (r.status === 'fulfilled' && Array.isArray(r.value)) allPosts.push(...r.value);
+
+        for (let i = 0; i < entries.length; i += MAX_PARALLEL) {
+            const batch = entries.slice(i, i + MAX_PARALLEL);
+            console.log(`[FBScraper] 🔄 Batch ${Math.floor(i / MAX_PARALLEL) + 1}: ${batch.map(b => b.account.email.split('@')[0]).join(' + ')}`);
+
+            const tasks = batch.map(({ account, groups: accGroups }) =>
+                _scrapeWithContext(browser, account, accGroups)
+            );
+            const results = await Promise.allSettled(tasks);
+            for (const r of results) {
+                if (r.status === 'fulfilled' && Array.isArray(r.value)) allPosts.push(...r.value);
+            }
         }
     } catch (err) {
         console.error(`[FBScraper] 💥 Browser launch failed: ${err.message}`);
@@ -1334,7 +1340,7 @@ async function scrapeFacebookGroups(maxPosts = 20, options = {}, externalGroups 
 
 /**
  * Scrape groups for ONE account using a context in the shared browser.
- * Context = incognito session with own cookies, sharing browser engine.
+ * No resource blocking — 4GB + 4GB swap handles full FB pages.
  */
 async function _scrapeWithContext(browser, account, groups) {
     const accEmail = account.email;
@@ -1353,15 +1359,9 @@ async function _scrapeWithContext(browser, account, groups) {
             timezoneId: 'America/New_York',
         });
 
-        // Block heavy resources (NOT stylesheet — FB needs CSS to render feed!)
-        await context.route('**/*', async (route) => {
-            const type = route.request().resourceType();
-            if (['image', 'media', 'font'].includes(type)) {
-                await route.abort();
-            } else {
-                await route.continue();
-            }
-        });
+        // NO route interception — it was causing browser crashes
+        // (intercepting every XHR/GraphQL request creates too many pending handlers)
+        // 4GB RAM + 4GB swap is enough for full page loads
 
         // Load cookies: JSON file FIRST, session fallback
         const accUsername = accEmail.split('@')[0];
@@ -1405,7 +1405,7 @@ async function _scrapeWithContext(browser, account, groups) {
         // Validate session
         const testPage = await context.newPage();
         await testPage.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 25000 });
-        await delay(2000);
+        await delay(3000);
         const hasNav = await testPage.$('div[role="navigation"], div[aria-label="Facebook"]');
         const testUrl = testPage.url();
         if (!hasNav || testUrl.includes('/login') || testUrl.includes('checkpoint')) {
@@ -1416,7 +1416,7 @@ async function _scrapeWithContext(browser, account, groups) {
         try { const c = await context.cookies(); fs.mkdirSync(sessionDir, { recursive: true }); fs.writeFileSync(sessionPath, JSON.stringify(c, null, 2)); } catch { }
         await testPage.close();
 
-        // Scrape each group using REUSABLE page (no newPage/close per group)
+        // Scrape each group (reuse page)
         const page = await context.newPage();
 
         for (let i = 0; i < groups.length; i++) {
@@ -1427,7 +1427,7 @@ async function _scrapeWithContext(browser, account, groups) {
             try {
                 console.log(`${tag} [${i + 1}/${groups.length}] 📥 ${group.name}`);
                 await page.goto(`https://www.facebook.com/groups/${groupId}?sorting_setting=CHRONOLOGICAL`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-                await delay(2500);
+                await delay(3000);
 
                 const url = page.url();
                 if (url.includes('checkpoint') || url.includes('/login')) {
@@ -1437,7 +1437,7 @@ async function _scrapeWithContext(browser, account, groups) {
                 }
 
                 let hasFeed = false;
-                try { await page.waitForSelector('div[role="feed"], div[role="article"]', { timeout: 10000 }); hasFeed = true; }
+                try { await page.waitForSelector('div[role="feed"]', { timeout: 12000 }); hasFeed = true; }
                 catch {
                     const pageText = await page.evaluate(() => document.body?.innerText?.substring(0, 500) || '');
                     const isJoinPage = pageText.toLowerCase().includes('join group') || pageText.includes('Tham gia nh');
@@ -1456,7 +1456,7 @@ async function _scrapeWithContext(browser, account, groups) {
                                 console.log(`${tag} ✅ ${group.name}: Joined! Reloading...`);
                                 await page.goto(`https://www.facebook.com/groups/${groupId}?sorting_setting=CHRONOLOGICAL`, { waitUntil: 'domcontentloaded', timeout: 25000 });
                                 await delay(3000);
-                                try { await page.waitForSelector('div[role="feed"], div[role="article"]', { timeout: 8000 }); hasFeed = true; }
+                                try { await page.waitForSelector('div[role="feed"]', { timeout: 8000 }); hasFeed = true; }
                                 catch { console.log(`${tag} ⚠️ ${group.name}: joined but feed not visible yet`); }
                             }
                         } catch (joinErr) { console.warn(`${tag} ⚠️ ${group.name}: join failed: ${joinErr.message.substring(0, 50)}`); }
@@ -1466,61 +1466,55 @@ async function _scrapeWithContext(browser, account, groups) {
                 }
                 if (!hasFeed) continue;
 
-                // Scroll to load posts (mouse.wheel more natural than evaluate scroll)
+                // Scroll to load more posts
                 let noGrowth = 0, prevCnt = 0;
-                for (let s = 0; s < 30; s++) {
-                    await page.mouse.wheel(0, 2000);
-                    await delay(800);
-                    const cnt = await page.evaluate(() => { const f = document.querySelector('div[role="feed"]'); return f ? f.children.length : 0; });
-                    if (cnt >= 40) break;
+                for (let s = 0; s < 25; s++) {
+                    await page.evaluate(() => window.scrollBy(0, 2000));
+                    await delay(1000);
+                    const cnt = await page.evaluate(() => {
+                        const f = document.querySelector('div[role="feed"]');
+                        return f ? f.querySelectorAll('div[role="article"]').length : 0;
+                    });
+                    if (cnt >= 25) break;
                     if (cnt === prevCnt) { noGrowth++; if (noGrowth >= 3) break; } else { noGrowth = 0; }
                     prevCnt = cnt;
                 }
 
-                // Click "See More / Xem thêm" to expand truncated posts
+                // Click "See More" buttons to expand truncated posts
                 try {
                     const seeMoreBtns = await page.$$('div[role="button"]:has-text("See more"), div[role="button"]:has-text("Xem thêm")');
-                    for (const btn of seeMoreBtns.slice(0, 20)) {
+                    for (const btn of seeMoreBtns.slice(0, 15)) {
                         await btn.click().catch(() => { });
                     }
                     if (seeMoreBtns.length > 0) await delay(500);
                 } catch { }
 
-                // Extract posts with comments and URL dedup
+                // Extract posts — use innerText for reliable content extraction
                 const gPosts = await page.evaluate(({ gName, gUrl }) => {
-                    const arts = document.querySelectorAll('div[role="article"]');
+                    const feed = document.querySelector('div[role="feed"]');
+                    if (!feed) return [];
+
+                    const articles = feed.querySelectorAll(':scope > div');
                     const res = [];
                     const seenUrls = new Set();
 
-                    arts.forEach(a => {
-                        // Get post content (dir="auto" contains FB text)
-                        const contentNode = a.querySelector('div[dir="auto"]');
-                        const txt = contentNode ? contentNode.innerText : (a.innerText || '');
-                        if (txt.length < 30) return;
+                    articles.forEach(a => {
+                        const txt = a.innerText || '';
+                        if (txt.length < 50) return; // Skip tiny/empty posts
 
-                        // Get author
-                        const authorNode = a.querySelector('h2 span a, h3 span a, strong a');
-                        const author = authorNode ? authorNode.innerText : '';
-
-                        // Get clean permalink (remove tracking params)
+                        // Get permalink
                         const links = Array.from(a.querySelectorAll('a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid"]'));
                         const rawUrl = links[0]?.href || '';
-                        const postUrl = rawUrl.split('?')[0]; // Clean URL
-
-                        // Dedup by URL
+                        const postUrl = rawUrl.split('?')[0];
                         if (postUrl && seenUrls.has(postUrl)) return;
                         if (postUrl) seenUrls.add(postUrl);
 
-                        // Get timestamp
-                        const timeEl = a.querySelector('a[href*="/posts/"] span, abbr, span[id]');
+                        // Get author (first strong/h3 link)
+                        const authorEl = a.querySelector('h3 a, h2 a, strong a');
+                        const author = authorEl ? authorEl.innerText : '';
 
-                        // Extract top 5 comments (lead gold mine)
-                        const commentEls = a.querySelectorAll('div[role="article"] div[role="article"]');
-                        const comments = Array.from(commentEls).slice(0, 5).map(c => {
-                            const cAuthor = c.querySelector('a span')?.innerText || '';
-                            const cText = c.querySelector('div[dir="auto"]')?.innerText || '';
-                            return cText.length > 5 ? { author: cAuthor, text: cText.substring(0, 500) } : null;
-                        }).filter(Boolean);
+                        // Get time element
+                        const timeEl = a.querySelector('abbr, a[href*="/posts/"] span, span[id]');
 
                         res.push({
                             platform: 'facebook',
@@ -1529,7 +1523,6 @@ async function _scrapeWithContext(browser, account, groups) {
                             post_url: postUrl,
                             author: author,
                             content: txt.substring(0, 2000),
-                            comments: comments,
                             posted_at: timeEl?.textContent || '',
                             scraped_at: new Date().toISOString()
                         });
@@ -1538,14 +1531,13 @@ async function _scrapeWithContext(browser, account, groups) {
                 }, { gName: group.name, gUrl: group.url });
 
                 posts.push(...gPosts);
-                const cmtCount = gPosts.reduce((sum, p) => sum + (p.comments?.length || 0), 0);
-                console.log(`${tag} ✅ ${group.name}: ${gPosts.length} posts, ${cmtCount} comments (total: ${posts.length})`);
+                console.log(`${tag} ✅ ${group.name}: ${gPosts.length} posts (total: ${posts.length})`);
                 accountManager.reportSuccess(account.id, gPosts.length);
             } catch (err) {
                 console.warn(`${tag} ❌ ${group.name}: ${err.message.substring(0, 80)}`);
             }
 
-            // Delay between groups (5-10s as recommended for safety)
+            // 5-10s delay between groups for safety
             if (i < groups.length - 1) await delay(5000 + Math.random() * 5000);
             if (i > 0 && i % 5 === 0) { const m = process.memoryUsage(); console.log(`${tag} 💾 RSS=${Math.round(m.rss / 1024 / 1024)}MB`); }
         }
