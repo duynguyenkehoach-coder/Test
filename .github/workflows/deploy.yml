@@ -58,6 +58,10 @@ jobs:
             --exclude='.git' \
             ${{ github.workspace }}/ /root/THG_tool/
 
+          # Sync config files from data/ (excluded by rsync above)
+          mkdir -p /root/THG_tool/data
+          cp -f ${{ github.workspace }}/data/prod_groups.json /root/THG_tool/data/prod_groups.json 2>/dev/null || true
+
           echo "🚀 Recreating containers..."
           docker compose down --timeout 10
           docker compose up -d --remove-orphans
