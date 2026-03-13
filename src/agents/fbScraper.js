@@ -409,11 +409,68 @@ async function getAuthContext(account = null) {
             return activeContext;
         }
 
-        console.log(`[FBScraper] ⚠️ Session expired: ${accEmail} — trying FB_COOKIES fallback...`);
+        console.log(`[FBScraper] ⚠️ Session expired: ${accEmail} — trying per-account cookies...`);
         await page.close();
     }
 
-    // ── Fallback: FB_COOKIES from .env (pre-authenticated session) ──
+    // ── Fallback 1: Per-account JSON cookie file (Cookie Editor export) ──
+    // Priority: data/fb_cookies_{username}.json (full attributes: domain, httpOnly, secure)
+    const accUsername = accEmail.split('@')[0];
+    const cookieJsonPath = path.join(__dirname, '..', '..', 'data', `fb_cookies_${accUsername}.json`);
+    if (fs.existsSync(cookieJsonPath)) {
+        try {
+            const rawCookies = JSON.parse(fs.readFileSync(cookieJsonPath, 'utf8'));
+            // Convert Cookie Editor format → Playwright format
+            const playwrightCookies = rawCookies
+                .filter(c => c.name && c.value && c.domain)
+                .map(c => ({
+                    name: c.name,
+                    value: c.value,
+                    domain: c.domain,
+                    path: c.path || '/',
+                    httpOnly: !!c.httpOnly,
+                    secure: c.secure !== false,
+                    sameSite: c.sameSite === 'no_restriction' ? 'None'
+                        : c.sameSite === 'lax' ? 'Lax'
+                            : c.sameSite === 'strict' ? 'Strict' : 'None',
+                    ...(c.expirationDate ? { expires: c.expirationDate } : {}),
+                }));
+
+            await activeContext.addCookies(playwrightCookies);
+            console.log(`[FBScraper] 🍪 Injected ${playwrightCookies.length} cookies from ${path.basename(cookieJsonPath)}`);
+
+            // Validate
+            const testPage = await activeContext.newPage();
+            await testPage.goto(`${FB_URL}`, { waitUntil: 'domcontentloaded', timeout: 25000 });
+            await delay(2000);
+            const testUrl = testPage.url();
+
+            if (testUrl.includes('checkpoint') || testUrl.includes('two_step')) {
+                console.warn(`[FBScraper] 🚨 Cookie file session hit checkpoint`);
+                await testPage.close();
+            } else {
+                const hasNav = await testPage.$('div[role="navigation"], div[aria-label="Facebook"]');
+                if (hasNav && !testUrl.includes('/login')) {
+                    console.log(`[FBScraper] ✅ Cookie file session valid for ${accEmail}!`);
+                    isLoggedIn = true;
+                    // Save as account session for next use
+                    try {
+                        const cookies = await activeContext.cookies();
+                        fs.mkdirSync(path.dirname(sessionPath), { recursive: true });
+                        fs.writeFileSync(sessionPath, JSON.stringify(cookies, null, 2));
+                    } catch { }
+                    await testPage.close();
+                    return activeContext;
+                }
+                console.warn(`[FBScraper] ⚠️ Cookie file session not valid (no nav)`);
+                await testPage.close();
+            }
+        } catch (jsonErr) {
+            console.warn(`[FBScraper] ⚠️ Cookie file error: ${jsonErr.message}`);
+        }
+    }
+
+    // ── Fallback 2: FB_COOKIES from .env (pre-authenticated session) ──
     // This avoids email/password login which triggers 2FA on datacenter IPs.
     // FB_COOKIES format: "c_user=XXX; xs=XXX; datr=XXX; fr=XXX; sb=XXX"
     const envCookies = process.env.FB_COOKIES || '';
