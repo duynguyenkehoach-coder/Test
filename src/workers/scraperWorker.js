@@ -168,7 +168,8 @@ async function runPipeline(options = {}) {
         // Apply Time-Decay Score Penalty
         classified.forEach(post => {
             if (post.score > 0) {
-                let ageDays = 60;
+                // Default 0 = assume fresh (we scrape CHRONOLOGICAL feed, posts are recent)
+                let ageDays = 0;
                 if (post.post_created_at) {
                     const postTimeMs = new Date(post.post_created_at).getTime();
                     if (!isNaN(postTimeMs)) ageDays = (nowMs - postTimeMs) / (1000 * 60 * 60 * 24);
@@ -183,7 +184,7 @@ async function runPipeline(options = {}) {
                 if (penaltyMultiplier < 1) {
                     const originalScore = post.score;
                     post.score = Math.round(originalScore * penaltyMultiplier);
-                    const dateInfo = post.post_created_at ? `${Math.round(ageDays)}d` : 'no date (assume 60d)';
+                    const dateInfo = post.post_created_at ? `${Math.round(ageDays)}d` : 'no date (assume fresh)';
                     console.log(`[Decay] Post age ${dateInfo}: Score reduced ${originalScore} -> ${post.score}`);
                     post.summary = `[CŨ: ${Math.round(ageDays)} ngày] ` + post.summary;
                 }
