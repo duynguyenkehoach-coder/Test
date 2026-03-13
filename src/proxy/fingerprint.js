@@ -81,30 +81,47 @@ function randomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+// Deterministic hash for account-based fingerprint consistency
+function simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash = Math.abs(hash | 0);
+    }
+    return hash;
+}
+
 // ═══════════════════════════════════════════════════════
 // Generate fingerprint
 // ═══════════════════════════════════════════════════════
 
 /**
- * Generate a unique browser fingerprint for a scraping session.
- * Each call returns a different combination to avoid detection.
+ * Generate a browser fingerprint for a scraping session.
+ * When accountId is provided, generates DETERMINISTIC fingerprint (same every time for same account).
+ * Without accountId, generates random fingerprint.
  * 
  * @param {Object} [options]
  * @param {string} [options.region] - Target region ('US' or 'VN')
+ * @param {string} [options.accountId] - Account email for deterministic fingerprint
  * @returns {Object} Fingerprint with userAgent, viewport, timezone, etc.
  */
 function generateFingerprint(options = {}) {
-    const userAgent = randomItem(USER_AGENTS);
-    const viewport = randomItem(VIEWPORTS);
+    // Deterministic hash for account-based fingerprint
+    const pick = options.accountId
+        ? (arr) => arr[simpleHash(options.accountId) % arr.length]
+        : randomItem;
+
+    const userAgent = pick(USER_AGENTS);
+    const viewport = pick(VIEWPORTS);
 
     // Match timezone to region
     let timezone;
     if (options.region === 'US') {
-        timezone = randomItem(TIMEZONES.filter(tz => tz.startsWith('America/')));
+        timezone = pick(TIMEZONES.filter(tz => tz.startsWith('America/')));
     } else if (options.region === 'VN') {
         timezone = 'Asia/Ho_Chi_Minh';
     } else {
-        timezone = randomItem(TIMEZONES);
+        timezone = pick(TIMEZONES);
     }
 
     // Match language to region
@@ -112,7 +129,7 @@ function generateFingerprint(options = {}) {
     if (options.region === 'VN') {
         language = 'vi-VN,vi;q=0.9,en;q=0.8';
     } else {
-        language = randomItem(LANGUAGES);
+        language = pick(LANGUAGES);
     }
 
     // Platform based on user agent

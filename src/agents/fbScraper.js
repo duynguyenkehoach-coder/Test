@@ -317,7 +317,7 @@ async function getAuthContext(account = null) {
         console.log(`[FBScraper] ⚡ Direct connect (no proxy) for ${accEmail}`);
     }
 
-    const fp = generateFingerprint({ region: 'US' });
+    const fp = generateFingerprint({ region: 'US', accountId: accEmail });
 
     activeBrowser = await chromium.launch(launchOptions);
     activeContext = await activeBrowser.newContext({
