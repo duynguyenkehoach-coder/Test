@@ -1430,10 +1430,14 @@ async function _scrapeWithContext(browser, account, groups) {
                 await delay(3000);
 
                 const url = page.url();
-                if (url.includes('checkpoint') || url.includes('/login')) {
-                    console.warn(`${tag} 🚨 ${group.name}: checkpoint — stopping`);
+                if (url.includes('checkpoint')) {
+                    console.warn(`${tag} 🚨 ${group.name}: REAL checkpoint — stopping account`);
                     accountManager.reportCheckpoint(account.id);
                     break;
+                }
+                if (url.includes('/login')) {
+                    console.log(`${tag} 🔒 ${group.name}: login redirect (restricted) — skipping`);
+                    continue;
                 }
 
                 let hasFeed = false;
