@@ -1009,6 +1009,14 @@ async function autoJoinGroups(groups = null, account = null) {
         page = await context.newPage();
 
         for (let i = 0; i < targetGroups.length; i++) {
+            // Recycle page every 15 groups to prevent OOM crash
+            if (i > 0 && i % 15 === 0) {
+                console.log(`[FBScraper] 🔄 Recycling page (memory relief)...`);
+                try { await page.close(); } catch { }
+                page = await context.newPage();
+                await delay(1000);
+            }
+
             const group = targetGroups[i];
             const groupId = extractGroupId(group.url);
             if (!groupId) {
