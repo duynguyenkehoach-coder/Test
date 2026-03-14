@@ -1550,6 +1550,16 @@ async function _selfHealLogin(browser, account, tag) {
                 return null;
             }
 
+            // Wait for React to render the 2FA form (DOM is empty on initial load)
+            console.log(`${tag} 🔧 Waiting for 2FA form to render...`);
+            try {
+                await page.waitForSelector('input', { timeout: 20000 });
+            } catch {
+                // Fallback: wait for network to settle
+                try { await page.waitForLoadState('networkidle', { timeout: 10000 }); } catch { }
+                await delay(5000);
+            }
+
             // Debug: dump page inputs and buttons to understand page structure
             const pageDebug = await page.evaluate(() => {
                 const inputs = [...document.querySelectorAll('input')].map(i => ({
