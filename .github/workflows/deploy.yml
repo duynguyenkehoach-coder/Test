@@ -66,9 +66,26 @@ jobs:
           cp -f ${{ github.workspace }}/data/fb_cookies_*.json /root/THG_tool/data/ 2>/dev/null || true
           cp -f ${{ github.workspace }}/data/recovery_codes_*.json /root/THG_tool/data/ 2>/dev/null || true
 
-          echo "🚀 Recreating containers..."
+          # Sync TOTP secrets and new accounts to VPS .env (append if missing)
+          grep -q 'FB_ACCOUNT_2_TOTP_SECRET' /root/THG_tool/.env || echo 'FB_ACCOUNT_2_TOTP_SECRET=' >> /root/THG_tool/.env
+          grep -q 'FB_ACCOUNT_3_EMAIL' /root/THG_tool/.env || cat >> /root/THG_tool/.env << 'ENVEOF'
+FB_ACCOUNT_3_EMAIL=dalunistarotapp@gmail.com
+FB_ACCOUNT_3_PASSWORD=Uyenxinhdep03102001
+FB_ACCOUNT_3_TOTP_SECRET=
+ENVEOF
+          # Update TOTP secrets from source .env
+          if [ -f "${{ github.workspace }}/.env" ]; then
+            for key in FB_ACCOUNT_2_TOTP_SECRET FB_ACCOUNT_3_TOTP_SECRET FB_ACCOUNT_1_PASSWORD FB_ACCOUNT_2_PASSWORD FB_ACCOUNT_3_PASSWORD; do
+              VAL=$(grep "^${key}=" "${{ github.workspace }}/.env" | cut -d'=' -f2-)
+              if [ -n "$VAL" ]; then
+                sed -i "s|^${key}=.*|${key}=${VAL}|" /root/THG_tool/.env
+              fi
+            done
+          fi
+
+          echo "🚀 Force-recreating ALL containers from new images..."
           docker compose down --timeout 10
-          docker compose up -d --remove-orphans
+          docker compose up -d --force-recreate --remove-orphans
 
           echo "⏳ Waiting for API..."
           sleep 5
