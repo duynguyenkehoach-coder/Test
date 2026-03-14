@@ -68,12 +68,12 @@ jobs:
 
           # Sync TOTP secrets and new accounts to VPS .env (append if missing)
           grep -q 'FB_ACCOUNT_2_TOTP_SECRET' /root/THG_tool/.env || echo 'FB_ACCOUNT_2_TOTP_SECRET=' >> /root/THG_tool/.env
-          grep -q 'FB_ACCOUNT_3_EMAIL' /root/THG_tool/.env || cat >> /root/THG_tool/.env << 'ENVEOF'
-FB_ACCOUNT_3_EMAIL=dalunistarotapp@gmail.com
-FB_ACCOUNT_3_PASSWORD=Uyenxinhdep03102001
-FB_ACCOUNT_3_TOTP_SECRET=
-ENVEOF
-          # Update TOTP secrets from source .env
+          grep -q 'FB_ACCOUNT_3_EMAIL' /root/THG_tool/.env && echo "Account 3 already in .env" || {
+            echo 'FB_ACCOUNT_3_EMAIL=dalunistarotapp@gmail.com' >> /root/THG_tool/.env
+            echo 'FB_ACCOUNT_3_PASSWORD=Uyenxinhdep03102001' >> /root/THG_tool/.env
+            echo 'FB_ACCOUNT_3_TOTP_SECRET=' >> /root/THG_tool/.env
+          }
+          # Update TOTP secrets and passwords from source .env
           if [ -f "${{ github.workspace }}/.env" ]; then
             for key in FB_ACCOUNT_2_TOTP_SECRET FB_ACCOUNT_3_TOTP_SECRET FB_ACCOUNT_1_PASSWORD FB_ACCOUNT_2_PASSWORD FB_ACCOUNT_3_PASSWORD; do
               VAL=$(grep "^${key}=" "${{ github.workspace }}/.env" | cut -d'=' -f2-)
