@@ -1499,16 +1499,23 @@ async function _selfHealLogin(browser, account, tag) {
         console.log(`${tag} 🔧 Login submitted, waiting...`);
         await delay(8000);
 
-        // Check for 2FA checkpoint
-        const url = page.url();
+        // Check for 2FA checkpoint — also handle delayed redirect
+        let url = page.url();
         console.log(`${tag} 🔧 Post-login URL: ${url.substring(0, 100)}`);
+
+        // If we're on facebook.com/, wait a bit more for potential 2FA redirect
+        if (url === 'https://www.facebook.com/' || url === 'https://m.facebook.com/') {
+            await delay(5000);
+            url = page.url();
+            console.log(`${tag} 🔧 URL after extra wait: ${url.substring(0, 100)}`);
+        }
+
         if (url.includes('checkpoint') || url.includes('two_step') || url.includes('login/identify')) {
             console.log(`${tag} 🔐 2FA checkpoint detected — generating code...`);
 
             let code = null;
-            let isRecoveryCode = false;
 
-            // Method 1: TOTP via otplib
+            // Method 1: TOTP
             const totpSecret = _getTotpSecret(accEmail);
             console.log(`${tag} 🔧 TOTP secret found: ${totpSecret ? 'YES' : 'NO'}, authenticator loaded: ${authenticator ? 'YES' : 'NO'}`);
             if (totpSecret && authenticator) {
@@ -1520,13 +1527,11 @@ async function _selfHealLogin(browser, account, tag) {
                 }
             }
 
-            // Method 2: Recovery codes (need to click "Try another way" first)
+            // Method 2: Recovery codes
             if (!code) {
                 code = _getRecoveryCode(accUsername);
                 if (code) {
-                    isRecoveryCode = true;
                     console.log(`${tag} 🎫 Using recovery code: ${code}`);
-                    // Click "Try another way" / "Having trouble?" to switch to recovery code input
                     const tryAnotherBtn = await page.$('a:has-text("Try another way")') ||
                         await page.$('a:has-text("Having trouble")') ||
                         await page.$('a:has-text("recovery code")') ||
@@ -1545,41 +1550,92 @@ async function _selfHealLogin(browser, account, tag) {
                 return null;
             }
 
-            // Enter the code
+            // Debug: dump page inputs and buttons to understand page structure
+            const pageDebug = await page.evaluate(() => {
+                const inputs = [...document.querySelectorAll('input')].map(i => ({
+                    name: i.name, type: i.type, id: i.id, placeholder: i.placeholder,
+                    visible: i.offsetParent !== null
+                }));
+                const buttons = [...document.querySelectorAll('button')].map(b => ({
+                    type: b.type, text: b.innerText?.substring(0, 30), id: b.id,
+                    visible: b.offsetParent !== null
+                }));
+                return { inputs, buttons, url: location.href };
+            });
+            console.log(`${tag} 🔧 Page inputs: ${JSON.stringify(pageDebug.inputs)}`);
+            console.log(`${tag} 🔧 Page buttons: ${JSON.stringify(pageDebug.buttons)}`);
+
+            // Find code input — try all common selectors
             const codeInput = await page.$('input[name="approvals_code"]') ||
-                await page.$('input[type="text"]') ||
-                await page.$('input[type="tel"]');
+                await page.$('input[autocomplete="one-time-code"]') ||
+                await page.$('input[type="tel"]') ||
+                await page.$('input[type="number"]') ||
+                await page.$('input[type="text"]:not([name="email"]):not([name="pass"])');
+
             if (codeInput) {
-                await codeInput.fill(code);
-                await delay(500);
+                console.log(`${tag} 🔧 Code input FOUND — filling ${code}...`);
+                // Clear and type character by character (more reliable than fill)
+                await codeInput.click();
+                await codeInput.fill('');
+                await page.keyboard.type(code, { delay: 50 });
+                await delay(1000);
+
+                // Find and click submit button
                 const submitBtn = await page.$('button[type="submit"]') ||
                     await page.$('#checkpointSubmitButton') ||
                     await page.$('button:has-text("Continue")') ||
-                    await page.$('button:has-text("Submit")');
-                if (submitBtn) await submitBtn.click();
-                else await codeInput.press('Enter');
+                    await page.$('button:has-text("Submit")') ||
+                    await page.$('div[role="button"]:has-text("Continue")');
 
-                await delay(8000);
+                if (submitBtn) {
+                    console.log(`${tag} 🔧 Submit button FOUND — clicking...`);
+                    // Use Promise.race: waitForNavigation + click
+                    try {
+                        await Promise.all([
+                            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { }),
+                            submitBtn.click()
+                        ]);
+                    } catch { await submitBtn.click(); }
+                } else {
+                    console.log(`${tag} 🔧 No submit button — pressing Enter...`);
+                    await page.keyboard.press('Enter');
+                }
 
-                // Handle "Save Browser" step (may appear multiple times)
+                await delay(5000);
+                console.log(`${tag} 🔧 URL after 2FA submit: ${page.url().substring(0, 100)}`);
+
+                // Handle checkpoint steps (Continue/Save Browser — may appear 2-3 times)
                 for (let step = 0; step < 3; step++) {
-                    const saveBrowserBtn = await page.$('button:has-text("Continue")') ||
+                    const stepUrl = page.url();
+                    if (!stepUrl.includes('checkpoint') && !stepUrl.includes('two_step')) break;
+
+                    const continueBtn = await page.$('button:has-text("Continue")') ||
                         await page.$('button:has-text("Save")') ||
-                        await page.$('#checkpointSubmitButton');
-                    if (saveBrowserBtn) {
-                        await saveBrowserBtn.click();
-                        await delay(4000);
-                        console.log(`${tag} ✅ Checkpoint step ${step + 1} passed`);
+                        await page.$('#checkpointSubmitButton') ||
+                        await page.$('button[type="submit"]') ||
+                        await page.$('div[role="button"]:has-text("Continue")');
+                    if (continueBtn) {
+                        try {
+                            await Promise.all([
+                                page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => { }),
+                                continueBtn.click()
+                            ]);
+                        } catch { await continueBtn.click(); }
+                        await delay(3000);
+                        console.log(`${tag} ✅ Checkpoint step ${step + 1} → ${page.url().substring(0, 80)}`);
                     } else break;
                 }
+            } else {
+                console.warn(`${tag} ❌ No code input found on 2FA page!`);
+                await freshContext.close();
+                return null;
             }
         }
 
         // Verify login success
         await delay(3000);
         const finalUrl = page.url();
-        console.log(`${tag} 🔧 Final URL after 2FA: ${finalUrl.substring(0, 100)}`);
-        const hasNav = await page.$('div[role="navigation"], div[aria-label="Facebook"], a[aria-label="Home"], a[href="/"], div[data-pagelet="LeftRail"]');
+        console.log(`${tag} 🔧 Final URL: ${finalUrl.substring(0, 100)}`);
         const isFbHome = finalUrl.includes('facebook.com') && !finalUrl.includes('/login') && !finalUrl.includes('checkpoint') && !finalUrl.includes('two_step');
 
         if (isFbHome) {
