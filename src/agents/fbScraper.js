@@ -1492,6 +1492,12 @@ async function _scrapeWithContext(browser, account, groups) {
                     console.log(`${tag} 🔄 Cookies auto-renewed → ${path.basename(cookieJsonPath)} (${fbCookies.length})`);
                 }
             }
+            // ═══ StorageState migration: save cookies + localStorage for 15-30 day session ═══
+            const ssDir = path.join(__dirname, '..', '..', 'data', 'sessions');
+            const ssPath = path.join(ssDir, `${accUsername}_auth.json`);
+            fs.mkdirSync(ssDir, { recursive: true });
+            await context.storageState({ path: ssPath });
+            console.log(`${tag} 🔑 StorageState saved → ${accUsername}_auth.json`);
         } catch (e) { console.warn(`${tag} ⚠️ Cookie save error: ${e.message}`); }
         await testPage.close();
 
