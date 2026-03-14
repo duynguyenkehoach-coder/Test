@@ -16,19 +16,38 @@
 const { chromium } = require('playwright-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const axios = require('axios');
-let authenticator = null;
-try {
-    const otplib = require('otplib');
-    if (otplib.authenticator) {
-        // otplib v12
-        authenticator = otplib.authenticator;
-    } else if (otplib.TOTP) {
-        // otplib v13+ uses TOTP class
-        const totp = new otplib.TOTP();
-        authenticator = { generate: (secret) => totp.generate({ secret }) };
-        console.log('[FBScraper] 🔑 otplib v13 TOTP loaded');
+// TOTP generator — use Node.js built-in crypto (no otplib dependency issues)
+const crypto = require('crypto');
+const authenticator = {
+    generate(secret) {
+        // Remove spaces from secret
+        const cleanSecret = secret.replace(/\s/g, '');
+        // Base32 decode
+        const base32chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+        let bits = '';
+        for (const c of cleanSecret.toUpperCase()) {
+            const val = base32chars.indexOf(c);
+            if (val === -1) continue;
+            bits += val.toString(2).padStart(5, '0');
+        }
+        const secretBytes = Buffer.alloc(Math.floor(bits.length / 8));
+        for (let i = 0; i < secretBytes.length; i++) {
+            secretBytes[i] = parseInt(bits.slice(i * 8, (i + 1) * 8), 2);
+        }
+        // TOTP: time-based counter (30-second window)
+        const epoch = Math.floor(Date.now() / 1000);
+        const counter = Math.floor(epoch / 30);
+        const counterBuf = Buffer.alloc(8);
+        counterBuf.writeUInt32BE(Math.floor(counter / 0x100000000), 0);
+        counterBuf.writeUInt32BE(counter & 0xFFFFFFFF, 4);
+        // HMAC-SHA1
+        const hmac = crypto.createHmac('sha1', secretBytes).update(counterBuf).digest();
+        const offset = hmac[hmac.length - 1] & 0x0f;
+        const code = ((hmac[offset] & 0x7f) << 24 | hmac[offset + 1] << 16 | hmac[offset + 2] << 8 | hmac[offset + 3]) % 1000000;
+        return code.toString().padStart(6, '0');
     }
-} catch (e) { console.warn('[FBScraper] ⚠️ otplib not available:', e.message); }
+};
+console.log('[FBScraper] 🔑 Built-in TOTP generator ready');
 const fs = require('fs');
 const path = require('path');
 const { pool } = require('../proxy/proxyPool');
