@@ -53,7 +53,7 @@ const path = require('path');
 const { pool } = require('../proxy/proxyPool');
 const { generateFingerprint } = require('../proxy/fingerprint');
 const accountManager = require('../agent/accountManager');
-const { selfHealLogin, isSessionHealthy } = require('./fbSelfHeal');
+const { selfHealLogin, isSessionHealthy, clearInvalidSession } = require('./fbSelfHeal');
 
 chromium.use(StealthPlugin());
 
