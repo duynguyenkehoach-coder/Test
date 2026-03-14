@@ -1453,48 +1453,48 @@ async function _selfHealLogin(browser, account, tag) {
 
     let freshContext = null;
     try {
-        // Create FRESH context (no cookies) so Facebook shows login page
+        // Use MOBILE Facebook to avoid reCAPTCHA (www.facebook.com shows CAPTCHA for headless)
         freshContext = await browser.newContext({
-            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            viewport: { width: 1280, height: 720 },
+            userAgent: 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+            viewport: { width: 412, height: 915 },
         });
         const page = await freshContext.newPage();
 
-        console.log(`${tag} 🔧 Self-healing: fresh context → facebook.com...`);
-        await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 25000 });
+        console.log(`${tag} 🔧 Self-healing: fresh context → m.facebook.com...`);
+        await page.goto('https://m.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 25000 });
         await delay(3000);
 
         // Log what URL we landed on
         const landingUrl = page.url();
         console.log(`${tag} 🔧 Landing URL: ${landingUrl.substring(0, 80)}`);
 
-        // Fill login form
-        const emailInput = await page.$('input[name="email"], input#email');
-        const passInput = await page.$('input[name="pass"], input#pass');
+        // Fill login form (mobile selectors)
+        const emailInput = await page.$('input[name="email"]') ||
+            await page.$('input#m_login_email') ||
+            await page.$('input#email');
+        const passInput = await page.$('input[name="pass"]') ||
+            await page.$('input#m_login_password') ||
+            await page.$('input#pass');
+
         if (!emailInput || !passInput) {
-            // Try mobile/alternate login page
-            console.log(`${tag} 🔧 No form on main page, trying m.facebook.com...`);
-            await page.goto('https://m.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 20000 });
-            await delay(2000);
-        }
-
-        const email2 = await page.$('input[name="email"], input#email, input#m_login_email');
-        const pass2 = await page.$('input[name="pass"], input#pass, input#m_login_password');
-        const finalEmail = emailInput || email2;
-        const finalPass = passInput || pass2;
-
-        if (!finalEmail || !finalPass) {
-            const pageText = await page.evaluate(() => document.body?.innerText?.substring(0, 300) || '');
-            console.warn(`${tag} ⚠️ No login form found. Page text: ${pageText.substring(0, 100)}`);
+            const bodyText = await page.evaluate(() => document.body?.innerText?.substring(0, 300) || '');
+            console.warn(`${tag} ⚠️ No login form on m.facebook.com. Body: ${bodyText.substring(0, 150)}`);
             await freshContext.close();
             return null;
         }
 
-        await finalEmail.fill(accEmail);
+        await emailInput.fill(accEmail);
         await delay(500 + Math.random() * 500);
-        await finalPass.fill(accPassword);
+        await passInput.fill(accPassword);
         await delay(500 + Math.random() * 500);
-        await finalPass.press('Enter');
+
+        // Click login button (mobile has a specific button)
+        const loginBtn = await page.$('button[name="login"]') ||
+            await page.$('input[name="login"]') ||
+            await page.$('button[type="submit"]') ||
+            await page.$('input[type="submit"]');
+        if (loginBtn) await loginBtn.click();
+        else await passInput.press('Enter');
 
         console.log(`${tag} 🔧 Login submitted, waiting...`);
         await delay(8000);
@@ -1670,12 +1670,32 @@ async function _selfHealLogin(browser, account, tag) {
 
         if (isFbHome) {
             console.log(`${tag} ✅ Self-healing login SUCCESS!`);
-            // Save new storageState
+
+            // Navigate to DESKTOP facebook to acquire full cookie set
+            // (mobile login may only have m.facebook.com cookies)
+            console.log(`${tag} 🔧 Acquiring desktop session cookies...`);
+            await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 25000 });
+            await delay(5000);
+            // Visit a few key pages to trigger all cookie sets
+            await page.goto('https://www.facebook.com/groups/feed/', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => { });
+            await delay(3000);
+
+            // Log cookie count for debugging
+            const cookies = await freshContext.cookies();
+            const fbCookies = cookies.filter(c => c.domain?.includes('facebook'));
+            console.log(`${tag} 🍪 Total cookies: ${cookies.length}, Facebook cookies: ${fbCookies.length}`);
+
+            // Save new storageState with full cookies
             const ssDir = path.join(__dirname, '..', '..', 'data', 'sessions');
             const ssPath = path.join(ssDir, `${accUsername}_auth.json`);
             fs.mkdirSync(ssDir, { recursive: true });
             await freshContext.storageState({ path: ssPath });
-            console.log(`${tag} 🔑 New storageState saved → ${accUsername}_auth.json`);
+
+            // Also save cookies in fb_cookies format for next restart
+            const cookieJsonPath = path.join(__dirname, '..', '..', 'data', `fb_cookies_${accUsername}.json`);
+            fs.writeFileSync(cookieJsonPath, JSON.stringify(fbCookies, null, 2));
+            console.log(`${tag} 🔑 StorageState + cookies saved (${fbCookies.length} FB cookies) → ${accUsername}`);
+
             await freshContext.close();
             return ssPath;
         }
