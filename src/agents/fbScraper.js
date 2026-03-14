@@ -1559,43 +1559,63 @@ async function _selfHealLogin(browser, account, tag) {
                 try { await page.waitForLoadState('networkidle', { timeout: 10000 }); } catch { }
                 await delay(5000);
             }
+            // Debug: dump page HTML to see what Facebook is showing
+            const bodyText = await page.evaluate(() => document.body?.innerText?.substring(0, 500) || 'EMPTY');
+            console.log(`${tag} 🔧 Page body text: ${bodyText.substring(0, 200)}`);
 
-            // Debug: dump page inputs and buttons to understand page structure
-            const pageDebug = await page.evaluate(() => {
+            // Check for iframes (Facebook might put 2FA in an iframe)
+            const frames = page.frames();
+            console.log(`${tag} 🔧 Page has ${frames.length} frames`);
+
+            // Search all frames for inputs
+            let targetFrame = page;
+            for (const frame of frames) {
+                try {
+                    const hasInput = await frame.$('input');
+                    if (hasInput) {
+                        console.log(`${tag} 🔧 Found input in frame: ${frame.url().substring(0, 80)}`);
+                        targetFrame = frame;
+                        break;
+                    }
+                } catch { }
+            }
+
+            // Debug: dump inputs/buttons from target frame
+            const pageDebug = await targetFrame.evaluate(() => {
                 const inputs = [...document.querySelectorAll('input')].map(i => ({
                     name: i.name, type: i.type, id: i.id, placeholder: i.placeholder,
                     visible: i.offsetParent !== null
                 }));
-                const buttons = [...document.querySelectorAll('button')].map(b => ({
-                    type: b.type, text: b.innerText?.substring(0, 30), id: b.id,
+                const buttons = [...document.querySelectorAll('button, div[role="button"]')].map(b => ({
+                    type: b.type || b.tagName, text: b.innerText?.substring(0, 30), id: b.id,
                     visible: b.offsetParent !== null
                 }));
-                return { inputs, buttons, url: location.href };
+                return { inputs, buttons };
             });
             console.log(`${tag} 🔧 Page inputs: ${JSON.stringify(pageDebug.inputs)}`);
             console.log(`${tag} 🔧 Page buttons: ${JSON.stringify(pageDebug.buttons)}`);
 
-            // Find code input — try all common selectors
-            const codeInput = await page.$('input[name="approvals_code"]') ||
-                await page.$('input[autocomplete="one-time-code"]') ||
-                await page.$('input[type="tel"]') ||
-                await page.$('input[type="number"]') ||
-                await page.$('input[type="text"]:not([name="email"]):not([name="pass"])');
+            // Find code input — try all common selectors (in target frame)
+            const codeInput = await targetFrame.$('input[name="approvals_code"]') ||
+                await targetFrame.$('input[autocomplete="one-time-code"]') ||
+                await targetFrame.$('input[type="tel"]') ||
+                await targetFrame.$('input[type="number"]') ||
+                await targetFrame.$('input[type="text"]:not([name="email"]):not([name="pass"])');
 
             if (codeInput) {
                 console.log(`${tag} 🔧 Code input FOUND — filling ${code}...`);
                 // Clear and type character by character (more reliable than fill)
                 await codeInput.click();
                 await codeInput.fill('');
-                await page.keyboard.type(code, { delay: 50 });
+                await codeInput.type(code, { delay: 50 });
                 await delay(1000);
 
                 // Find and click submit button
-                const submitBtn = await page.$('button[type="submit"]') ||
-                    await page.$('#checkpointSubmitButton') ||
-                    await page.$('button:has-text("Continue")') ||
-                    await page.$('button:has-text("Submit")') ||
-                    await page.$('div[role="button"]:has-text("Continue")');
+                const submitBtn = await targetFrame.$('button[type="submit"]') ||
+                    await targetFrame.$('#checkpointSubmitButton') ||
+                    await targetFrame.$('button:has-text("Continue")') ||
+                    await targetFrame.$('button:has-text("Submit")') ||
+                    await targetFrame.$('div[role="button"]:has-text("Continue")');
 
                 if (submitBtn) {
                     console.log(`${tag} 🔧 Submit button FOUND — clicking...`);
