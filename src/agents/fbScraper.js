@@ -53,7 +53,7 @@ const path = require('path');
 const { pool } = require('../proxy/proxyPool');
 const { generateFingerprint } = require('../proxy/fingerprint');
 const accountManager = require('../agent/accountManager');
-const { selfHealLogin, isSessionHealthy, clearInvalidSession } = require('./fbSelfHeal');
+const { selfHealLogin, isSessionHealthy, clearInvalidSession, killZombieBrowsers } = require('./fbSelfHeal');
 
 chromium.use(StealthPlugin());
 
@@ -1394,6 +1394,9 @@ async function scrapeFacebookGroups(maxPosts = 20, options = {}, externalGroups 
     const allPosts = [];
 
     try {
+        // 🧛 Kill zombie browser processes before launching new one
+        killZombieBrowsers();
+
         browser = await chromium.launch({
             headless: true,
             executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,

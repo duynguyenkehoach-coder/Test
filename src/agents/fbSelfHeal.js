@@ -1,25 +1,22 @@
 /**
  * THG Lead Gen — Facebook Self-Healing Login Module
  * 
- * Strategy: Raw HTTP Login (axios) → Golden Session (Playwright)
+ * Strategy: Playwright API Login → Golden Session
  * 
- * WHY HTTP instead of Playwright for login:
- *   - mbasic.facebook.com 302-redirects to www (server-side, can't prevent)
- *   - www with JS OFF = empty page (React SPA needs JS)
- *   - www with JS ON = Arkose Labs CAPTCHA blocks form
- *   - Raw HTTP = invisible to Arkose, no browser fingerprint
+ * WHY Playwright context.request (not axios, not page):
+ *   - axios got 400: missing Sec-Fetch-* headers, FB rejects raw HTTP
+ *   - page on mbasic: 302 redirect loop (server-side, can't intercept)
+ *   - page on www: Arkose Labs CAPTCHA blocks 2FA form
+ *   - context.request: sends proper browser headers + shares cookies with pages
  * 
- * Phase 1: HTTP Login on m.facebook.com
- *   - GET login page → parse HTML form fields (lsd, jazoest)
- *   - POST credentials → follow redirects → get auth cookies
- *   - If 2FA → parse checkpoint form → POST TOTP/recovery code
- *   - Collect all Set-Cookie headers
+ * Phase 1: Login via context.request API (no page rendering!)
+ *   - Playwright sends real browser headers automatically
+ *   - Cookie jar shared between API requests and browser pages
+ *   - Parse HTML form, POST credentials, handle 2FA
  * 
- * Phase 2: Golden Session (Playwright, JS enabled)
- *   - Inject HTTP cookies into Playwright context
- *   - Identity Forcing: /me → forces c_user + xs creation
- *   - Newsfeed warm-up: scroll + random Like
- *   - Backup golden session to "safe vault"
+ * Phase 2: Golden Session (reuse same context — cookies already there!)
+ *   - Open page → /me identity forcing → newsfeed warming
+ *   - Backup golden session to vault
  * 
  * @module agents/fbSelfHeal
  */
@@ -27,7 +24,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const axios = require('axios');
+const { execSync } = require('child_process');
 
 // ═══════════════════════════════════════════════════════
 // Built-in TOTP generator (crypto-based, no otplib dep)
@@ -59,7 +56,7 @@ const authenticator = {
 };
 
 // ═══════════════════════════════════════════════════════
-// Constants & Paths
+// Constants
 // ═══════════════════════════════════════════════════════
 
 const UA_MOBILE = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36';
@@ -106,14 +103,14 @@ function getRecoveryCode(accUsername) {
 }
 
 // ═══════════════════════════════════════════════════════
-// Session Health Check
+// Session Health Check + Cleanup + Backup
 // ═══════════════════════════════════════════════════════
 
 function isSessionHealthy(accUsername) {
     const ssPath = path.join(SESSIONS_DIR, `${accUsername}_auth.json`);
     const backupPath = path.join(BACKUP_DIR, `${accUsername}_auth.json`);
 
-    // Auto-restore from backup if main file missing
+    // Auto-restore from backup
     if (!fs.existsSync(ssPath) && fs.existsSync(backupPath)) {
         console.log(`[SelfHeal] 🔄 Restoring ${accUsername} from backup...`);
         fs.mkdirSync(SESSIONS_DIR, { recursive: true });
@@ -141,11 +138,6 @@ function isSessionHealthy(accUsername) {
     return { healthy: false, cookieCount: 0, hasCUser: false, hasXs: false };
 }
 
-// ═══════════════════════════════════════════════════════
-// Session Cleanup & Backup
-// ═══════════════════════════════════════════════════════
-
-/** Clear invalid session files before self-heal */
 function clearInvalidSession(accUsername) {
     const targets = [
         path.join(SESSIONS_DIR, `${accUsername}_auth.json`),
@@ -158,11 +150,10 @@ function clearInvalidSession(accUsername) {
                 fs.unlinkSync(fp);
                 console.log(`[SelfHeal]   🗑️ Deleted: ${path.basename(fp)}`);
             }
-        } catch (e) { console.warn(`[SelfHeal]   ⚠️ Could not delete ${path.basename(fp)}: ${e.message}`); }
+        } catch (e) { console.warn(`[SelfHeal]   ⚠️ ${path.basename(fp)}: ${e.message}`); }
     }
 }
 
-/** Backup golden session to safe vault */
 function backupGoldenSession(accUsername) {
     const source = path.join(SESSIONS_DIR, `${accUsername}_auth.json`);
     const target = path.join(BACKUP_DIR, `${accUsername}_auth.json`);
@@ -170,256 +161,70 @@ function backupGoldenSession(accUsername) {
         if (fs.existsSync(source)) {
             fs.mkdirSync(BACKUP_DIR, { recursive: true });
             fs.copyFileSync(source, target);
-            console.log(`[SelfHeal] 💾 Backed up golden session → backups/${accUsername}_auth.json`);
+            console.log(`[SelfHeal] 💾 Backed up → backups/${accUsername}_auth.json`);
         }
     } catch (e) { console.warn(`[SelfHeal] ⚠️ Backup error: ${e.message}`); }
 }
 
 // ═══════════════════════════════════════════════════════
-// HTTP Login (Phase 1) — Raw axios, no browser
+// Zombie Process Cleanup
 // ═══════════════════════════════════════════════════════
 
-/** Parse Set-Cookie headers from axios response */
-function extractCookiesFromResponse(resp) {
-    const cookies = {};
-    const setCookieHeaders = resp.headers['set-cookie'] || [];
-    for (const sc of setCookieHeaders) {
-        const [nameVal] = sc.split(';');
-        const eqIdx = nameVal.indexOf('=');
-        if (eqIdx > 0) {
-            cookies[nameVal.substring(0, eqIdx).trim()] = nameVal.substring(eqIdx + 1).trim();
-        }
+function killZombieBrowsers() {
+    if (process.platform !== 'linux') return;
+    try {
+        console.log('[System] 🧛 Zombie Hunter: cleaning up stale browser processes...');
+        execSync('pkill -9 -f "chromium.*--headless" 2>/dev/null || true', { timeout: 5000 });
+        execSync('rm -rf /tmp/playwright_chromiumdev_profile-* 2>/dev/null || true', { timeout: 5000 });
+        console.log('[System] ✅ Cleanup done');
+    } catch (e) {
+        console.warn(`[System] ⚠️ Cleanup error: ${e.message}`);
     }
-    return cookies;
 }
 
-/** Convert cookie object → axios Cookie header string */
-function cookieHeader(cookies) {
-    return Object.entries(cookies).map(([k, v]) => `${k}=${v}`).join('; ');
-}
+// ═══════════════════════════════════════════════════════
+// HTML Parsing helpers
+// ═══════════════════════════════════════════════════════
 
-/** Convert cookie object → Playwright cookie array */
-function toPlaywrightCookies(cookies) {
-    return Object.entries(cookies).map(([name, value]) => ({
-        name, value,
-        domain: '.facebook.com',
-        path: '/',
-        httpOnly: true,
-        secure: true,
-        sameSite: 'None',
-    }));
-}
-
-/** Extract HTML form hidden fields */
+/** Extract hidden form fields from HTML */
 function extractFormFields(html) {
     const fields = {};
-    const regex = /name="([^"]+)"\s+value="([^"]*)"/g;
+    // Match hidden inputs: <input type="hidden" name="xxx" value="yyy">
+    const regex = /<input[^>]*?name="([^"]+)"[^>]*?value="([^"]*)"[^>]*?>/gi;
     let match;
     while ((match = regex.exec(html)) !== null) {
-        if (!['email', 'pass', 'login'].includes(match[1])) {
-            fields[match[1]] = match[2];
+        const name = match[1];
+        if (!['email', 'pass', 'login'].includes(name)) {
+            fields[name] = match[2];
+        }
+    }
+    // Also match reversed order: value before name
+    const regex2 = /<input[^>]*?value="([^"]*)"[^>]*?name="([^"]+)"[^>]*?>/gi;
+    while ((match = regex2.exec(html)) !== null) {
+        const name = match[2];
+        if (!['email', 'pass', 'login'].includes(name) && !fields[name]) {
+            fields[name] = match[1];
         }
     }
     return fields;
 }
 
-/**
- * HTTP-based login on m.facebook.com
- * Returns collected cookies or null on failure
- */
-async function httpLogin(accEmail, accPassword, code, tag) {
-    let allCookies = {};
-
-    const axiosConfig = {
-        headers: {
-            'User-Agent': UA_MOBILE,
-            'Accept': 'text/html,application/xhtml+xml',
-            'Accept-Language': 'en-US,en;q=0.9',
-        },
-        maxRedirects: 5,
-        timeout: 30000,
-        // Important: handle cookies manually
-        withCredentials: false,
-        validateStatus: () => true, // Don't throw on any status
-    };
-
-    try {
-        // ─── Step 1: GET login page ───
-        console.log(`${tag} 🌐 HTTP: GET m.facebook.com/login/...`);
-        const loginResp = await axios.get('https://m.facebook.com/login/', axiosConfig);
-        Object.assign(allCookies, extractCookiesFromResponse(loginResp));
-        console.log(`${tag} 🔧 Login page: ${loginResp.status}, cookies: ${Object.keys(allCookies).length}`);
-
-        // Parse form fields
-        const formFields = extractFormFields(loginResp.data);
-        console.log(`${tag} 🔧 Form fields: ${Object.keys(formFields).join(', ')}`);
-
-        // ─── Step 2: POST credentials ───
-        const postData = new URLSearchParams({
-            ...formFields,
-            email: accEmail,
-            pass: accPassword,
-            login: 'Log In',
-        });
-
-        console.log(`${tag} 🔑 HTTP: POST login credentials...`);
-        const postResp = await axios.post(
-            'https://m.facebook.com/login/device-based/regular/login/',
-            postData.toString(),
-            {
-                ...axiosConfig,
-                headers: {
-                    ...axiosConfig.headers,
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Referer': 'https://m.facebook.com/login/',
-                    'Cookie': cookieHeader(allCookies),
-                },
-                maxRedirects: 0, // Don't follow — we need cookies from each redirect
-                validateStatus: () => true,
-            }
-        );
-        Object.assign(allCookies, extractCookiesFromResponse(postResp));
-        console.log(`${tag} 🔧 POST result: ${postResp.status}, cookies: ${Object.keys(allCookies).length}`);
-
-        // Follow redirects manually to collect all cookies
-        let location = postResp.headers['location'];
-        let currentUrl = location || '';
-        for (let redir = 0; redir < 8 && location; redir++) {
-            // Make absolute if relative
-            if (location.startsWith('/')) location = `https://m.facebook.com${location}`;
-
-            const redirResp = await axios.get(location, {
-                ...axiosConfig,
-                headers: {
-                    ...axiosConfig.headers,
-                    Cookie: cookieHeader(allCookies),
-                    Referer: 'https://m.facebook.com/',
-                },
-                maxRedirects: 0,
-                validateStatus: () => true,
-            });
-            Object.assign(allCookies, extractCookiesFromResponse(redirResp));
-            location = redirResp.headers['location'];
-            currentUrl = redirResp.request?.res?.responseUrl || location || currentUrl;
-
-            if (redirResp.status >= 200 && redirResp.status < 300) {
-                // Got a final page
-                currentUrl = location || currentUrl;
-                console.log(`${tag} 🔧 Redirect ${redir + 1}: final page ${redirResp.status}`);
-
-                // Check if this is a 2FA page
-                if (redirResp.data?.includes('approvals_code') || redirResp.data?.includes('checkpoint')) {
-                    return await handle2FAHTTP(tag, allCookies, redirResp.data, code);
-                }
-                break;
-            }
-
-            console.log(`${tag} 🔧 Redirect ${redir + 1}: ${redirResp.status} → ${(location || '').substring(0, 60)}`);
-        }
-
-        // Check if we need 2FA
-        if (currentUrl.includes('checkpoint') || currentUrl.includes('two_step') || currentUrl.includes('approvals')) {
-            console.log(`${tag} 🔐 2FA checkpoint detected via HTTP`);
-            // Fetch the checkpoint page
-            const cpResp = await axios.get(currentUrl.startsWith('/') ? `https://m.facebook.com${currentUrl}` : currentUrl, {
-                ...axiosConfig,
-                headers: { ...axiosConfig.headers, Cookie: cookieHeader(allCookies) },
-            });
-            Object.assign(allCookies, extractCookiesFromResponse(cpResp));
-            return await handle2FAHTTP(tag, allCookies, cpResp.data, code);
-        }
-
-        console.log(`${tag} 📥 HTTP login cookies: ${Object.keys(allCookies).length} (c_user: ${allCookies.c_user ? 'YES' : 'NO'})`);
-        return allCookies;
-
-    } catch (err) {
-        console.warn(`${tag} ❌ HTTP login error: ${err.message}`);
-        return null;
-    }
-}
-
-/** Handle 2FA via HTTP after login */
-async function handle2FAHTTP(tag, allCookies, pageHtml, code) {
-    if (!code) {
-        console.warn(`${tag} ❌ 2FA required but no code available`);
-        return null;
-    }
-
-    console.log(`${tag} 🔐 HTTP 2FA: submitting code ${code}...`);
-
-    const formFields = extractFormFields(pageHtml);
-    // Find form action
-    const actionMatch = pageHtml.match(/action="([^"]+)"/);
-    let formAction = actionMatch?.[1] || '/checkpoint/';
-    if (formAction.startsWith('/')) formAction = `https://m.facebook.com${formAction}`;
-    // Decode HTML entities
-    formAction = formAction.replace(/&amp;/g, '&');
-
-    const postData = new URLSearchParams({
-        ...formFields,
-        approvals_code: code.replace(/\s/g, ''),
-    });
-
-    try {
-        const resp = await axios.post(formAction, postData.toString(), {
-            headers: {
-                'User-Agent': UA_MOBILE,
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Cookie': cookieHeader(allCookies),
-                'Referer': 'https://m.facebook.com/',
-            },
-            maxRedirects: 5,
-            timeout: 30000,
-            validateStatus: () => true,
-        });
-        Object.assign(allCookies, extractCookiesFromResponse(resp));
-        console.log(`${tag} 🔧 2FA result: ${resp.status}, cookies: ${Object.keys(allCookies).length}`);
-
-        // Handle checkpoint continuation steps (save device, etc.)
-        let html = resp.data || '';
-        for (let step = 0; step < 5; step++) {
-            if (!html.includes('checkpoint') && !resp.headers?.location?.includes('checkpoint')) break;
-
-            const stepFields = extractFormFields(html);
-            const stepAction = html.match(/action="([^"]+)"/)?.[1];
-            if (!stepAction) break;
-
-            const stepUrl = stepAction.startsWith('/') ? `https://m.facebook.com${stepAction}` : stepAction;
-            const stepData = new URLSearchParams({ ...stepFields, submit: 'Continue' });
-
-            const stepResp = await axios.post(stepUrl.replace(/&amp;/g, '&'), stepData.toString(), {
-                headers: {
-                    'User-Agent': UA_MOBILE,
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Cookie': cookieHeader(allCookies),
-                },
-                maxRedirects: 5,
-                timeout: 15000,
-                validateStatus: () => true,
-            });
-            Object.assign(allCookies, extractCookiesFromResponse(stepResp));
-            html = stepResp.data || '';
-            console.log(`${tag} ✅ Checkpoint step ${step + 1}: ${stepResp.status}`);
-        }
-
-        console.log(`${tag} 📥 Post-2FA cookies: ${Object.keys(allCookies).length} (c_user: ${allCookies.c_user ? 'YES' : 'NO'})`);
-        return allCookies;
-    } catch (err) {
-        console.warn(`${tag} ❌ 2FA HTTP error: ${err.message}`);
-        return null;
-    }
+/** Extract form action URL from HTML */
+function extractFormAction(html) {
+    const match = html.match(/<form[^>]*?action="([^"]+)"/i);
+    if (!match) return null;
+    return match[1].replace(/&amp;/g, '&');
 }
 
 // ═══════════════════════════════════════════════════════
-// Newsfeed Warming + VIP Interaction
+// Newsfeed Warming
 // ═══════════════════════════════════════════════════════
 
 async function interactWithNewsfeed(page, tag) {
     console.log(`${tag} 🎭 Warming: scroll + random Like...`);
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 3; i++) {
         await page.mouse.wheel(0, Math.floor(Math.random() * 800) + 400);
         await delay(2000 + Math.random() * 3000);
-
         if (Math.random() < 0.3) {
             try {
                 const likeBtn = await page.$('div[role="button"][aria-label="Like"], div[role="button"][aria-label="Thích"]');
@@ -430,7 +235,7 @@ async function interactWithNewsfeed(page, tag) {
                         await delay(1000);
                         await likeBtn.click();
                         console.log(`${tag} 👍 Random Like!`);
-                        await delay(3000 + Math.random() * 3000);
+                        await delay(2000 + Math.random() * 3000);
                     }
                 }
             } catch { }
@@ -439,13 +244,9 @@ async function interactWithNewsfeed(page, tag) {
 }
 
 // ═══════════════════════════════════════════════════════
-// MAIN: Self-Heal Login
+// MAIN: Self-Heal Login (context.request API + Golden Session)
 // ═══════════════════════════════════════════════════════
 
-/**
- * Self-Healing Login: HTTP Login + Playwright Golden Session
- * @returns {string|null} path to storageState file, or null
- */
 async function selfHealLogin(browser, account, tag) {
     const accEmail = account.email;
     const accPassword = account.password;
@@ -456,10 +257,10 @@ async function selfHealLogin(browser, account, tag) {
         return null;
     }
 
-    // 🧹 Clear old broken sessions first
+    // 🧹 Clear old broken sessions
     clearInvalidSession(accUsername);
 
-    // Generate 2FA code
+    // Generate 2FA code upfront
     let code = null;
     const totpSecret = getTotpSecret(accEmail);
     console.log(`${tag} 🔧 TOTP: ${totpSecret ? 'YES' : 'NO'}`);
@@ -474,31 +275,161 @@ async function selfHealLogin(browser, account, tag) {
         if (code) console.log(`${tag} 🎫 Recovery code: ${code}`);
     }
 
-    try {
-        // ═══ PHASE 1: HTTP LOGIN (no browser, invisible to Arkose) ═══
-        console.log(`${tag} 🌐 Phase 1: HTTP login on m.facebook.com...`);
-        const httpCookies = await httpLogin(accEmail, accPassword, code, tag);
+    // ═══ Create context — cookies shared between API and pages ═══
+    const goldenUA = UA_POOL[Math.floor(Math.random() * UA_POOL.length)];
+    let ctx = null;
 
-        if (!httpCookies) {
-            console.warn(`${tag} ❌ HTTP login failed`);
-            return null;
+    try {
+        ctx = await browser.newContext({
+            userAgent: UA_MOBILE,
+            viewport: { width: 390, height: 844 },
+            locale: 'en-US',
+        });
+
+        const api = ctx.request; // Playwright API — shares cookies with pages!
+
+        // ═══ PHASE 1: HTTP LOGIN via context.request ═══
+        // Sends proper Sec-Fetch-* headers automatically, follows redirects,
+        // stores cookies in context cookie jar
+        console.log(`${tag} 🌐 Phase 1: API login on m.facebook.com...`);
+
+        // Step 1: GET login page
+        const loginResp = await api.get('https://m.facebook.com/login/', {
+            headers: {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            },
+        });
+        const loginHtml = await loginResp.text();
+        const loginStatus = loginResp.status();
+        console.log(`${tag} 🔧 GET login: ${loginStatus}, length: ${loginHtml.length}`);
+
+        // Check if we got a login form
+        const hasForm = loginHtml.includes('name="email"') || loginHtml.includes('name="pass"');
+        console.log(`${tag} 🔧 Has login form: ${hasForm ? 'YES' : 'NO'}`);
+
+        if (!hasForm) {
+            // Try noscript fallback
+            console.log(`${tag} 🔧 Trying noscript fallback...`);
+            const noscriptResp = await api.get('https://www.facebook.com/login/?_fb_noscript=1');
+            const noscriptHtml = await noscriptResp.text();
+            const noscriptHasForm = noscriptHtml.includes('name="email"') || noscriptHtml.includes('name="pass"');
+            console.log(`${tag} 🔧 Noscript: ${noscriptResp.status()}, form: ${noscriptHasForm ? 'YES' : 'NO'}, length: ${noscriptHtml.length}`);
+
+            if (!noscriptHasForm) {
+                console.warn(`${tag} ❌ No login form found on any endpoint`);
+                console.log(`${tag} 🔧 Page preview: ${loginHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').substring(0, 200)}`);
+                await ctx.close();
+                return null;
+            }
         }
 
-        const cookieNames = Object.keys(httpCookies);
-        console.log(`${tag} 📥 HTTP cookies: ${cookieNames.length} (${cookieNames.slice(0, 8).join(', ')})`);
+        // Parse form fields
+        const formFields = extractFormFields(loginHtml);
+        const formAction = extractFormAction(loginHtml);
+        console.log(`${tag} 🔧 Form fields: ${Object.keys(formFields).join(', ') || 'none'}`);
+        console.log(`${tag} 🔧 Form action: ${formAction || 'not found'}`);
 
-        // ═══ PHASE 2: GOLDEN SESSION (Playwright, JS enabled) ═══
-        const goldenUA = UA_POOL[Math.floor(Math.random() * UA_POOL.length)];
-        console.log(`${tag} 💎 Phase 2: Golden Session (UA: ${goldenUA.substring(0, 40)}...)...`);
+        // Step 2: POST credentials
+        let postUrl = formAction || '/login/device-based/regular/login/';
+        if (postUrl.startsWith('/')) postUrl = `https://m.facebook.com${postUrl}`;
+
+        const formData = {
+            ...formFields,
+            email: accEmail,
+            pass: accPassword,
+            login: 'Log In',
+        };
+
+        console.log(`${tag} 🔑 POST credentials → ${postUrl.substring(0, 60)}...`);
+        const postResp = await api.post(postUrl, {
+            form: formData,
+            headers: {
+                'Referer': 'https://m.facebook.com/login/',
+            },
+        });
+        const postHtml = await postResp.text();
+        const postUrl2 = postResp.url();
+        console.log(`${tag} 🔧 POST result: ${postResp.status()}, URL: ${postUrl2.substring(0, 100)}`);
+
+        // Step 3: Handle 2FA checkpoint
+        if (postUrl2.includes('checkpoint') || postUrl2.includes('two_step') ||
+            postUrl2.includes('approvals') || postHtml.includes('approvals_code')) {
+            console.log(`${tag} 🔐 2FA checkpoint detected`);
+
+            if (!code) {
+                console.warn(`${tag} ❌ No 2FA code available!`);
+                await ctx.close();
+                return null;
+            }
+
+            // Parse 2FA form
+            let tfaHtml = postHtml;
+            // If redirected to a new URL, fetch it
+            if (!tfaHtml.includes('approvals_code') && !tfaHtml.includes('name="approvals_code"')) {
+                console.log(`${tag} 🔧 Fetching 2FA page...`);
+                const tfaResp = await api.get(postUrl2);
+                tfaHtml = await tfaResp.text();
+            }
+
+            const tfaFields = extractFormFields(tfaHtml);
+            let tfaAction = extractFormAction(tfaHtml);
+            if (!tfaAction) tfaAction = postUrl2; // Use current URL
+            if (tfaAction.startsWith('/')) tfaAction = `https://m.facebook.com${tfaAction}`;
+
+            console.log(`${tag} 🔧 2FA form action: ${tfaAction.substring(0, 60)}`);
+            console.log(`${tag} ⚡ Submitting 2FA code ${code}...`);
+
+            const tfaResp2 = await api.post(tfaAction, {
+                form: {
+                    ...tfaFields,
+                    approvals_code: code.replace(/\s/g, ''),
+                },
+                headers: { 'Referer': postUrl2 },
+            });
+            let tfaHtml2 = await tfaResp2.text();
+            let tfaUrl = tfaResp2.url();
+            console.log(`${tag} 🔧 2FA result: ${tfaResp2.status()}, URL: ${tfaUrl.substring(0, 80)}`);
+
+            // Handle checkpoint continuation steps (Save Device, Continue, etc.)
+            for (let step = 0; step < 6; step++) {
+                if (!tfaUrl.includes('checkpoint') && !tfaUrl.includes('two_step') && !tfaUrl.includes('approvals')) break;
+
+                const stepFields = extractFormFields(tfaHtml2);
+                let stepAction = extractFormAction(tfaHtml2);
+                if (!stepAction) break;
+                if (stepAction.startsWith('/')) stepAction = `https://m.facebook.com${stepAction}`;
+
+                // Add submit/continue field
+                const submitData = { ...stepFields };
+                if (!submitData.submit) submitData.submit = 'Continue';
+
+                console.log(`${tag} ✅ Checkpoint step ${step + 1} → POST ${stepAction.substring(0, 50)}...`);
+                const stepResp = await api.post(stepAction, {
+                    form: submitData,
+                    headers: { 'Referer': tfaUrl },
+                });
+                tfaHtml2 = await stepResp.text();
+                tfaUrl = stepResp.url();
+                console.log(`${tag} 🔧 Step ${step + 1}: ${stepResp.status()}, URL: ${tfaUrl.substring(0, 80)}`);
+            }
+        }
+
+        // ═══ PHASE 2: GOLDEN SESSION (same context, cookies already loaded!) ═══
+        // The beauty: context.request shared cookies with context.newPage()!
+        console.log(`${tag} 💎 Phase 2: Golden Session (cookies already in context)...`);
+
+        // Switch to desktop UA for the page
+        // Note: we can't change UA mid-context, so we transfer cookies to a new context
+        const allCookies = await ctx.cookies();
+        await ctx.close();
+        ctx = null;
 
         const goldenCtx = await browser.newContext({
             userAgent: goldenUA,
             viewport: { width: 1280, height: 720 },
+            locale: 'en-US',
         });
-
-        // Inject HTTP cookies into Playwright
-        const pwCookies = toPlaywrightCookies(httpCookies);
-        await goldenCtx.addCookies(pwCookies);
+        await goldenCtx.addCookies(allCookies);
         const goldenPage = await goldenCtx.newPage();
 
         try {
@@ -530,7 +461,7 @@ async function selfHealLogin(browser, account, tag) {
                 await delay(5000);
             }
 
-            // ─── Check + Save ───
+            // Check + Save
             const cookies = await goldenCtx.cookies();
             const fbCookies = cookies.filter(c => c.domain?.includes('facebook'));
             const hasCUser = cookies.some(c => c.name === 'c_user');
@@ -546,7 +477,7 @@ async function selfHealLogin(browser, account, tag) {
 
             if (hasCUser && hasXs) {
                 console.log(`${tag} ✨ GOLDEN SESSION! (${fbCookies.length} cookies) → ${accUsername}`);
-                backupGoldenSession(accUsername); // 💾 Backup to vault
+                backupGoldenSession(accUsername);
             } else {
                 console.log(`${tag} ⚠️ Session saved but ${hasCUser ? 'missing xs' : 'WEAK (no c_user)'} → ${accUsername}`);
             }
@@ -554,16 +485,23 @@ async function selfHealLogin(browser, account, tag) {
             await goldenCtx.close();
             return ssPath;
         } catch (warmErr) {
-            console.warn(`${tag} ⚠️ Phase 2 error: ${warmErr.message}. Saving HTTP cookies...`);
-            fs.mkdirSync(SESSIONS_DIR, { recursive: true });
-            const ssPath = path.join(SESSIONS_DIR, `${accUsername}_auth.json`);
-            await goldenCtx.storageState({ path: ssPath });
-            await goldenCtx.close();
-            return ssPath;
+            console.warn(`${tag} ⚠️ Phase 2 error: ${warmErr.message}`);
+            // Try to save what we have
+            try {
+                fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+                const ssPath = path.join(SESSIONS_DIR, `${accUsername}_auth.json`);
+                await goldenCtx.storageState({ path: ssPath });
+                await goldenCtx.close();
+                return ssPath;
+            } catch {
+                try { await goldenCtx.close(); } catch { }
+                return null;
+            }
         }
 
     } catch (err) {
         console.warn(`${tag} ❌ Self-heal error: ${err.message}`);
+        if (ctx) try { await ctx.close(); } catch { }
         return null;
     }
 }
@@ -575,5 +513,6 @@ module.exports = {
     getRecoveryCode,
     clearInvalidSession,
     backupGoldenSession,
+    killZombieBrowsers,
     interactWithNewsfeed,
 };
