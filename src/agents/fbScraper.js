@@ -1524,62 +1524,103 @@ async function _selfHealLogin(browser, account, tag) {
             }
 
             // ─── SWITCH TO MBASIC for 2FA (plain HTML, no reCAPTCHA) ───
-            console.log(`${tag} 🔄 Switching to mbasic.facebook.com for 2FA entry...`);
-            await page.goto('https://mbasic.facebook.com/checkpoint/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+            // CRITICAL: Transform the CURRENT checkpoint URL from www → mbasic
+            // (preserves encrypted_context parameter needed for session continuity)
+            const currentUrl = page.url();
+            const mbasicTargetUrl = currentUrl.replace('www.facebook.com', 'mbasic.facebook.com');
+            console.log(`${tag} 🔄 Switching to mbasic: ${mbasicTargetUrl.substring(0, 120)}`);
+            await page.goto(mbasicTargetUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
             await delay(3000);
-            const mbasicUrl = page.url();
-            console.log(`${tag} 🔧 mbasic checkpoint URL: ${mbasicUrl.substring(0, 120)}`);
 
-            // Dump page content for debugging
+            let mbasicUrl = page.url();
+            console.log(`${tag} 🔧 mbasic URL: ${mbasicUrl.substring(0, 120)}`);
+
+            // Check if mbasic lost session (redirected to login page)
+            if (mbasicUrl.includes('/login') || (await page.$('input[name="email"]') && !await page.$('input[name="approvals_code"]'))) {
+                console.log(`${tag} ⚠️ mbasic lost session, trying /checkpoint/ directly...`);
+                await page.goto('https://mbasic.facebook.com/checkpoint/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+                await delay(3000);
+                mbasicUrl = page.url();
+                console.log(`${tag} 🔧 Retry URL: ${mbasicUrl.substring(0, 120)}`);
+            }
+
+            // Dump page for debugging
             const bodyText = await page.evaluate(() => document.body?.innerText?.substring(0, 500) || 'EMPTY');
             console.log(`${tag} 🔧 2FA page text: ${bodyText.substring(0, 200)}`);
 
-            // Find code input on mbasic checkpoint page
-            const codeInput = await page.$('input[name="approvals_code"]') ||
-                await page.$('input[type="text"]:not([name="email"]):not([name="pass"])') ||
-                await page.$('input[type="tel"]');
+            // ─── SMART NAVIGATOR: Find code input or click "Try Another Way" ───
+            let codeInput = await page.$('input[name="approvals_code"]');
+
+            if (!codeInput) {
+                // Facebook may default to "Approve from device" — need to click "Try another way"
+                console.log(`${tag} 🔍 No code input, looking for "Try another way"...`);
+                const tryAnotherLinks = [
+                    'a:has-text("Try another way")',
+                    'a:has-text("Thử cách khác")',
+                    'a:has-text("another way")',
+                    'a:has-text("Sử dụng mã xác nhận")',
+                    'a:has-text("Use a login code")',
+                    'a:has-text("Enter login code")',
+                    'a[href*="login_code"]',
+                    'a[href*="approvals"]',
+                ];
+                for (const sel of tryAnotherLinks) {
+                    try {
+                        const link = await page.$(sel);
+                        if (link) {
+                            console.log(`${tag} 🔧 Found "${sel}" — clicking...`);
+                            await Promise.all([
+                                page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { }),
+                                link.click()
+                            ]);
+                            await delay(3000);
+                            console.log(`${tag} 🔧 After "Try another way": ${page.url().substring(0, 100)}`);
+                            break;
+                        }
+                    } catch { }
+                }
+                // Try to find code input again
+                codeInput = await page.$('input[name="approvals_code"]') ||
+                    await page.$('input[type="text"]:not([name="email"]):not([name="pass"])') ||
+                    await page.$('input[type="tel"]');
+            }
 
             if (codeInput) {
                 console.log(`${tag} 🔧 Code input FOUND — filling ${code}...`);
-                await codeInput.fill(code);
-                await delay(500);
+                await codeInput.fill(code.replace(/\s/g, '')); // Remove spaces
+                await delay(1000);
 
-                // Submit
-                const submitBtn = await page.$('input[type="submit"]') ||
-                    await page.$('button[type="submit"]') ||
-                    await page.$('#checkpointSubmitButton');
-
-                if (submitBtn) {
-                    console.log(`${tag} 🔧 Submit button FOUND — clicking...`);
-                    await Promise.all([
-                        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { }),
-                        submitBtn.click()
-                    ]);
-                } else {
-                    await codeInput.press('Enter');
-                }
+                // ─── FORCE SUBMIT: Enter key + JS eval (bypass invisible button) ───
+                console.log(`${tag} ⚡ Force-submitting with Enter + JS eval...`);
+                await Promise.all([
+                    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => { }),
+                    page.keyboard.press('Enter'),
+                    page.evaluate(() => {
+                        const btn = document.querySelector('input[type="submit"], button[type="submit"], input[value="Xác nhận"], input[value="Continue"], input[value="Submit Code"]');
+                        if (btn) btn.click();
+                    }).catch(() => { })
+                ]);
                 await delay(3000);
                 console.log(`${tag} 🔧 URL after 2FA submit: ${page.url().substring(0, 120)}`);
 
-                // Handle checkpoint steps (mbasic shows Continue/Save forms)
+                // Handle checkpoint steps (Continue/Save Browser — use force click)
                 for (let step = 0; step < 5; step++) {
                     const stepUrl = page.url();
                     if (!stepUrl.includes('checkpoint') && !stepUrl.includes('two_step') && !stepUrl.includes('approvals')) break;
 
-                    const continueBtn = await page.$('input[type="submit"]') ||
-                        await page.$('button[type="submit"]') ||
-                        await page.$('#checkpointSubmitButton');
-                    if (continueBtn) {
-                        await Promise.all([
-                            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => { }),
-                            continueBtn.click()
-                        ]);
-                        await delay(2000);
-                        console.log(`${tag} ✅ Checkpoint step ${step + 1} → ${page.url().substring(0, 80)}`);
-                    } else break;
+                    // Force submit with Enter + JS eval
+                    await Promise.all([
+                        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => { }),
+                        page.keyboard.press('Enter'),
+                        page.evaluate(() => {
+                            const btn = document.querySelector('input[type="submit"], button[type="submit"]');
+                            if (btn) btn.click();
+                        }).catch(() => { })
+                    ]);
+                    await delay(2000);
+                    console.log(`${tag} ✅ Checkpoint step ${step + 1} → ${page.url().substring(0, 80)}`);
                 }
             } else {
-                // If mbasic also has no input, dump HTML for debugging
                 console.warn(`${tag} ❌ No code input found on mbasic 2FA page!`);
                 const html = await page.evaluate(() => document.body?.innerHTML?.substring(0, 500) || '');
                 console.log(`${tag} 🔧 2FA HTML: ${html.substring(0, 300)}`);
