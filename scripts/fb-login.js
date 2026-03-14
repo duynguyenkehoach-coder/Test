@@ -91,7 +91,31 @@ async function loginAndSave(email, password, accName) {
         await page.waitForTimeout(500 + Math.random() * 500);
 
         console.log('🔐 Submitting login...');
-        await page.click('button[name="login"]');
+        // Try multiple login button selectors (Facebook changes these)
+        const loginSelectors = [
+            'button[name="login"]',
+            'button[data-loginbutton="true"]',
+            'button[type="submit"]',
+            '#loginbutton',
+            'input[type="submit"]',
+        ];
+        let clicked = false;
+        for (const sel of loginSelectors) {
+            try {
+                const btn = await page.$(sel);
+                if (btn) {
+                    await btn.click({ timeout: 5000 });
+                    clicked = true;
+                    console.log(`   ✓ Clicked: ${sel}`);
+                    break;
+                }
+            } catch { }
+        }
+        if (!clicked) {
+            // Ultimate fallback: press Enter on password field
+            console.log('   ⚡ Pressing Enter to submit...');
+            await passInput.press('Enter');
+        }
 
         // Step 3: Wait for redirect
         console.log('⏳ Waiting for login result (30s)...');
