@@ -1453,61 +1453,47 @@ async function _selfHealLogin(browser, account, tag) {
 
     let freshContext = null;
     try {
-        // Use MBASIC Facebook — pure HTML, NO JavaScript, NO React, NO reCAPTCHA
-        // mbasic.facebook.com is designed for old phones, works perfectly with headless
+        // ═══ HYBRID STRATEGY ═══
+        // Step 1: Login on www.facebook.com (always works, no redirect issues)
+        // Step 2: If 2FA → switch to mbasic.facebook.com/checkpoint/ (plain HTML, no reCAPTCHA)
         freshContext = await browser.newContext({
-            userAgent: 'Mozilla/5.0 (Linux; U; Android 4.4.2; en-us; SCH-I535 Build/KOT49H) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30',
-            viewport: { width: 360, height: 640 },
-            javaScriptEnabled: false, // mbasic works without JS
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            viewport: { width: 1280, height: 720 },
         });
         const page = await freshContext.newPage();
 
-        console.log(`${tag} 🔧 Self-healing: fresh context → mbasic.facebook.com...`);
-        await page.goto('https://mbasic.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 25000 });
-        await delay(2000);
+        // ─── STEP 1: Login on www.facebook.com ───
+        console.log(`${tag} 🔧 Self-healing: www.facebook.com login...`);
+        await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 25000 });
+        await delay(3000);
 
-        // Log what URL we landed on
         const landingUrl = page.url();
         console.log(`${tag} 🔧 Landing URL: ${landingUrl.substring(0, 100)}`);
 
-        // mbasic login form uses simple HTML input fields
-        const emailInput = await page.$('input[name="email"]');
-        const passInput = await page.$('input[name="pass"]');
+        // Fill login form (www selectors)
+        const emailInput = await page.$('input[name="email"], input#email');
+        const passInput = await page.$('input[name="pass"], input#pass');
 
         if (!emailInput || !passInput) {
             const bodyText = await page.evaluate(() => document.body?.innerText?.substring(0, 300) || '');
-            console.warn(`${tag} ⚠️ No login form on mbasic. Body: ${bodyText.substring(0, 150)}`);
+            console.warn(`${tag} ⚠️ No login form. Body: ${bodyText.substring(0, 150)}`);
             await freshContext.close();
             return null;
         }
 
         await emailInput.fill(accEmail);
-        await delay(300);
+        await delay(500 + Math.random() * 500);
         await passInput.fill(accPassword);
-        await delay(300);
-
-        // Submit form — mbasic uses input[type="submit"] or form submit
-        const loginBtn = await page.$('input[name="login"]') ||
-            await page.$('input[type="submit"]') ||
-            await page.$('button[name="login"]');
-        if (loginBtn) {
-            await Promise.all([
-                page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => { }),
-                loginBtn.click()
-            ]);
-        } else {
-            await passInput.press('Enter');
-            await delay(5000);
-        }
+        await delay(500 + Math.random() * 500);
+        await passInput.press('Enter');
 
         console.log(`${tag} 🔧 Login submitted, waiting...`);
-        await delay(3000);
+        await delay(8000);
 
-        // Check for 2FA checkpoint — also handle delayed redirect
+        // ─── STEP 2: Check for 2FA ───
         let url = page.url();
         console.log(`${tag} 🔧 Post-login URL: ${url.substring(0, 120)}`);
 
-        // mbasic 2FA patterns: checkpoint, two_step, login/identify, approvals
         if (url.includes('checkpoint') || url.includes('two_step') || url.includes('login/identify') || url.includes('approvals')) {
             console.log(`${tag} 🔐 2FA checkpoint detected — generating code...`);
 
@@ -1537,13 +1523,20 @@ async function _selfHealLogin(browser, account, tag) {
                 return null;
             }
 
-            // mbasic uses simple HTML forms — dump page for debugging
+            // ─── SWITCH TO MBASIC for 2FA (plain HTML, no reCAPTCHA) ───
+            console.log(`${tag} 🔄 Switching to mbasic.facebook.com for 2FA entry...`);
+            await page.goto('https://mbasic.facebook.com/checkpoint/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+            await delay(3000);
+            const mbasicUrl = page.url();
+            console.log(`${tag} 🔧 mbasic checkpoint URL: ${mbasicUrl.substring(0, 120)}`);
+
+            // Dump page content for debugging
             const bodyText = await page.evaluate(() => document.body?.innerText?.substring(0, 500) || 'EMPTY');
             console.log(`${tag} 🔧 2FA page text: ${bodyText.substring(0, 200)}`);
 
-            // Find code input (mbasic uses simple input fields)
+            // Find code input on mbasic checkpoint page
             const codeInput = await page.$('input[name="approvals_code"]') ||
-                await page.$('input[type="text"]') ||
+                await page.$('input[type="text"]:not([name="email"]):not([name="pass"])') ||
                 await page.$('input[type="tel"]');
 
             if (codeInput) {
@@ -1551,7 +1544,7 @@ async function _selfHealLogin(browser, account, tag) {
                 await codeInput.fill(code);
                 await delay(500);
 
-                // Submit the form
+                // Submit
                 const submitBtn = await page.$('input[type="submit"]') ||
                     await page.$('button[type="submit"]') ||
                     await page.$('#checkpointSubmitButton');
@@ -1568,12 +1561,11 @@ async function _selfHealLogin(browser, account, tag) {
                 await delay(3000);
                 console.log(`${tag} 🔧 URL after 2FA submit: ${page.url().substring(0, 120)}`);
 
-                // Handle checkpoint steps (mbasic may show "Continue" forms)
+                // Handle checkpoint steps (mbasic shows Continue/Save forms)
                 for (let step = 0; step < 5; step++) {
                     const stepUrl = page.url();
                     if (!stepUrl.includes('checkpoint') && !stepUrl.includes('two_step') && !stepUrl.includes('approvals')) break;
 
-                    // mbasic checkpoint has submit buttons
                     const continueBtn = await page.$('input[type="submit"]') ||
                         await page.$('button[type="submit"]') ||
                         await page.$('#checkpointSubmitButton');
@@ -1587,7 +1579,8 @@ async function _selfHealLogin(browser, account, tag) {
                     } else break;
                 }
             } else {
-                console.warn(`${tag} ❌ No code input found on 2FA page!`);
+                // If mbasic also has no input, dump HTML for debugging
+                console.warn(`${tag} ❌ No code input found on mbasic 2FA page!`);
                 const html = await page.evaluate(() => document.body?.innerHTML?.substring(0, 500) || '');
                 console.log(`${tag} 🔧 2FA HTML: ${html.substring(0, 300)}`);
                 await freshContext.close();
