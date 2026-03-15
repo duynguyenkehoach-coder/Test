@@ -102,12 +102,65 @@ const scanLimiter = rateLimit({
 
 app.use('/api/', apiLimiter);
 
+// ╔═══════════════════════════════════════════════════════════╗
+// ║  WORKER WEBHOOK — Receive leads from remote workers       ║
+// ╚═══════════════════════════════════════════════════════════╝
+const WORKER_AUTH_KEY = process.env.WORKER_AUTH_KEY || 'thg_worker_2026';
+
+app.post('/api/leads/collect', (req, res) => {
+    // Auth via custom header (not JWT — workers don't have JWT tokens)
+    const clientKey = req.headers['x-thg-auth-key'];
+    if (clientKey !== WORKER_AUTH_KEY) {
+        console.warn(`[Hub] 🚫 Unauthorized worker from ${req.ip}`);
+        return res.status(401).json({ success: false, error: 'Invalid worker key' });
+    }
+
+    try {
+        const posts = req.body.posts || req.body.data || [];
+        if (!Array.isArray(posts) || posts.length === 0) {
+            return res.status(400).json({ success: false, error: 'No posts provided' });
+        }
+
+        let saved = 0;
+        for (const post of posts) {
+            try {
+                database.insertLead.run({
+                    platform: post.platform || 'facebook',
+                    author_name: post.authorName || post.author_name || 'Unknown',
+                    author_url: post.authorUrl || post.author_url || '',
+                    post_url: post.url || post.post_url || '',
+                    content: post.text || post.content || '',
+                    score: post.score || 0,
+                    category: post.category || 'uncategorised',
+                    urgency: post.urgency || 'low',
+                    summary: post.summary || '',
+                    suggested_response: post.suggested_response || '',
+                    group_name: post.groupName || post.group_name || '',
+                    post_created_at: post.postedAt || post.post_created_at || new Date().toISOString(),
+                });
+                saved++;
+            } catch (e) {
+                // Skip duplicates (dedup by post_url)
+                if (!e.message?.includes('UNIQUE')) console.warn(`[Hub] ⚠️ Insert error: ${e.message}`);
+            }
+        }
+
+        console.log(`[Hub] 📥 Received ${posts.length} posts from worker (saved: ${saved})`);
+        res.json({ success: true, received: posts.length, saved });
+    } catch (err) {
+        console.error(`[Hub] ❌ Collect error: ${err.message}`);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // ── JWT Auth Guard — protects ALL /api/* except /api/auth/* ───────────────
 app.use('/api/', (req, res, next) => {
     // /api/auth/* routes are already handled above — skip double-check
     if (req.path.startsWith('/auth/')) return next();
     // /api/dev/* stays unprotected for dev dashboard
     if (req.path.startsWith('/dev/')) return next();
+    // /api/leads/collect uses X-THG-AUTH-KEY (worker auth), not JWT
+    if (req.path === '/leads/collect' && req.method === 'POST') return next();
     return verifyToken(req, res, next);
 });
 

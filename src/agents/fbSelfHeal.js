@@ -1,26 +1,23 @@
 /**
  * THG Lead Gen — Facebook Self-Healing Login Module
  * 
- * Strategy: Bootstrap datr → API Login → Golden Session
+ * Strategy: Page No-JS Login → Golden Session
  * 
- * WHY "Bootstrap datr" is required:
- *   - Facebook's CDN (Akamai) returns 400 if request has no `datr` cookie
- *   - `datr` is a device-tracking cookie set on first visit to facebook.com
- *   - Without it, ALL login endpoints (m.facebook.com, mbasic) reject requests
- *   - Solution: GET www.facebook.com FIRST → datr saved in cookie jar → then login
- * 
- * WHY UA rotation with sec-ch-ua matching:
- *   - Facebook checks if User-Agent matches sec-ch-ua-platform
- *   - Mismatch = instant 400 or fingerprint flag
- *   - Each strategy has matching UA + sec-ch-ua headers
+ * WHY page.goto() with javaScriptEnabled: false:
+ *   - context.request returns raw HTML: form buried in JS bundles, regex fails
+ *   - page renders DOM: page.$('input[name="email"]') finds form ANYWHERE
+ *   - JS disabled = Arkose Labs cannot run (needs JS engine)
+ *   - Browser still sends proper Sec-Fetch-* headers
+ *   - Noscript fallback shows plain HTML login form
  * 
  * Flow:
- *   1. Create context with mobile UA + matching sec-ch-ua headers
- *   2. Bootstrap: GET www.facebook.com → datr cookie saved
- *   3. GET mbasic.facebook.com/login → parse form (lsd, jazoest)
- *   4. POST credentials → handle 2FA if needed
- *   5. Open page in SAME context → /me identity forcing → warm-up
- *   6. If fail → rotate to next UA strategy and retry
+ *   1. Create context: JS OFF + mobile UA + matching sec-ch-ua
+ *   2. page.goto('https://www.facebook.com/') → datr + noscript login form
+ *   3. page.$('input[name="email"]') → DOM-based form detection
+ *   4. page.fill() + Enter → submit login
+ *   5. Handle 2FA via DOM on checkpoint page
+ *   6. Transfer cookies → JS desktop context → /me + warm-up
+ *   7. If strategy fails → rotate to next UA
  * 
  * @module agents/fbSelfHeal
  */
@@ -60,7 +57,7 @@ const authenticator = {
 };
 
 // ═══════════════════════════════════════════════════════
-// UA Strategies — UA + matching sec-ch-ua headers
+// UA Strategies — matching UA + sec-ch-ua headers
 // ═══════════════════════════════════════════════════════
 
 const UA_STRATEGIES = [
@@ -200,42 +197,12 @@ function killZombieBrowsers() {
     if (process.platform !== 'linux') return;
     try {
         console.log('[System] 🧛 Zombie Hunter: cleaning up...');
-        // Docker-safe: use ps + grep + xargs instead of pkill
         execSync("ps aux | grep -v grep | grep -E 'chrom' | awk '{print $2}' | xargs -r kill -9 2>/dev/null", { timeout: 5000, stdio: 'ignore' });
         execSync('rm -rf /tmp/playwright_chromiumdev_profile-* 2>/dev/null', { timeout: 5000, stdio: 'ignore' });
         console.log('[System] ✅ Cleanup done');
     } catch {
-        // No zombie = no problem
+        // No zombies = no problem
     }
-}
-
-// ═══════════════════════════════════════════════════════
-// HTML Parsing helpers
-// ═══════════════════════════════════════════════════════
-
-function extractFormFields(html) {
-    const fields = {};
-    // Match: name="xxx" value="yyy" (in any order within <input>)
-    const inputRegex = /<input[^>]*>/gi;
-    let inputMatch;
-    while ((inputMatch = inputRegex.exec(html)) !== null) {
-        const tag = inputMatch[0];
-        const nameMatch = tag.match(/name="([^"]+)"/);
-        const valueMatch = tag.match(/value="([^"]*)"/);
-        if (nameMatch && valueMatch) {
-            const name = nameMatch[1];
-            if (!['email', 'pass', 'login'].includes(name)) {
-                fields[name] = valueMatch[1];
-            }
-        }
-    }
-    return fields;
-}
-
-function extractFormAction(html) {
-    const match = html.match(/<form[^>]*?action="([^"]+)"/i);
-    if (!match) return null;
-    return match[1].replace(/&amp;/g, '&');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -250,15 +217,12 @@ async function interactWithNewsfeed(page, tag) {
         if (Math.random() < 0.3) {
             try {
                 const likeBtn = await page.$('div[role="button"][aria-label="Like"], div[role="button"][aria-label="Thích"]');
-                if (likeBtn) {
-                    const isPressed = await likeBtn.getAttribute('aria-pressed');
-                    if (isPressed !== 'true') {
-                        await likeBtn.scrollIntoViewIfNeeded();
-                        await delay(1000);
-                        await likeBtn.click();
-                        console.log(`${tag} 👍 Random Like!`);
-                        await delay(2000 + Math.random() * 3000);
-                    }
+                if (likeBtn && (await likeBtn.getAttribute('aria-pressed')) !== 'true') {
+                    await likeBtn.scrollIntoViewIfNeeded();
+                    await delay(1000);
+                    await likeBtn.click();
+                    console.log(`${tag} 👍 Random Like!`);
+                    await delay(2000 + Math.random() * 3000);
                 }
             } catch { }
         }
@@ -266,282 +230,319 @@ async function interactWithNewsfeed(page, tag) {
 }
 
 // ═══════════════════════════════════════════════════════
-// Try one login attempt with a specific UA strategy
+// DOM-based form detection helpers
+// ═══════════════════════════════════════════════════════
+
+/** Find login form inputs in the page DOM (works with JS off) */
+async function findLoginForm(page, tag) {
+    // Try standard selectors first
+    let emailInput = await page.$('input[name="email"]');
+    let passInput = await page.$('input[name="pass"]');
+
+    if (emailInput && passInput) return { emailInput, passInput };
+
+    // Try ID-based selectors
+    emailInput = await page.$('#email, input#m_login_email');
+    passInput = await page.$('#pass, input#m_login_password');
+
+    if (emailInput && passInput) return { emailInput, passInput };
+
+    // Try type-based selectors (broader search)
+    const allInputs = await page.$$('input');
+    let foundEmail = null, foundPass = null;
+
+    for (const inp of allInputs) {
+        const type = await inp.getAttribute('type').catch(() => '');
+        const name = await inp.getAttribute('name').catch(() => '');
+        const id = await inp.getAttribute('id').catch(() => '');
+        const placeholder = await inp.getAttribute('placeholder').catch(() => '');
+        const ariaLabel = await inp.getAttribute('aria-label').catch(() => '');
+
+        // Log all inputs for debugging
+        if (name || id) {
+            console.log(`${tag}   🔍 <input name="${name}" type="${type}" id="${id}" placeholder="${(placeholder || '').substring(0, 30)}">`);
+        }
+
+        // Match email/text input
+        if (!foundEmail && (type === 'email' || type === 'text' || type === 'tel') &&
+            (name === 'email' || id === 'email' || id === 'm_login_email' ||
+                placeholder?.toLowerCase().includes('email') || placeholder?.toLowerCase().includes('phone') ||
+                ariaLabel?.toLowerCase().includes('email'))) {
+            foundEmail = inp;
+        }
+        // Match password input
+        if (!foundPass && type === 'password') {
+            foundPass = inp;
+        }
+    }
+
+    if (foundEmail && foundPass) return { emailInput: foundEmail, passInput: foundPass };
+    return null;
+}
+
+// ═══════════════════════════════════════════════════════
+// Try login with one UA strategy (page-based, No-JS)
 // ═══════════════════════════════════════════════════════
 
 async function tryLoginWithStrategy(browser, strategy, accEmail, accPassword, code, tag) {
     let ctx = null;
     try {
-        // Create context with matching UA + sec-ch-ua headers
         ctx = await browser.newContext({
             userAgent: strategy.ua,
             extraHTTPHeaders: strategy.headers,
             viewport: strategy.viewport,
             isMobile: true,
+            javaScriptEnabled: false, // KEY: No JS = No Arkose!
             locale: 'en-US',
         });
 
-        const api = ctx.request;
+        const page = await ctx.newPage();
 
-        // ─── STEP 1: Bootstrap — GET www.facebook.com to acquire `datr` cookie ───
-        console.log(`${tag} 🎣 Bootstrap: getting datr from www.facebook.com...`);
-        const bootstrapResp = await api.get('https://www.facebook.com/', {
-            headers: {
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Fetch-User': '?1',
-                'Upgrade-Insecure-Requests': '1',
-            },
+        // ─── Step 1: Navigate to facebook.com (datr bootstrap + noscript form) ───
+        console.log(`${tag} 🎣 Loading facebook.com (No-JS mode)...`);
+        await page.goto('https://www.facebook.com/', {
+            waitUntil: 'load',
+            timeout: 60000,
         });
-        const bootstrapCookies = await ctx.cookies();
-        const hasDatr = bootstrapCookies.some(c => c.name === 'datr');
-        console.log(`${tag} 🔧 Bootstrap: ${bootstrapResp.status()}, datr: ${hasDatr ? 'YES ✅' : 'NO ❌'}, cookies: ${bootstrapCookies.length}`);
+        await delay(3000);
 
-        // ─── STEP 2: GET mbasic login form ───
-        console.log(`${tag} 🚪 GET mbasic login form...`);
-        const loginResp = await api.get('https://mbasic.facebook.com/login/?refsrc=deprecated&lwv=100&_fb_noscript=1', {
-            headers: {
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'same-origin', // Coming from facebook.com
-                'Sec-Fetch-User': '?1',
-                'Upgrade-Insecure-Requests': '1',
-                'Referer': 'https://www.facebook.com/',
-            },
-        });
-        const loginStatus = loginResp.status();
-        const loginHtml = await loginResp.text();
-        const loginUrl = loginResp.url();
-        console.log(`${tag} 🔧 Login page: ${loginStatus}, length: ${loginHtml.length}, URL: ${loginUrl.substring(0, 80)}`);
+        const landingUrl = page.url();
+        console.log(`${tag} 🔧 Landing: ${landingUrl.substring(0, 80)}`);
 
-        if (loginStatus === 400 || loginStatus === 403) {
-            console.warn(`${tag} ⚠️ ${strategy.name} got ${loginStatus} — trying next UA...`);
-            await ctx.close();
-            return null; // Signal to try next strategy
+        // Check datr cookie
+        const cookies = await ctx.cookies();
+        const hasDatr = cookies.some(c => c.name === 'datr');
+        console.log(`${tag} 🔧 datr: ${hasDatr ? 'YES ✅' : 'NO ❌'}, cookies: ${cookies.length}`);
+
+        // ─── Step 2: Find login form via DOM query ───
+        console.log(`${tag} 🔍 Searching for login form in DOM...`);
+        let formResult = await findLoginForm(page, tag);
+
+        if (!formResult) {
+            // Try mbasic (browser follows 302 to www, noscript renders)
+            console.log(`${tag} 🔧 No form on www. Trying mbasic...`);
+            await page.goto('https://mbasic.facebook.com/login/', {
+                waitUntil: 'load',
+                timeout: 30000,
+            });
+            await delay(3000);
+            console.log(`${tag} 🔧 mbasic URL: ${page.url().substring(0, 80)}`);
+            formResult = await findLoginForm(page, tag);
         }
 
-        // Check for form
-        const hasForm = loginHtml.includes('name="email"') && loginHtml.includes('name="pass"');
-        if (!hasForm) {
-            // Maybe we landed on www — try to find a form anyway
-            const preview = loginHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').substring(0, 200);
-            console.log(`${tag} 🔧 Page preview: ${preview}`);
-
-            // Try m.facebook.com as fallback
-            console.log(`${tag} 🔧 Trying m.facebook.com/login/...`);
-            const mResp = await api.get('https://m.facebook.com/login/', {
-                headers: {
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Sec-Fetch-Dest': 'document',
-                    'Sec-Fetch-Mode': 'navigate',
-                    'Sec-Fetch-Site': 'same-origin',
-                    'Referer': 'https://www.facebook.com/',
-                },
+        if (!formResult) {
+            // Try www/login directly
+            console.log(`${tag} 🔧 Trying www.facebook.com/login/...`);
+            await page.goto('https://www.facebook.com/login/', {
+                waitUntil: 'load',
+                timeout: 30000,
             });
-            const mHtml = await mResp.text();
-            const mHasForm = mHtml.includes('name="email"') && mHtml.includes('name="pass"');
-            console.log(`${tag} 🔧 m.facebook.com: ${mResp.status()}, form: ${mHasForm ? 'YES' : 'NO'}, length: ${mHtml.length}`);
+            await delay(3000);
+            formResult = await findLoginForm(page, tag);
+        }
 
-            if (!mHasForm) {
-                console.warn(`${tag} ❌ No login form on any endpoint with ${strategy.name}`);
+        if (!formResult) {
+            console.warn(`${tag} ❌ No login form found with ${strategy.name}`);
+            // Dump page content for debugging
+            const content = await page.content();
+            // Strip scripts, show first 500 chars of HTML
+            const stripped = content.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '').replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+            console.log(`${tag} 🔧 Page HTML (cleaned, first 300): ${stripped.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').substring(0, 300)}`);
+            await ctx.close();
+            return null;
+        }
+
+        // ─── Step 3: Fill form and submit ───
+        console.log(`${tag} 📝 Login form FOUND! Filling credentials...`);
+        await formResult.emailInput.fill(accEmail);
+        await delay(500 + Math.random() * 500);
+        await formResult.passInput.fill(accPassword);
+        await delay(500 + Math.random() * 500);
+
+        // Submit form
+        await Promise.all([
+            page.waitForNavigation({ waitUntil: 'load', timeout: 30000 }).catch(() => { }),
+            page.keyboard.press('Enter'),
+        ]);
+        await delay(5000);
+
+        const postLoginUrl = page.url();
+        console.log(`${tag} 🔧 Post-login URL: ${postLoginUrl.substring(0, 100)}`);
+
+        // ─── Step 4: Handle 2FA ───
+        const needs2FA = postLoginUrl.includes('checkpoint') || postLoginUrl.includes('two_step') ||
+            postLoginUrl.includes('approvals') || postLoginUrl.includes('login/identify');
+
+        if (needs2FA) {
+            console.log(`${tag} 🔐 2FA checkpoint detected`);
+            if (!code) {
+                console.warn(`${tag} ❌ No 2FA code available!`);
                 await ctx.close();
                 return null;
             }
-            // Use m.facebook.com HTML
-            return await doLoginAndGoldenSession(ctx, browser, api, mHtml, 'https://m.facebook.com', accEmail, accPassword, code, tag);
+
+            // Look for code input
+            let codeInput = await page.$('input[name="approvals_code"]');
+            if (!codeInput) {
+                // Click "Try another way" / fallback link
+                const fallbackLink = await page.$('a[href*="checkpoint/fallback"], a[href*="try_another"]');
+                if (fallbackLink) {
+                    console.log(`${tag} 🔧 Clicking fallback link...`);
+                    await Promise.all([
+                        page.waitForNavigation({ waitUntil: 'load', timeout: 15000 }).catch(() => { }),
+                        fallbackLink.click(),
+                    ]);
+                    await delay(3000);
+                    codeInput = await page.$('input[name="approvals_code"]');
+                }
+            }
+
+            // Broader search for code input
+            if (!codeInput) {
+                const inputs = await page.$$('input[type="text"], input[type="tel"], input[type="number"]');
+                for (const inp of inputs) {
+                    const name = await inp.getAttribute('name').catch(() => '');
+                    const type = await inp.getAttribute('type').catch(() => '');
+                    if (name && name !== 'email' && name !== 'pass' && name !== 'lsd') {
+                        console.log(`${tag} 🔧 Using input name="${name}" type="${type}" for 2FA`);
+                        codeInput = inp;
+                        break;
+                    }
+                }
+            }
+
+            if (codeInput) {
+                console.log(`${tag} ⚡ Submitting 2FA code: ${code}`);
+                await codeInput.fill(code.replace(/\s/g, ''));
+                await delay(1000);
+
+                // Check "save device" option
+                const saveDevice = await page.$('input[name="save_device"][value="1"], input[name="name_action_selected"]');
+                if (saveDevice) {
+                    try { await saveDevice.check(); } catch { await saveDevice.click().catch(() => { }); }
+                    console.log(`${tag} 💾 "Save Device" checked`);
+                }
+
+                // Submit
+                await Promise.all([
+                    page.waitForNavigation({ waitUntil: 'load', timeout: 20000 }).catch(() => { }),
+                    page.keyboard.press('Enter'),
+                ]);
+                await delay(5000);
+                console.log(`${tag} 🔧 Post-2FA URL: ${page.url().substring(0, 100)}`);
+
+                // Handle checkpoint continuation steps
+                for (let step = 0; step < 5; step++) {
+                    const stepUrl = page.url();
+                    if (!stepUrl.includes('checkpoint') && !stepUrl.includes('two_step') && !stepUrl.includes('approvals')) break;
+                    await Promise.all([
+                        page.waitForNavigation({ waitUntil: 'load', timeout: 10000 }).catch(() => { }),
+                        page.keyboard.press('Enter'),
+                    ]);
+                    await delay(3000);
+                    console.log(`${tag} ✅ Checkpoint step ${step + 1}: ${page.url().substring(0, 80)}`);
+                }
+            } else {
+                console.warn(`${tag} ❌ No 2FA code input found`);
+                // Dump page for debugging
+                const allInputs = await page.$$('input');
+                for (const inp of allInputs) {
+                    const nm = await inp.getAttribute('name').catch(() => '');
+                    const tp = await inp.getAttribute('type').catch(() => '');
+                    console.log(`${tag}   🔧 <input name="${nm}" type="${tp}">`);
+                }
+                await ctx.close();
+                return null;
+            }
         }
 
-        return await doLoginAndGoldenSession(ctx, browser, api, loginHtml, 'https://mbasic.facebook.com', accEmail, accPassword, code, tag);
+        // ─── Step 5: Golden Session (transfer cookies to JS-enabled desktop context) ───
+        const allCookies = await ctx.cookies();
+        await ctx.close();
+        ctx = null;
+
+        const hasCUserRaw = allCookies.some(c => c.name === 'c_user');
+        console.log(`${tag} 📥 Phase 1 cookies: ${allCookies.length}, c_user: ${hasCUserRaw ? 'YES' : 'NO'}`);
+
+        const goldenUA = UA_DESKTOP_POOL[Math.floor(Math.random() * UA_DESKTOP_POOL.length)];
+        console.log(`${tag} 💎 Phase 2: Golden Session...`);
+
+        const goldenCtx = await browser.newContext({
+            userAgent: goldenUA,
+            viewport: { width: 1280, height: 720 },
+            locale: 'en-US',
+        });
+        await goldenCtx.addCookies(allCookies);
+        const goldenPage = await goldenCtx.newPage();
+
+        try {
+            // Identity Forcing
+            console.log(`${tag} 🆔 Identity forcing: /me...`);
+            await goldenPage.goto('https://www.facebook.com/me', { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await delay(5000);
+            let meUrl = goldenPage.url();
+            console.log(`${tag} 🔧 /me → ${meUrl.substring(0, 100)}`);
+
+            // Handle checkpoint
+            if (meUrl.includes('checkpoint') || meUrl.includes('login')) {
+                for (let i = 0; i < 3; i++) {
+                    await goldenPage.keyboard.press('Enter');
+                    await delay(3000);
+                }
+                meUrl = goldenPage.url();
+            }
+
+            // Warm-up
+            if (!meUrl.includes('/login')) {
+                console.log(`${tag} 🎢 Warming up...`);
+                await goldenPage.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => { });
+                await delay(5000);
+                await interactWithNewsfeed(goldenPage, tag);
+                await goldenPage.goto('https://www.facebook.com/groups/feed/', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => { });
+                await delay(5000);
+            }
+
+            // Check + Save
+            const finalCookies = await goldenCtx.cookies();
+            const fbCookies = finalCookies.filter(c => c.domain?.includes('facebook'));
+            const hasCUser = finalCookies.some(c => c.name === 'c_user');
+            const hasXs = finalCookies.some(c => c.name === 'xs');
+            console.log(`${tag} 🍪 Total: ${finalCookies.length}, FB: ${fbCookies.length}, c_user: ${hasCUser ? '✅' : '❌'}, xs: ${hasXs ? '✅' : '❌'}`);
+
+            const accUsername = accEmail.split('@')[0];
+            fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+            const ssPath = path.join(SESSIONS_DIR, `${accUsername}_auth.json`);
+            await goldenCtx.storageState({ path: ssPath });
+            fs.writeFileSync(path.join(DATA_DIR, `fb_cookies_${accUsername}.json`), JSON.stringify(fbCookies, null, 2));
+
+            if (hasCUser && hasXs) {
+                console.log(`${tag} ✨ GOLDEN SESSION! (${fbCookies.length} cookies) → ${accUsername}`);
+                backupGoldenSession(accUsername);
+            } else {
+                console.log(`${tag} ⚠️ Session saved but ${hasCUser ? 'missing xs' : 'WEAK (no c_user)'} → ${accUsername}`);
+            }
+
+            await goldenCtx.close();
+            return ssPath;
+        } catch (warmErr) {
+            console.warn(`${tag} ⚠️ Phase 2 error: ${warmErr.message}`);
+            try {
+                const accUsername = accEmail.split('@')[0];
+                fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+                const ssPath = path.join(SESSIONS_DIR, `${accUsername}_auth.json`);
+                await goldenCtx.storageState({ path: ssPath });
+                await goldenCtx.close();
+                return ssPath;
+            } catch {
+                try { await goldenCtx.close(); } catch { }
+                return null;
+            }
+        }
 
     } catch (err) {
         console.warn(`${tag} ❌ ${strategy.name} error: ${err.message}`);
         if (ctx) try { await ctx.close(); } catch { }
         return null;
-    }
-}
-
-// ═══════════════════════════════════════════════════════
-// Login POST + 2FA + Golden Session
-// ═══════════════════════════════════════════════════════
-
-async function doLoginAndGoldenSession(ctx, browser, api, loginHtml, baseUrl, accEmail, accPassword, code, tag) {
-    const accUsername = accEmail.split('@')[0];
-
-    // Parse form
-    const fields = extractFormFields(loginHtml);
-    let formAction = extractFormAction(loginHtml);
-    console.log(`${tag} 🔧 Form fields: ${Object.keys(fields).join(', ') || 'none'}`);
-    console.log(`${tag} 🔧 Form action: ${formAction || 'default'}`);
-
-    if (!formAction) formAction = `${baseUrl}/login/device-based/regular/login/`;
-    if (formAction.startsWith('/')) formAction = `${baseUrl}${formAction}`;
-
-    // ─── POST credentials ───
-    console.log(`${tag} 🔑 POST credentials → ${formAction.substring(0, 60)}...`);
-    const postResp = await api.post(formAction, {
-        form: {
-            ...fields,
-            email: accEmail,
-            pass: accPassword,
-            login: 'Log In',
-        },
-        headers: {
-            'Referer': `${baseUrl}/login/`,
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'same-origin',
-        },
-    });
-    const postHtml = await postResp.text();
-    const postUrl = postResp.url();
-    console.log(`${tag} 🔧 POST: ${postResp.status()}, URL: ${postUrl.substring(0, 100)}`);
-
-    // ─── 2FA Handling ───
-    if (postUrl.includes('checkpoint') || postUrl.includes('two_step') ||
-        postUrl.includes('approvals') || postHtml.includes('approvals_code')) {
-        console.log(`${tag} 🔐 2FA checkpoint detected`);
-
-        if (!code) {
-            console.warn(`${tag} ❌ No 2FA code!`);
-            await ctx.close();
-            return null;
-        }
-
-        let tfaHtml = postHtml;
-        // Fetch checkpoint page if needed
-        if (!tfaHtml.includes('approvals_code') && !tfaHtml.includes('name="approvals_code"')) {
-            const tfaResp = await api.get(postUrl, {
-                headers: { 'Referer': `${baseUrl}/login/` },
-            });
-            tfaHtml = await tfaResp.text();
-        }
-
-        const tfaFields = extractFormFields(tfaHtml);
-        let tfaAction = extractFormAction(tfaHtml) || postUrl;
-        if (tfaAction.startsWith('/')) tfaAction = `${baseUrl}${tfaAction}`;
-
-        console.log(`${tag} ⚡ Submitting 2FA code ${code}...`);
-        const tfaPostResp = await api.post(tfaAction, {
-            form: {
-                ...tfaFields,
-                approvals_code: code.replace(/\s/g, ''),
-            },
-            headers: {
-                'Referer': postUrl,
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'same-origin',
-            },
-        });
-        let stepHtml = await tfaPostResp.text();
-        let stepUrl = tfaPostResp.url();
-        console.log(`${tag} 🔧 2FA result: ${tfaPostResp.status()}, URL: ${stepUrl.substring(0, 80)}`);
-
-        // Handle checkpoint steps (Save Device, Continue)
-        for (let step = 0; step < 6; step++) {
-            if (!stepUrl.includes('checkpoint') && !stepUrl.includes('two_step') && !stepUrl.includes('approvals')) break;
-
-            const stepFields = extractFormFields(stepHtml);
-            let stepAction = extractFormAction(stepHtml);
-            if (!stepAction) break;
-            if (stepAction.startsWith('/')) stepAction = `${baseUrl}${stepAction}`;
-
-            const submitData = { ...stepFields };
-            if (!submitData.submit) submitData.submit = 'Continue';
-            // Check "save device" option
-            if (stepHtml.includes('name="name_action_selected"')) {
-                submitData.name_action_selected = 'save_device';
-            }
-
-            const sr = await api.post(stepAction, {
-                form: submitData,
-                headers: { 'Referer': stepUrl },
-            });
-            stepHtml = await sr.text();
-            stepUrl = sr.url();
-            console.log(`${tag} ✅ Checkpoint step ${step + 1}: ${sr.status()}, URL: ${stepUrl.substring(0, 80)}`);
-        }
-    }
-
-    // ─── PHASE 2: Golden Session ───
-    // Transfer cookies to a desktop context for scraping
-    const allCookies = await ctx.cookies();
-    await ctx.close();
-    console.log(`${tag} 📥 API cookies: ${allCookies.length} (c_user: ${allCookies.some(c => c.name === 'c_user') ? 'YES' : 'NO'})`);
-
-    const goldenUA = UA_DESKTOP_POOL[Math.floor(Math.random() * UA_DESKTOP_POOL.length)];
-    console.log(`${tag} 💎 Phase 2: Golden Session...`);
-
-    const goldenCtx = await browser.newContext({
-        userAgent: goldenUA,
-        viewport: { width: 1280, height: 720 },
-        locale: 'en-US',
-    });
-    await goldenCtx.addCookies(allCookies);
-    const goldenPage = await goldenCtx.newPage();
-
-    try {
-        // Identity Forcing
-        console.log(`${tag} 🆔 Identity forcing: /me...`);
-        await goldenPage.goto('https://www.facebook.com/me', { waitUntil: 'domcontentloaded', timeout: 60000 });
-        await delay(5000);
-        let meUrl = goldenPage.url();
-        console.log(`${tag} 🔧 /me → ${meUrl.substring(0, 100)}`);
-
-        if (meUrl.includes('checkpoint') || meUrl.includes('login')) {
-            for (let i = 0; i < 3; i++) {
-                await goldenPage.keyboard.press('Enter');
-                await delay(3000);
-            }
-            meUrl = goldenPage.url();
-        }
-
-        if (!meUrl.includes('/login')) {
-            console.log(`${tag} 🎢 Warming up...`);
-            await goldenPage.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => { });
-            await delay(5000);
-            await interactWithNewsfeed(goldenPage, tag);
-            await goldenPage.goto('https://www.facebook.com/groups/feed/', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => { });
-            await delay(5000);
-        }
-
-        // Check + Save
-        const cookies = await goldenCtx.cookies();
-        const fbCookies = cookies.filter(c => c.domain?.includes('facebook'));
-        const hasCUser = cookies.some(c => c.name === 'c_user');
-        const hasXs = cookies.some(c => c.name === 'xs');
-        console.log(`${tag} 🍪 Total: ${cookies.length}, FB: ${fbCookies.length}, c_user: ${hasCUser ? '✅' : '❌'}, xs: ${hasXs ? '✅' : '❌'}`);
-
-        fs.mkdirSync(SESSIONS_DIR, { recursive: true });
-        const ssPath = path.join(SESSIONS_DIR, `${accUsername}_auth.json`);
-        await goldenCtx.storageState({ path: ssPath });
-        const cookieJsonPath = path.join(DATA_DIR, `fb_cookies_${accUsername}.json`);
-        fs.writeFileSync(cookieJsonPath, JSON.stringify(fbCookies, null, 2));
-
-        if (hasCUser && hasXs) {
-            console.log(`${tag} ✨ GOLDEN SESSION! (${fbCookies.length} cookies) → ${accUsername}`);
-            backupGoldenSession(accUsername);
-        } else {
-            console.log(`${tag} ⚠️ Session saved but ${hasCUser ? 'missing xs' : 'WEAK (no c_user)'} → ${accUsername}`);
-        }
-
-        await goldenCtx.close();
-        return ssPath;
-    } catch (warmErr) {
-        console.warn(`${tag} ⚠️ Phase 2 error: ${warmErr.message}`);
-        try {
-            fs.mkdirSync(SESSIONS_DIR, { recursive: true });
-            const ssPath = path.join(SESSIONS_DIR, `${accUsername}_auth.json`);
-            await goldenCtx.storageState({ path: ssPath });
-            await goldenCtx.close();
-            return ssPath;
-        } catch {
-            try { await goldenCtx.close(); } catch { }
-            return null;
-        }
     }
 }
 
@@ -576,7 +577,7 @@ async function selfHealLogin(browser, account, tag) {
         if (code) console.log(`${tag} 🎫 Recovery code: ${code}`);
     }
 
-    // ═══ Try each UA strategy until one works ═══
+    // ═══ Try each UA strategy ═══
     for (let i = 0; i < UA_STRATEGIES.length; i++) {
         const strategy = UA_STRATEGIES[i];
         console.log(`${tag} 🎭 [${i + 1}/${UA_STRATEGIES.length}] Trying: ${strategy.name}...`);
@@ -587,15 +588,12 @@ async function selfHealLogin(browser, account, tag) {
             return result;
         }
 
-        // Re-generate TOTP code if it might have expired between attempts
+        // Refresh TOTP between strategies
         if (totpSecret && i < UA_STRATEGIES.length - 1) {
-            try {
-                code = authenticator.generate(totpSecret);
-                console.log(`${tag} 🔄 Refreshed TOTP: ${code}`);
-            } catch { }
+            try { code = authenticator.generate(totpSecret); console.log(`${tag} 🔄 Refreshed TOTP: ${code}`); }
+            catch { }
         }
-
-        await delay(3000); // Brief pause between strategies
+        await delay(3000);
     }
 
     console.warn(`${tag} 🚨 All ${UA_STRATEGIES.length} UA strategies failed`);

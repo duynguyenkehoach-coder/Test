@@ -1436,7 +1436,34 @@ async function scrapeFacebookGroups(maxPosts = 20, options = {}, externalGroups 
     }
 
     console.log(`[FBScraper] ✅ Done: ${allPosts.length} posts from ${groups.length} groups`);
+
+    // 🌉 Bridge: send posts to Hub if running as remote worker
+    if (allPosts.length > 0) await bridgeToHub(allPosts);
+
     return allPosts;
+}
+
+/**
+ * Bridge: Send scraped posts to the central Hub (VPS) via webhook.
+ * Only active when HUB_URL env var is set (e.g., http://103.56.160.210:3000)
+ */
+async function bridgeToHub(posts) {
+    const hubUrl = process.env.HUB_URL;
+    if (!hubUrl) return; // Not running as worker — skip
+
+    const authKey = process.env.WORKER_AUTH_KEY || 'thg_worker_2026';
+    const endpoint = `${hubUrl.replace(/\/$/, '')}/api/leads/collect`;
+
+    try {
+        const axios = require('axios');
+        const res = await axios.post(endpoint, { posts }, {
+            headers: { 'x-thg-auth-key': authKey },
+            timeout: 30000,
+        });
+        console.log(`[Bridge] 🚀 Sent ${posts.length} posts to Hub → saved: ${res.data?.saved || '?'}`);
+    } catch (e) {
+        console.warn(`[Bridge] ❌ Hub unreachable: ${e.message}. Posts saved locally only.`);
+    }
 }
 
 // Self-Heal functions moved to ./fbSelfHeal.js
