@@ -153,6 +153,88 @@ app.post('/api/leads/collect', (req, res) => {
     }
 });
 
+// ╔═══════════════════════════════════════════════════════════╗
+// ║  WORKER JOB POLLING — Laptop polls VPS for scan jobs      ║
+// ╚═══════════════════════════════════════════════════════════╝
+
+// GET /api/worker/jobs — Laptop polls this to get pending scan jobs
+app.get('/api/worker/jobs', (req, res) => {
+    if (req.headers['x-thg-auth-key'] !== WORKER_AUTH_KEY) {
+        return res.status(401).json({ success: false, error: 'Invalid worker key' });
+    }
+    try {
+        // Claim the next pending job atomically
+        const job = database.claimNextScan();
+        if (!job) {
+            return res.json({ success: true, job: null });
+        }
+        console.log(`[Hub] 🔧 Worker claimed job #${job.id} (${job.job_type})`);
+        res.json({ success: true, job });
+    } catch (err) {
+        console.error(`[Hub] ❌ Job poll error: ${err.message}`);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// POST /api/worker/jobs/:id/complete — Laptop reports job completion + sends results
+app.post('/api/worker/jobs/:id/complete', express.json({ limit: '10mb' }), (req, res) => {
+    if (req.headers['x-thg-auth-key'] !== WORKER_AUTH_KEY) {
+        return res.status(401).json({ success: false, error: 'Invalid worker key' });
+    }
+    try {
+        const jobId = parseInt(req.params.id);
+        const { status, result, error, posts } = req.body;
+
+        if (status === 'error') {
+            database.failScan(jobId, error || 'Unknown error');
+            console.log(`[Hub] ❌ Worker reported job #${jobId} failed: ${error}`);
+        } else {
+            database.completeScan(jobId, result || {});
+            console.log(`[Hub] ✅ Worker completed job #${jobId}`);
+        }
+
+        // Also save any posts/leads the worker sent
+        let saved = 0;
+        if (Array.isArray(posts) && posts.length > 0) {
+            for (const post of posts) {
+                try {
+                    database.insertLead.run({
+                        platform: post.platform || 'facebook',
+                        author_name: post.author_name || 'Unknown',
+                        author_url: post.author_url || '',
+                        post_url: post.post_url || '',
+                        content: post.content || '',
+                        score: post.score || 0,
+                        category: post.category || 'uncategorised',
+                        urgency: post.urgency || 'low',
+                        summary: post.summary || '',
+                        suggested_response: post.suggested_response || '',
+                        role: post.role || 'buyer',
+                        buyer_signals: post.buyer_signals || post.buyerSignals || '',
+                        scraped_at: post.scraped_at || new Date().toISOString(),
+                        post_created_at: post.post_created_at || new Date().toISOString(),
+                        profit_estimate: post.profit_estimate || post.profitEstimate || '',
+                        gap_opportunity: post.gap_opportunity || post.gapOpportunity || '',
+                        pain_score: post.pain_score || post.painScore || 0,
+                        spam_score: post.spam_score || post.spamScore || 0,
+                        item_type: post.item_type || 'post',
+                    });
+                    saved++;
+                } catch (e) {
+                    if (!e.message?.includes('UNIQUE')) console.warn(`[Hub] ⚠️ Insert error: ${e.message}`);
+                }
+            }
+            if (saved > 0) database.invalidateStatsCache();
+            console.log(`[Hub] 📥 Saved ${saved}/${posts.length} leads from worker`);
+        }
+
+        res.json({ success: true, saved });
+    } catch (err) {
+        console.error(`[Hub] ❌ Complete error: ${err.message}`);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // ── JWT Auth Guard — protects ALL /api/* except /api/auth/* ───────────────
 app.use('/api/', (req, res, next) => {
     // /api/auth/* routes are already handled above — skip double-check

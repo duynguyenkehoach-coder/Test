@@ -38,6 +38,12 @@ const { generateResponses } = require('../prompts/salesCopilot');
 const { sendMessage } = require('../integrations/telegramBot');
 const { cleanOldData, saveLeadsToFile } = require('../data_store/fileManager');
 
+// Hub-Worker mode: poll VPS for jobs instead of local DB
+const HUB_URL = process.env.HUB_URL || '';
+const WORKER_AUTH_KEY = process.env.WORKER_AUTH_KEY || 'thg_worker_2026';
+let axios;
+try { axios = require('axios'); } catch { axios = null; }
+
 const POLL_INTERVAL = 5000; // 5 seconds
 let isProcessing = false;
 
@@ -437,16 +443,39 @@ async function runPipeline(options = {}) {
 }
 
 /**
- * Poll scan_queue for pending jobs
+ * Poll scan_queue for pending jobs (local or remote via HUB_URL)
  */
 async function pollQueue() {
     if (isProcessing) return;
 
-    const job = database.claimNextScan();
+    let job = null;
+    let isRemote = false;
+
+    if (HUB_URL && axios) {
+        // ═══ REMOTE MODE: Poll VPS Hub for jobs ═══
+        try {
+            const resp = await axios.get(`${HUB_URL}/api/worker/jobs`, {
+                headers: { 'x-thg-auth-key': WORKER_AUTH_KEY },
+                timeout: 10000,
+            });
+            job = resp.data?.job || null;
+            isRemote = true;
+        } catch (err) {
+            // Silent fail — Hub might be temporarily unreachable
+            if (!err.message?.includes('ECONNREFUSED')) {
+                console.warn(`[Worker] ⚠️ Hub poll error: ${err.message}`);
+            }
+            return;
+        }
+    } else {
+        // ═══ LOCAL MODE: Poll local SQLite scan_queue ═══
+        job = database.claimNextScan();
+    }
+
     if (!job) return;
 
     isProcessing = true;
-    console.log(`\n[ScraperWorker] 🔒 Claimed job #${job.id} (${job.job_type})`);
+    console.log(`\n[ScraperWorker] 🔒 Claimed job #${job.id} (${job.job_type}) ${isRemote ? '← from VPS Hub' : ''}`);
 
     try {
         const options = {
@@ -456,21 +485,69 @@ async function pollQueue() {
         };
 
         const result = await runPipeline(options);
-        database.completeScan(job.id, result);
+
+        if (isRemote) {
+            // Report completion + send leads back to VPS Hub
+            await reportToHub(job.id, 'done', result);
+        } else {
+            database.completeScan(job.id, result);
+        }
         console.log(`[ScraperWorker] ✅ Job #${job.id} completed`);
     } catch (err) {
         console.error(`[ScraperWorker] ❌ Job #${job.id} failed:`, err.message);
-        database.failScan(job.id, err.message);
+        if (isRemote) {
+            await reportToHub(job.id, 'error', null, err.message);
+        } else {
+            database.failScan(job.id, err.message);
+        }
     } finally {
         isProcessing = false;
     }
 }
 
+/**
+ * Report job results back to VPS Hub
+ */
+async function reportToHub(jobId, status, result, error) {
+    if (!HUB_URL || !axios) return;
+    try {
+        // Collect all leads saved during this pipeline run
+        let posts = [];
+        try {
+            // Get leads from the last scan — they were saved to local DB by the pipeline
+            const rows = database.db.prepare(
+                `SELECT * FROM leads WHERE scraped_at > datetime('now', '-10 minutes') ORDER BY id DESC LIMIT 200`
+            ).all();
+            posts = rows;
+        } catch { }
+
+        await axios.post(`${HUB_URL}/api/worker/jobs/${jobId}/complete`, {
+            status,
+            result: result || {},
+            error: error || null,
+            posts,
+        }, {
+            headers: { 'x-thg-auth-key': WORKER_AUTH_KEY },
+            timeout: 30000,
+        });
+        console.log(`[Worker] 📡 Reported job #${jobId} to Hub (${posts.length} leads sent)`);
+    } catch (err) {
+        console.warn(`[Worker] ⚠️ Hub report failed: ${err.message}. Leads saved locally.`);
+    }
+}
+
 // ═══ Main ═══
 async function main() {
+    const isRemoteWorker = !!(HUB_URL && axios);
+
     console.log('╔══════════════════════════════════════════════════════╗');
-    console.log('║  🔧 THG Scraper Worker — Standalone Process         ║');
-    console.log('║  Polls scan_queue → Playwright scrape → Classify    ║');
+    if (isRemoteWorker) {
+        console.log('║  🏠 THG Scraper Worker — LAPTOP MODE (Remote)       ║');
+        console.log(`║  Polls Hub: ${HUB_URL.substring(0, 40).padEnd(40)} ║`);
+    } else {
+        console.log('║  🔧 THG Scraper Worker — Standalone Process         ║');
+        console.log('║  Polls scan_queue → Playwright scrape → Classify    ║');
+    }
     console.log('╚══════════════════════════════════════════════════════╝');
 
     // Initialize self-hosted scraper
@@ -478,22 +555,14 @@ async function main() {
     console.log(`[ScraperWorker] 🔧 Scrape Mode: ${scrapeMode.toUpperCase()}`);
     if (scrapeMode === 'self-hosted') {
         try {
-            // Clear proxies — Webshare free datacenter proxies are blocked by Facebook.
-            // This prevents double browser launches (proxy→fail→direct) that cause OOM.
-            // TODO: Re-enable when upgrading to residential proxies.
             try {
                 const db = require('../data_store/database');
                 db.db.prepare("UPDATE fb_accounts SET proxy_url = NULL WHERE proxy_url IS NOT NULL").run();
                 console.log('[ScraperWorker] ⚡ Cleared proxy_url — using direct connect');
             } catch (e) { }
 
-            // 2. Load free proxies as fallback
             const fbScraper = require('../agents/fbScraper');
             await fbScraper.loadFreeProxies();
-
-            // Auto-join removed: now handled inline during scraping
-            // (join + scrape in 1 pass = saves ~10min per cycle)
-
             console.log('[ScraperWorker] ✅ Self-hosted scraper ready');
         } catch (err) {
             console.warn(`[ScraperWorker] ⚠️ Proxy init failed: ${err.message}`);
@@ -501,7 +570,8 @@ async function main() {
     }
 
     // Start polling
-    console.log(`[ScraperWorker] 🔄 Polling scan_queue every ${POLL_INTERVAL / 1000}s...`);
+    const pollTarget = isRemoteWorker ? `VPS Hub (${HUB_URL})` : 'local scan_queue';
+    console.log(`[ScraperWorker] 🔄 Polling ${pollTarget} every ${POLL_INTERVAL / 1000}s...`);
     setInterval(pollQueue, POLL_INTERVAL);
 
     // Initial poll
