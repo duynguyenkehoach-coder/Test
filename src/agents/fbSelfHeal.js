@@ -149,7 +149,8 @@ function isSessionHealthy(accUsername) {
             const cookies = data.cookies || [];
             const hasCUser = cookies.some(c => c.name === 'c_user');
             const hasXs = cookies.some(c => c.name === 'xs');
-            return { healthy: hasCUser && hasXs && cookies.length >= 10, cookieCount: cookies.length, hasCUser, hasXs };
+            // c_user + xs = essentials → HEALTHY (even with fewer total cookies)
+            return { healthy: hasCUser && hasXs, cookieCount: cookies.length, hasCUser, hasXs };
         } catch { }
     }
     const cookiePath = path.join(DATA_DIR, `fb_cookies_${accUsername}.json`);
@@ -158,13 +159,17 @@ function isSessionHealthy(accUsername) {
             const cookies = JSON.parse(fs.readFileSync(cookiePath, 'utf8'));
             const hasCUser = cookies.some(c => c.name === 'c_user');
             const hasXs = cookies.some(c => c.name === 'xs');
-            return { healthy: hasCUser && hasXs && cookies.length >= 10, cookieCount: cookies.length, hasCUser, hasXs };
+            // c_user + xs = essentials → HEALTHY
+            return { healthy: hasCUser && hasXs, cookieCount: cookies.length, hasCUser, hasXs };
         } catch { }
     }
     return { healthy: false, cookieCount: 0, hasCUser: false, hasXs: false };
 }
 
 function clearInvalidSession(accUsername) {
+    // ═══ SAFETY: Always backup before deleting! ═══
+    backupSession(accUsername);
+
     const targets = [
         path.join(SESSIONS_DIR, `${accUsername}_auth.json`),
         path.join(DATA_DIR, `fb_cookies_${accUsername}.json`),
@@ -176,16 +181,52 @@ function clearInvalidSession(accUsername) {
     }
 }
 
-function backupGoldenSession(accUsername) {
-    const source = path.join(SESSIONS_DIR, `${accUsername}_auth.json`);
-    const target = path.join(BACKUP_DIR, `${accUsername}_auth.json`);
-    try {
-        if (fs.existsSync(source)) {
-            fs.mkdirSync(BACKUP_DIR, { recursive: true });
-            fs.copyFileSync(source, target);
-            console.log(`[SelfHeal] 💾 Backed up → backups/${accUsername}_auth.json`);
-        }
-    } catch (e) { console.warn(`[SelfHeal] ⚠️ Backup error: ${e.message}`); }
+/**
+ * Backup ALL session files before self-healing deletes them.
+ * If self-healing fails, restoreSession() can bring them back.
+ */
+function backupSession(accUsername) {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const filesToBackup = [
+        { src: path.join(SESSIONS_DIR, `${accUsername}_auth.json`), dst: path.join(BACKUP_DIR, `${accUsername}_auth.json`) },
+        { src: path.join(DATA_DIR, `fb_cookies_${accUsername}.json`), dst: path.join(BACKUP_DIR, `fb_cookies_${accUsername}.json`) },
+    ];
+    let backed = 0;
+    for (const { src, dst } of filesToBackup) {
+        try {
+            if (fs.existsSync(src)) {
+                fs.copyFileSync(src, dst);
+                backed++;
+            }
+        } catch (e) { console.warn(`[SelfHeal] ⚠️ Backup error for ${path.basename(src)}: ${e.message}`); }
+    }
+    if (backed > 0) console.log(`[SelfHeal] 💾 Backed up ${backed} session files before clearing`);
+}
+
+// Keep old name for backward compatibility
+function backupGoldenSession(accUsername) { backupSession(accUsername); }
+
+/**
+ * Restore session files from backup (called when self-healing FAILS).
+ * This ensures we never permanently lose working cookies.
+ */
+function restoreSession(accUsername) {
+    const filesToRestore = [
+        { src: path.join(BACKUP_DIR, `${accUsername}_auth.json`), dst: path.join(SESSIONS_DIR, `${accUsername}_auth.json`) },
+        { src: path.join(BACKUP_DIR, `fb_cookies_${accUsername}.json`), dst: path.join(DATA_DIR, `fb_cookies_${accUsername}.json`) },
+    ];
+    let restored = 0;
+    for (const { src, dst } of filesToRestore) {
+        try {
+            if (fs.existsSync(src)) {
+                fs.mkdirSync(path.dirname(dst), { recursive: true });
+                fs.copyFileSync(src, dst);
+                restored++;
+            }
+        } catch (e) { console.warn(`[SelfHeal] ⚠️ Restore error for ${path.basename(src)}: ${e.message}`); }
+    }
+    if (restored > 0) console.log(`[SelfHeal] ♻️ Restored ${restored} session files from backup (login failed, keeping old cookies)`);
+    return restored > 0;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -526,7 +567,7 @@ async function selfHealLogin(browser, account, tag) {
         return null;
     }
 
-    clearInvalidSession(accUsername);
+    clearInvalidSession(accUsername); // Now backs up before clearing!
 
     // Generate 2FA code
     let code = null;
@@ -563,6 +604,16 @@ async function selfHealLogin(browser, account, tag) {
     }
 
     console.warn(`${tag} 🚨 All ${UA_STRATEGIES.length} UA strategies failed — no c_user`);
+
+    // ═══ SAFETY NET: Restore old cookies so account isn't permanently locked out ═══
+    console.log(`${tag} ♻️ Restoring previous cookies (login failed, keeping old session)...`);
+    const restored = restoreSession(accUsername);
+    if (restored) {
+        console.log(`${tag} ✅ Old cookies restored — account will retry with existing session next scan`);
+    } else {
+        console.warn(`${tag} ❌ No backup found — cookies permanently lost. Manual re-login required.`);
+    }
+
     return null;
 }
 
@@ -573,6 +624,7 @@ module.exports = {
     getRecoveryCode,
     clearInvalidSession,
     backupGoldenSession,
+    restoreSession,
     killZombieBrowsers,
     interactWithNewsfeed,
 };
