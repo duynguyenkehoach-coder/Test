@@ -346,6 +346,8 @@ app.get('/api/leads', (req, res) => {
             exclude_ignored: req.query.exclude_ignored === 'true',
             minScore: req.query.minScore ? parseInt(req.query.minScore) : null,
             search: req.query.search || null,
+            dateFrom: req.query.dateFrom || null,
+            dateTo: req.query.dateTo || null,
             limit: req.query.limit ? parseInt(req.query.limit) : 100,
             offset: req.query.offset ? parseInt(req.query.offset) : 0,
         };

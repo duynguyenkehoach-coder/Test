@@ -142,24 +142,22 @@ async function runPipeline(options = {}) {
             return stats;
         }
 
-        // Step 1.5: Filter old posts (current month only)
-        console.log('\n[Pipeline] 🔍 Step 1.5: Filtering old posts (current month only)...');
-        const now = new Date();
-        const currentYear = now.getFullYear();
-        const currentMonth = now.getMonth(); // 0-indexed
+        // Step 1.5: Filter old posts (within last 2 days only — fresh leads)
+        console.log('\n[Pipeline] 🔍 Step 1.5: Filtering old posts (last 2 days only)...');
+        const MAX_AGE_DAYS = 2; // Only keep posts from today or yesterday
+        const cutoffMs = Date.now() - (MAX_AGE_DAYS * 24 * 60 * 60 * 1000);
         const freshPosts = allPosts.filter(post => {
             const timeStr = (post.item_type === 'comment')
                 ? (post.parent_created_at || post.post_created_at)
                 : post.post_created_at;
-            if (!timeStr) return true; // No date → assume fresh
+            if (!timeStr) return true; // No date → assume fresh (scraper just grabbed it)
             const postDate = new Date(timeStr);
             if (isNaN(postDate.getTime())) return true;
-            // Must be same year AND same month
-            return postDate.getFullYear() === currentYear && postDate.getMonth() === currentMonth;
+            return postDate.getTime() >= cutoffMs;
         });
         const oldDropped = allPosts.length - freshPosts.length;
         if (oldDropped > 0) {
-            console.log(`[Pipeline] 🕐 Dropped ${oldDropped} posts from previous months (keeping ${currentMonth + 1}/${currentYear} only)`);
+            console.log(`[Pipeline] 🕐 Dropped ${oldDropped} posts older than ${MAX_AGE_DAYS} days (keeping only fresh leads)`);
         }
 
         if (freshPosts.length === 0) {
@@ -297,6 +295,7 @@ async function runPipeline(options = {}) {
         const classified = await classifyPosts(relevantPosts);
 
         // Apply Time-Decay Score Penalty
+        const nowMs = Date.now();
         classified.forEach(post => {
             if (post.score > 0) {
                 // Default 0 = assume fresh (we scrape CHRONOLOGICAL feed, posts are recent)
