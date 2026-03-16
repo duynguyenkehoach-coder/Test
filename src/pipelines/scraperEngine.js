@@ -7,7 +7,7 @@
  */
 
 const config = require('../config');
-const fbScraper = require('../agents/fbScraper');
+const fbScraper = require('../scraper');
 const { contentHash } = require('../agent/memoryStore');
 
 const delay = (ms) => new Promise(r => setTimeout(r, ms));

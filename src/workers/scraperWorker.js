@@ -583,7 +583,7 @@ async function main() {
                 console.log('[ScraperWorker] ⚡ Cleared proxy_url — using direct connect');
             } catch (e) { }
 
-            const fbScraper = require('../agents/fbScraper');
+            const fbScraper = require('../scraper');
             await fbScraper.loadFreeProxies();
             console.log('[ScraperWorker] ✅ Self-hosted scraper ready');
         } catch (err) {
