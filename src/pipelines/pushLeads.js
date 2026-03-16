@@ -28,8 +28,8 @@ async function getToken() {
     } catch { }
 
     // Re-login
-    const email = process.env.PROD_ADMIN_EMAIL || 'admin@thg.vn';
-    const password = process.env.PROD_ADMIN_PASSWORD || 'ITdev2026';
+    const email = process.env.PROD_ADMIN_EMAIL || 'admin@THGfullfil.com';
+    const password = process.env.PROD_ADMIN_PASSWORD || 'THG2026@';
     const res = await httpPost('/api/auth/login', { email, password });
     if (!res.ok || !res.token) throw new Error('Production login failed: ' + JSON.stringify(res));
 
