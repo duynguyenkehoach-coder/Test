@@ -1550,14 +1550,49 @@ async function _scrapeWithContext(browser, account, groups) {
             }
         }
 
-        // Validate session
+        // Validate session — PATIENT check (retry once before self-heal)
         const testPage = await context.newPage();
-        await testPage.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 25000 });
-        await delay(3000);
-        const hasNav = await testPage.$('div[role="navigation"], div[aria-label="Facebook"]');
-        const testUrl = testPage.url();
-        if (!hasNav || testUrl.includes('/login') || testUrl.includes('checkpoint')) {
-            console.warn(`${tag} ❌ Session invalid — attempting self-healing...`);
+        let sessionValid = false;
+
+        for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+                if (attempt === 1) {
+                    await testPage.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 25000 });
+                } else {
+                    console.log(`${tag} 🔄 Retry validation (attempt 2)...`);
+                    await testPage.reload({ waitUntil: 'domcontentloaded', timeout: 25000 });
+                }
+
+                const hasNav = await testPage.waitForSelector(
+                    'div[role="navigation"], div[aria-label="Facebook"], a[aria-label="Facebook"]',
+                    { timeout: 10000 }
+                ).catch(() => null);
+
+                const testUrl = testPage.url();
+                if (hasNav && !testUrl.includes('/login') && !testUrl.includes('checkpoint')) {
+                    sessionValid = true;
+                    break;
+                }
+
+                if (testUrl.includes('checkpoint')) {
+                    console.warn(`${tag} 🚨 Checkpoint detected — must self-heal`);
+                    break;
+                }
+                if (testUrl.includes('/login')) {
+                    console.warn(`${tag} 🔒 Redirected to login (attempt ${attempt})`);
+                }
+            } catch (e) {
+                console.warn(`${tag} ⚠️ Validation attempt ${attempt} error: ${e.message.substring(0, 60)}`);
+            }
+
+            if (attempt < 2) await delay(3000);
+        }
+
+        if (sessionValid) {
+            console.log(`${tag} ✅ Session valid!`);
+            await testPage.close();
+        } else {
+            console.warn(`${tag} ❌ Session invalid after 2 attempts — attempting self-healing...`);
             await testPage.close();
 
             // ═══ SELF-HEALING: Auto-login with 2FA ═══
@@ -1576,9 +1611,6 @@ async function _scrapeWithContext(browser, account, groups) {
                 timezoneId: 'America/New_York',
             });
             console.log(`${tag} 🔄 Self-healing successful! New context loaded from ${path.basename(ssPath)}`);
-        } else {
-            console.log(`${tag} ✅ Session valid!`);
-            await testPage.close();
         }
 
         // AUTO-RENEW: Save fresh cookies + storageState

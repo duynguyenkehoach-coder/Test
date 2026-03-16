@@ -268,6 +268,28 @@ async function runPipeline(options = {}) {
         ];
         const knowledgeShareRegex = new RegExp(KNOWLEDGE_SHARE_KEYWORDS.join('|'), 'i');
 
+        // --- (D) Wrong shipping route exclusion ---
+        // THG only: VN→World, CN→World (especially US)
+        // Exclude posts asking to ship FROM other countries
+        const WRONG_ROUTE_KEYWORDS = [
+            'từ nhật', 'from japan', 'gửi.{0,10}từ nhật', 'ship.{0,10}từ nhật',
+            'từ hàn', 'from korea', 'gửi.{0,10}từ hàn', 'ship.{0,10}từ hàn',
+            'từ thái', 'from thailand', 'gửi.{0,10}từ thái', 'ship.{0,10}từ thái',
+            'từ đài loan', 'from taiwan', 'gửi.{0,10}từ đài',
+            'từ úc', 'from australia', 'gửi.{0,10}từ úc',
+            'từ đức', 'from germany', 'gửi.{0,10}từ đức',
+            'từ anh', 'from uk', 'gửi.{0,10}từ anh',
+            'từ pháp', 'from france', 'gửi.{0,10}từ pháp',
+            'từ canada', 'from canada', 'gửi.{0,10}từ canada',
+            'từ singapore', 'from singapore',
+            'từ malaysia', 'from malaysia',
+            'từ ấn độ', 'from india',
+            'nhật.{0,5}(qua|sang|về).{0,5}(mỹ|úc|việt|canada)',
+            'hàn.{0,5}(qua|sang|về).{0,5}(mỹ|úc|việt|canada)',
+            'thái.{0,5}(qua|sang|về).{0,5}(mỹ|úc|việt|canada)',
+        ];
+        const wrongRouteRegex = new RegExp(WRONG_ROUTE_KEYWORDS.join('|'), 'i');
+
         const relevantPosts = freshPosts.filter(post => {
             const text = (post.content || '').toLowerCase();
             const group = (post.group_name || post.source_group || '').toLowerCase();
@@ -278,6 +300,7 @@ async function runPipeline(options = {}) {
             if (vatExcludeRegex.test(text)) return false;
             if (providerAdRegex.test(text)) return false;
             if (knowledgeShareRegex.test(text)) return false;
+            if (wrongRouteRegex.test(text)) return false;
             return true;
         });
 
@@ -513,9 +536,9 @@ async function reportToHub(jobId, status, result, error) {
         // Collect all leads saved during this pipeline run
         let posts = [];
         try {
-            // Get leads from the last scan — they were saved to local DB by the pipeline
+            // Get leads from the last scan — widened to 2h because scans can take 60+ minutes
             const rows = database.db.prepare(
-                `SELECT * FROM leads WHERE scraped_at > datetime('now', '-10 minutes') ORDER BY id DESC LIMIT 200`
+                `SELECT * FROM leads WHERE scraped_at > datetime('now', '-2 hours') ORDER BY id DESC LIMIT 200`
             ).all();
             posts = rows;
         } catch { }
