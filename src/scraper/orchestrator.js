@@ -62,7 +62,7 @@ async function scrapeFacebookGroups(maxPosts = 20, options = {}, externalGroups 
         });
         console.log('[FBScraper] 🌐 Browser launched');
 
-        const MAX_PARALLEL = 2; // Max 2 per IP — 3 simultaneous = botnet red flag
+        const MAX_PARALLEL = 4; // Each account has its own static proxy IP
         const entries = Object.values(accountGroupMap);
         for (let i = 0; i < entries.length; i += MAX_PARALLEL) {
             const batch = entries.slice(i, i + MAX_PARALLEL);
@@ -108,11 +108,33 @@ async function _scrapeWithContext(browser, account, groups) {
     }
 
     try {
+        // ═══ Proxy Injection (1 static IP per account) ═══
+        const proxyEnvKey = `PROXY_${accUsername}`;
+        const proxyUrl = process.env[proxyEnvKey] || '';
+        let proxyConfig = undefined;
+
+        if (proxyUrl) {
+            try {
+                const parsed = new URL(proxyUrl);
+                proxyConfig = {
+                    server: `${parsed.protocol}//${parsed.hostname}:${parsed.port}`,
+                    username: decodeURIComponent(parsed.username),
+                    password: decodeURIComponent(parsed.password),
+                };
+                console.log(`${tag} 🌐 Proxy: ${parsed.hostname}:${parsed.port}`);
+            } catch (e) {
+                console.warn(`${tag} ⚠️ Invalid proxy URL in ${proxyEnvKey}: ${e.message}`);
+            }
+        } else {
+            console.log(`${tag} 🏠 No proxy (using local IP)`);
+        }
+
         context = await browser.newContext({
             userAgent: syncedUA,
             viewport: fp.viewport,
             locale: 'en-US',
             timezoneId: 'America/New_York',
+            ...(proxyConfig ? { proxy: proxyConfig } : {}),
         });
 
         // Load cookies
