@@ -4,7 +4,7 @@
  * Được gọi sau khi pipeline classify leads xong.
  * Dùng /api/import/crawbot — format tương thích 100%.
  */
-const http = require('http');
+const https = require('https');
 const path = require('path');
 
 const PROD_HOST = 'thg-tool.duckdns.org';
@@ -50,7 +50,7 @@ function httpPost(urlPath, data, token) {
             'Content-Length': Buffer.byteLength(body),
         };
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        const req = http.request({ hostname: PROD_HOST, path: urlPath, method: 'POST', headers }, (res) => {
+        const req = https.request({ hostname: PROD_HOST, path: urlPath, method: 'POST', port: 443, headers }, (res) => {
             let out = '';
             res.on('data', d => out += d);
             res.on('end', () => { try { resolve(JSON.parse(out)); } catch { resolve(out); } });
