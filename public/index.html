@@ -61,22 +61,25 @@
               <span class="nav-arrow">▼</span>
             </div>
             <div class="nav-submenu" id="submenuLeads">
-              <!-- THG Fulfill -->
-              <button class="nav-sub-item" onclick="filterByMenu('Fulfill', this)">
-                <span class="nav-text">📦 THG Fulfill</span>
-              </button>
-              <!-- THG Express -->
-              <button class="nav-sub-item" onclick="filterByMenu('Express', this)">
-                <span class="nav-text">✈️ THG Express</span>
-              </button>
-              <!-- THG Warehouse -->
-              <button class="nav-sub-item" onclick="filterByMenu('Warehouse', this)">
-                <span class="nav-text">🏢 THG Warehouse</span>
-              </button>
-              <!-- General / Others removed - merged into Agent Training -->
+              <!-- ALL LEADS MAIN NODE -->
               <button class="nav-sub-item active" onclick="filterByMenu('All', this)">
                 <span class="nav-text">🌐 All Leads</span>
               </button>
+
+              <div class="nav-subgroup">
+                <!-- THG Fulfill -->
+                <button class="nav-sub-item nav-sub-item--deep" onclick="filterByMenu('Fulfill', this)">
+                  <span class="nav-text">📦 THG Fulfill</span>
+                </button>
+                <!-- THG Express -->
+                <button class="nav-sub-item nav-sub-item--deep" onclick="filterByMenu('Express', this)">
+                  <span class="nav-text">✈️ THG Express</span>
+                </button>
+                <!-- THG Warehouse -->
+                <button class="nav-sub-item nav-sub-item--deep" onclick="filterByMenu('Warehouse', this)">
+                  <span class="nav-text">🏢 THG Warehouse</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -267,13 +270,7 @@
           <!-- ── MAIN LEADS VIEW (List/Grid) ── -->
           <div id="leadsMainView">
 
-            <!-- INLINE CATEGORY TABS -->
-            <div class="leads-category-tabs">
-              <button class="cat-tab-btn active" onclick="filterByMenu('All', this)">🌐 All Leads</button>
-              <button class="cat-tab-btn" onclick="filterByMenu('Fulfill', this)">📦 THG Fulfill</button>
-              <button class="cat-tab-btn" onclick="filterByMenu('Express', this)">✈️ THG Express</button>
-              <button class="cat-tab-btn" onclick="filterByMenu('Warehouse', this)">🏢 THG Warehouse</button>
-            </div>
+
 
             <div class="filter-bar">
               <label>🔎 Filter</label>
@@ -299,7 +296,12 @@
               <select class="filter-select" id="filterTime" onchange="renderLeads()">
                 <option value="">All Times</option>
               </select>
-              <input type="text" class="filter-input" id="filterSearch" autocomplete="new-password"
+
+              <!-- Hidden inputs to trick browser autofill -->
+              <input type="text" name="fakeusernameremembered" style="display:none" aria-hidden="true">
+              <input type="password" name="fakepasswordremembered" style="display:none" aria-hidden="true">
+
+              <input type="text" class="filter-input" id="filterSearch" name="search-lead-query" autocomplete="off"
                 placeholder="Search content, author..." oninput="debounceSearch()">
               <div class="filter-spacer"></div>
               <button class="btn" onclick="clearAllLeads()"

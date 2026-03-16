@@ -206,6 +206,12 @@ document.addEventListener('DOMContentLoaded', () => {
     loadTheme();
     initCountdown();
 
+    // Brutal force clear on search input to defeat autofill
+    setTimeout(() => {
+        const sf = document.getElementById('filterSearch');
+        if (sf) sf.value = '';
+    }, 150);
+
     // Populate Time Filter options (00:00 to 23:30)
     const timeSelect = document.getElementById('filterTime');
     if (timeSelect) {
