@@ -442,6 +442,23 @@ async function runPipeline(options = {}) {
             console.warn(`[Pipeline] ⚠️ Push to prod failed (not critical): ${pushErr.message}`);
         }
 
+        // Step 5.6: Push high quality leads to Sniper Squad Agent Queue
+        try {
+            const sDB = require('../squad/core/squadDB');
+            const sniperLeads = qualityLeads.filter(l => l.score >= 80);
+            for (const lead of sniperLeads) {
+                sDB.pushTask('comment', lead.post_url, {
+                    leadId: 0,
+                    keyword: 'AI Classified',
+                });
+            }
+            if (sniperLeads.length > 0) {
+                console.log(`\n[Pipeline] 🎯 Step 5.6: Pushed ${sniperLeads.length} leads to Sniper Agent Queue`);
+            }
+        } catch (e) {
+            console.warn(`[Pipeline] ⚠️ Failed to push to Sniper Queue: ${e.message}`);
+        }
+
         // Step 6: Accumulate leads for daily Telegram digest
         stats.totalLeads = totalLeads;
         stats.duration = Math.round((Date.now() - startTime) / 1000);
@@ -499,17 +516,19 @@ async function pollQueue() {
                 timeout: 10000,
             });
             job = resp.data?.job || null;
-            isRemote = true;
+            if (job) isRemote = true;
         } catch (err) {
             // Silent fail — Hub might be temporarily unreachable
             if (!err.message?.includes('ECONNREFUSED')) {
                 console.warn(`[Worker] ⚠️ Hub poll error: ${err.message}`);
             }
-            return;
         }
-    } else {
-        // ═══ LOCAL MODE: Poll local SQLite scan_queue ═══
+    }
+
+    // ═══ LOCAL MODE FALLBACK: Poll local SQLite scan_queue if no remote job ═══
+    if (!job) {
         job = database.claimNextScan();
+        isRemote = false;
     }
 
     if (!job) return;

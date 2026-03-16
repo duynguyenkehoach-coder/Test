@@ -255,7 +255,10 @@ window.toggleLanguage = async function (event, id, currentLang) {
   }
 };
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> e01088aac4f6b5e7a7c3e5ef28869b9cbacb5ac6
 async function openLeadDetail(leadId) {
   let lead = AppState.leads.find(l => l.id === leadId) || AppState.ignoredLeads.find(l => l.id === leadId);
   if (!lead) return;

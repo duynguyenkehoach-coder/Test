@@ -60,6 +60,7 @@
               <span class="nav-text">Foreign Customers</span>
               <span class="nav-arrow">▼</span>
             </div>
+<<<<<<< HEAD
             <div class="nav-submenu" id="submenuForeignLeads" style="display: flex;">
               <button class="nav-sub-item active" onclick="filterByMenu('Foreign-All', this)">
                 <span class="nav-text">Tất cả Khách Ngoại</span>
@@ -95,7 +96,28 @@
               </button>
               <button class="nav-sub-item" onclick="filterByMenu('Viet-Warehouse', this)">
                 <span class="nav-text">🏢 Warehouse (3PL)</span>
+=======
+            <div class="nav-submenu" id="submenuLeads">
+              <!-- ALL LEADS MAIN NODE -->
+              <button class="nav-sub-item active" onclick="filterByMenu('All', this)">
+                <span class="nav-text">🌐 All Leads</span>
+>>>>>>> e01088aac4f6b5e7a7c3e5ef28869b9cbacb5ac6
               </button>
+
+              <div class="nav-subgroup">
+                <!-- THG Fulfill -->
+                <button class="nav-sub-item nav-sub-item--deep" onclick="filterByMenu('Fulfill', this)">
+                  <span class="nav-text">📦 THG Fulfill</span>
+                </button>
+                <!-- THG Express -->
+                <button class="nav-sub-item nav-sub-item--deep" onclick="filterByMenu('Express', this)">
+                  <span class="nav-text">✈️ THG Express</span>
+                </button>
+                <!-- THG Warehouse -->
+                <button class="nav-sub-item nav-sub-item--deep" onclick="filterByMenu('Warehouse', this)">
+                  <span class="nav-text">🏢 THG Warehouse</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -321,6 +343,7 @@
               </select>
 
               <!-- Hidden inputs to trick browser autofill -->
+<<<<<<< HEAD
               <input type="text" name="fakeusernameremembered" style="position:absolute; top:-9999px; left:-9999px"
                 aria-hidden="true" tabindex="-1">
               <input type="password" name="fakepasswordremembered" style="position:absolute; top:-9999px; left:-9999px"
@@ -339,6 +362,13 @@
                   setTimeout(() => clearInterval(i), 1500);
                 })();
               </script>
+=======
+              <input type="text" name="fakeusernameremembered" style="display:none" aria-hidden="true">
+              <input type="password" name="fakepasswordremembered" style="display:none" aria-hidden="true">
+
+              <input type="text" class="filter-input" id="filterSearch" name="search-lead-query" autocomplete="off"
+                placeholder="Search content, author..." oninput="debounceSearch()">
+>>>>>>> e01088aac4f6b5e7a7c3e5ef28869b9cbacb5ac6
               <div class="filter-spacer"></div>
               <button class="btn" onclick="clearAllLeads()"
                 style="font-size:0.85rem;padding:8px 14px;background:linear-gradient(135deg,#ef4444,#dc2626);color:white;border:none;">
