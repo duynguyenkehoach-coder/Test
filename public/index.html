@@ -105,30 +105,6 @@
             </div>
           </div>
 
-          <!-- ALL LEADS -->
-          <div class="nav-item-group" id="navGroupLeads">
-            <div class="nav-item-header" onclick="toggleNavGroup('leads')">
-              <span class="nav-icon">📊</span>
-              <span class="nav-text">All Leads</span>
-              <span class="nav-arrow">▼</span>
-            </div>
-            <div class="nav-submenu" id="submenuLeads">
-              <button class="nav-sub-item" onclick="filterByMenu('All', this)">
-                <span class="nav-text">🌐 All Leads</span>
-              </button>
-              <div class="nav-subgroup">
-                <button class="nav-sub-item nav-sub-item--deep" onclick="filterByMenu('Fulfill', this)">
-                  <span class="nav-text">📦 THG Fulfill</span>
-                </button>
-                <button class="nav-sub-item nav-sub-item--deep" onclick="filterByMenu('Express', this)">
-                  <span class="nav-text">✈️ THG Express</span>
-                </button>
-                <button class="nav-sub-item nav-sub-item--deep" onclick="filterByMenu('Warehouse', this)">
-                  <span class="nav-text">🏢 THG Warehouse</span>
-                </button>
-              </div>
-            </div>
-          </div>
 
           <!-- LEADERBOARD NAV ITEM -->
           <button class="nav-item" id="tabLeaderboard" onclick="switchTab('leaderboard')">
@@ -352,37 +328,30 @@
               </select>
 
               <!-- Hidden inputs to trick browser autofill -->
-              <<<<<<< HEAD <input type="text" name="fakeusernameremembered"
-                style="position:absolute; top:-9999px; left:-9999px" aria-hidden="true" tabindex="-1">
-                <input type="password" name="fakepasswordremembered"
-                  style="position:absolute; top:-9999px; left:-9999px" aria-hidden="true" tabindex="-1">
+              <input type="text" name="fakeusernameremembered" style="position:absolute; top:-9999px; left:-9999px"
+                aria-hidden="true" tabindex="-1">
+              <input type="password" name="fakepasswordremembered" style="position:absolute; top:-9999px; left:-9999px"
+                aria-hidden="true" tabindex="-1">
 
-                <input type="search" class="filter-input" id="filterSearch" autocomplete="new-password"
-                  data-lpignore="true" data-1p-ignore="true" placeholder="Search content, author..."
-                  oninput="debounceSearch()">
-                <script>
-                  // Aggressive autofill clearing over the first 1.5 seconds
-                  (function () {
-                    const i = setInterval(() => {
-                      const sb = document.getElementById('filterSearch');
-                      if (sb && sb.value.includes('@')) { sb.value = ''; if (window.loadLeads) window.loadLeads(); }
-                    }, 150);
-                    setTimeout(() => clearInterval(i), 1500);
-                  })();
-                </script>
-                =======
-                <input type="text" name="fakeusernameremembered" style="display:none" aria-hidden="true">
-                <input type="password" name="fakepasswordremembered" style="display:none" aria-hidden="true">
-
-                <input type="text" class="filter-input" id="filterSearch" name="search-lead-query" autocomplete="off"
-                  placeholder="Search content, author..." oninput="debounceSearch()">
-                >>>>>>> e01088aac4f6b5e7a7c3e5ef28869b9cbacb5ac6
-                <div class="filter-spacer"></div>
-                <button class="btn" onclick="clearAllLeads()"
-                  style="font-size:0.85rem;padding:8px 14px;background:linear-gradient(135deg,#ef4444,#dc2626);color:white;border:none;">
-                  🗑️ Clear
-                </button>
-                <span class="leads-count" id="leadsCount">0 leads</span>
+              <input type="search" class="filter-input" id="filterSearch" autocomplete="new-password"
+                data-lpignore="true" data-1p-ignore="true" placeholder="Search content, author..."
+                oninput="debounceSearch()">
+              <script>
+                // Aggressive autofill clearing over the first 1.5 seconds
+                (function () {
+                  const i = setInterval(() => {
+                    const sb = document.getElementById('filterSearch');
+                    if (sb && sb.value.includes('@')) { sb.value = ''; if (window.loadLeads) window.loadLeads(); }
+                  }, 150);
+                  setTimeout(() => clearInterval(i), 1500);
+                })();
+              </script>
+              <div class="filter-spacer"></div>
+              <button class="btn" onclick="clearAllLeads()"
+                style="font-size:0.85rem;padding:8px 14px;background:linear-gradient(135deg,#ef4444,#dc2626);color:white;border:none;">
+                🗑️ Clear
+              </button>
+              <span class="leads-count" id="leadsCount">0 leads</span>
             </div>
 
             <!-- Clean Grid for Leads -->

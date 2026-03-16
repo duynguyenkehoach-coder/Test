@@ -5215,6 +5215,7 @@ body.light-mode #authUserBadge button:hover {
   .lead-content-preview {
     font-size: 13px;
     -webkit-line-clamp: 3;
+    line-clamp: 3;
   }
 
   .lead-tags .tag {

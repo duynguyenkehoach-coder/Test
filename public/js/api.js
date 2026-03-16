@@ -62,15 +62,10 @@ async function loadLeads() {
     try {
         const params = new URLSearchParams();
         const platform = document.getElementById('filterPlatform')?.value || '';
-<<<<<<< HEAD
-=======
-        let category = AppState.currentCategory || '';
->>>>>>> e01088aac4f6b5e7a7c3e5ef28869b9cbacb5ac6
         const status = document.getElementById('filterStatus')?.value || '';
         const minScore = document.getElementById('filterScore')?.value || '';
         const search = document.getElementById('filterSearch')?.value || '';
 
-<<<<<<< HEAD
         // Handle language prefix from the sidebar UI and map it to DB columns
         let category = AppState.currentCategory || '';
         let language = '';
@@ -81,11 +76,6 @@ async function loadLeads() {
             language = 'vietnamese';
             category = category.replace('Viet-', '');
         }
-=======
-        // Strip UI-specific prefixes before sending to backend DB
-        if (category.startsWith('Foreign-')) category = category.replace('Foreign-', '');
-        else if (category.startsWith('Viet-')) category = category.replace('Viet-', '');
->>>>>>> e01088aac4f6b5e7a7c3e5ef28869b9cbacb5ac6
 
         if (platform) params.set('platform', platform);
         if (category && category !== 'All') params.set('category', category);
@@ -102,12 +92,6 @@ async function loadLeads() {
         AppState.leads = data || [];
         console.log('[THG] loadLeads:', AppState.leads.length, 'leads, category:', AppState.currentCategory);
 
-<<<<<<< HEAD
-        const leadsCountEl = document.getElementById('leadsCount');
-        const tabLeadsCountEl = document.getElementById('tabLeadsCount');
-        if (leadsCountEl) leadsCountEl.textContent = `${count} leads`;
-        if (tabLeadsCountEl) tabLeadsCountEl.textContent = count;
-=======
         // ── Client-side count segmentation (because the backend only knows Services, not Languages)
         let displayCount = count || 0;
         const currentCat = AppState.currentCategory || '';
@@ -127,7 +111,6 @@ async function loadLeads() {
         const tabLeadsCountEl = document.getElementById('tabLeadsCount');
         if (leadsCountEl) leadsCountEl.textContent = `${displayCount} leads`;
         if (tabLeadsCountEl) tabLeadsCountEl.textContent = displayCount;
->>>>>>> e01088aac4f6b5e7a7c3e5ef28869b9cbacb5ac6
         renderLeads();
     } catch (err) {
         console.error('Failed to load leads:', err);
