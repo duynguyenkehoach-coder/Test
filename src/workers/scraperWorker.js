@@ -401,14 +401,28 @@ async function runPipeline(options = {}) {
         // Invalidate stats cache after inserting leads
         database.invalidateStatsCache();
 
-        // Step 5: Export to daily JSON file
+        // Step 5: Export to daily JSON file (only quality content)
         console.log('\n[Pipeline] 💾 Step 5: Exporting to daily file...');
-        saveLeadsToFile(withResponses);
+        const qualityLeads = withResponses.filter(lead => {
+            const c = (lead.content || '').trim();
+            // Remove FB navigation noise
+            const cleaned = c.replace(/\b(Facebook|Like|Comment|Share|See translation|All reactions|View more.*|Follow|\d+ comments?|\d+ shares?)\b/gi, '').trim();
+            if (cleaned.length < 50) return false;
+            // Reject if 50%+ of lines are just "Facebook"  
+            const lines = c.split('\n').filter(l => l.trim());
+            const fbLines = lines.filter(l => /^\s*Facebook\s*$/i.test(l));
+            if (lines.length > 3 && fbLines.length / lines.length > 0.5) return false;
+            return true;
+        });
+        if (qualityLeads.length < withResponses.length) {
+            console.log(`[Pipeline] 🧹 Filtered: ${withResponses.length} → ${qualityLeads.length} leads (removed ${withResponses.length - qualityLeads.length} garbage)`);
+        }
+        saveLeadsToFile(qualityLeads);
 
         // Step 5.5: Auto-push leads to production VPS
         try {
             const { pushLeadsToProd } = require('../pipelines/pushLeads');
-            const leadsForPush = withResponses.map(lead => ({
+            const leadsForPush = qualityLeads.map(lead => ({
                 source_url: lead.post_url,
                 post_url: lead.post_url,
                 author_name: lead.author_name,
@@ -418,8 +432,12 @@ async function runPipeline(options = {}) {
                 group_name: lead.group_name || '',
                 created_at: lead.post_created_at || lead.scraped_at,
             }));
-            console.log(`\n[Pipeline] 🚀 Step 5.5: Pushing ${leadsForPush.length} leads to production...`);
-            await pushLeadsToProd(leadsForPush);
+            if (leadsForPush.length > 0) {
+                console.log(`\n[Pipeline] 🚀 Step 5.5: Pushing ${leadsForPush.length} quality leads to production...`);
+                await pushLeadsToProd(leadsForPush);
+            } else {
+                console.log(`\n[Pipeline] ⚠️ Step 5.5: No quality leads to push`);
+            }
         } catch (pushErr) {
             console.warn(`[Pipeline] ⚠️ Push to prod failed (not critical): ${pushErr.message}`);
         }
