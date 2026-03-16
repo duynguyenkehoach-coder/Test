@@ -153,16 +153,9 @@ function renderLeadTableRow(lead, gridId) {
     ? `<a href="${rawPostUrl}" target="_blank" rel="noopener noreferrer" title="${linkTitle}" style="text-decoration:none;font-size:1.2rem;line-height:1;display:block">${linkIcon}</a>`
     : `<span style="font-size:1.2rem;opacity:0.5" title="Không có link">${linkIcon}</span>`;
 
-  // ── Seller cell: name → author profile link (Fallback to Search if missing) ──
-  let finalAuthorUrl = rawAuthorUrl;
-  if (!finalAuthorUrl && author !== 'Unknown') {
-    if (lead.platform === 'facebook') finalAuthorUrl = `https://www.facebook.com/search/top?q=${encodeURIComponent(author)}`;
-    else if (lead.platform === 'tiktok') finalAuthorUrl = `https://www.tiktok.com/search?q=${encodeURIComponent(author)}`;
-    else if (lead.platform === 'instagram') finalAuthorUrl = `https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(author)}`;
-  }
-
-  const sellerEl = finalAuthorUrl
-    ? `<a href="${finalAuthorUrl}" target="_blank" rel="noopener noreferrer" title="👤 Xem profile người đăng" class="author-name author-link-cell">${author}</a>`
+  // ── Seller cell: name → author profile link ──
+  const sellerEl = rawAuthorUrl
+    ? `<a href="${rawAuthorUrl}" target="_blank" rel="noopener noreferrer" title="👤 Xem profile người đăng" class="author-name author-link-cell">${author}</a>`
     : `<span class="author-name">${author}</span>`;
 
   return `
@@ -280,13 +273,6 @@ function renderClosingRoom(lead) {
   const sentimentBadge = score >= 90 ? `<span class="cr-badge cr-badge--purple">😤 Frustrated</span>`
     : score >= 85 ? `<span class="cr-badge cr-badge--gold">💎 VIP</span>` : '';
 
-  let finalAuthorUrl = lead.author_url || '';
-  if (!finalAuthorUrl && author !== 'Unknown') {
-    if (lead.platform === 'facebook') finalAuthorUrl = `https://www.facebook.com/search/top?q=${encodeURIComponent(author)}`;
-    else if (lead.platform === 'tiktok') finalAuthorUrl = `https://www.tiktok.com/search?q=${encodeURIComponent(author)}`;
-    else if (lead.platform === 'instagram') finalAuthorUrl = `https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(author)}`;
-  }
-
   return `
   <div class="cr-wrapper">
     <!-- Breadcrumb bar -->
@@ -299,7 +285,7 @@ function renderClosingRoom(lead) {
       <div class="cr-topbar-title">🎯 The Closing Room</div>
       <div class="cr-topbar-actions">
         ${lead.post_url ? `<a href="${lead.post_url}" target="_blank" class="cr-icon-btn" title="${lead.item_type === 'comment' ? 'Xem comment gốc' : 'Xem post gốc'}">${lead.item_type === 'comment' ? '💬 Comment' : '🔗 Post'}</a>` : ''}
-        ${finalAuthorUrl ? `<a href="${finalAuthorUrl}" target="_blank" class="cr-icon-btn" title="Xem profile">👤 Profile</a>` : ''}
+        ${lead.author_url ? `<a href="${lead.author_url}" target="_blank" class="cr-icon-btn" title="Xem profile">👤 Profile</a>` : ''}
       </div>
     </div>
 
@@ -316,7 +302,7 @@ function renderClosingRoom(lead) {
               ${lead.author_avatar ? `<img src="${lead.author_avatar}" class="cr-avatar" onerror="this.style.display='none'">` : '<div class="cr-avatar-placeholder">👤</div>'}
               <div>
                 <div class="cr-author-name">
-                  ${finalAuthorUrl ? `<a href="${finalAuthorUrl}" target="_blank" class="cr-author-link">${author}</a>` : author}
+                  ${lead.author_url ? `<a href="${lead.author_url}" target="_blank" class="cr-author-link">${author}</a>` : author}
                 </div>
                 <div class="cr-meta-row">
                   <span style="color:${platform.color};font-size:0.8rem;font-weight:600">${platform.icon} ${platform.label}</span>
