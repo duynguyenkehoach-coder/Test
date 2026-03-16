@@ -202,6 +202,7 @@ app.post('/api/worker/jobs/:id/complete', express.json({ limit: '10mb' }), (req,
                         platform: post.platform || 'facebook',
                         author_name: post.author_name || 'Unknown',
                         author_url: post.author_url || '',
+                        author_avatar: post.author_avatar || '',
                         post_url: post.post_url || '',
                         content: post.content || '',
                         score: post.score || 0,
@@ -641,6 +642,57 @@ app.patch('/api/groups/status', (req, res) => {
         const groupDb = require('./agent/groupDiscovery');
         groupDb.setStatus(url, status);
         res.json({ success: true, message: 'Group status updated' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// ── Bulk Import Groups (textarea paste) ──
+app.post('/api/groups/bulk', (req, res) => {
+    try {
+        const { urls } = req.body;
+        if (!urls || typeof urls !== 'string') {
+            return res.status(400).json({ success: false, error: 'urls (string) is required' });
+        }
+
+        const groupDb = require('./agent/groupDiscovery');
+        const lines = urls.split('\n').map(l => l.trim()).filter(l => l.includes('facebook.com/groups/'));
+        let added = 0, skipped = 0;
+
+        for (const line of lines) {
+            // Extract clean URL
+            const urlMatch = line.match(/(https?:\/\/(?:www\.)?facebook\.com\/groups\/[^\s?#]+)/);
+            if (!urlMatch) { skipped++; continue; }
+            const cleanUrl = urlMatch[1].replace(/\/$/, '');
+
+            // Check if group already exists
+            const db = groupDb.getDb();
+            const existing = db.prepare('SELECT id FROM fb_groups WHERE url = ?').get(cleanUrl);
+            if (existing) { skipped++; continue; }
+
+            // Extract name from URL slug
+            const slug = cleanUrl.split('/groups/')[1] || '';
+            const name = slug
+                .replace(/[_-]/g, ' ')
+                .replace(/\b\w/g, c => c.toUpperCase())
+                .substring(0, 80) || 'Unnamed Group';
+
+            const category = groupDb.autoClassifyCategory(name);
+            groupDb.upsertGroup({
+                name,
+                url: cleanUrl,
+                category,
+                relevance_score: 80,
+                notes: 'Bulk import from Dashboard',
+            });
+            added++;
+        }
+
+        res.json({
+            success: true,
+            message: `Imported ${added} groups (${skipped} skipped/duplicate)`,
+            added, skipped, total: lines.length
+        });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }

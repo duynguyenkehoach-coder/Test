@@ -7,7 +7,7 @@
  */
 
 const config = require('../config');
-const fbScraper = require('../agents/fbScraper');
+const fbScraper = require('../scraper');
 const { contentHash } = require('../agent/memoryStore');
 
 const delay = (ms) => new Promise(r => setTimeout(r, ms));
@@ -32,13 +32,11 @@ function dedup(posts) {
 }
 
 // ── Facebook ──────────────────────────────────────────────────────────────────
-const PROD_GROUPS_FILE = require('path').join(__dirname, '../../data/prod_groups.json');
-const fs = require('fs');
 
 async function scrapeFacebook(_keywords, maxPosts = 30, options = {}) {
     console.log('[Scraper:FB] 📘 Scraping Facebook via Playwright (self-hosted)...');
     try {
-        // Load groups: groups.db (all active) > prod_groups.json fallback > config fallback
+        // Load groups: groups.db (source of truth) > config fallback
         let groups = config.FB_TARGET_GROUPS;
         try {
             const groupDiscovery = require('../agent/groupDiscovery');
@@ -48,19 +46,7 @@ async function scrapeFacebook(_keywords, maxPosts = 30, options = {}) {
                 console.log(`[Scraper:FB] 📋 Loaded ${groups.length} groups từ Group Discovery DB`);
             }
         } catch (e) {
-            console.warn('[Scraper:FB] ⚠️ GroupDB failed, trying prod_groups.json fallback');
-        }
-        // Fallback to prod_groups.json if DB had no results
-        if (groups === config.FB_TARGET_GROUPS && fs.existsSync(PROD_GROUPS_FILE)) {
-            try {
-                const prodGroups = JSON.parse(fs.readFileSync(PROD_GROUPS_FILE, 'utf8'));
-                if (prodGroups.length > 0) {
-                    groups = prodGroups;
-                    console.log(`[Scraper:FB] 📋 Loaded ${groups.length} groups từ prod_groups.json (fallback)`);
-                }
-            } catch (e) {
-                console.warn('[Scraper:FB] ⚠️ Failed to load prod_groups.json');
-            }
+            console.warn('[Scraper:FB] ⚠️ GroupDB failed, using config fallback');
         }
 
         const posts = await fbScraper.scrapeFacebookGroups(maxPosts, options, groups);

@@ -482,9 +482,34 @@
             </select>
             <button class="btn btn-primary" onclick="showAddGroupModal()" style="font-size:0.85rem;padding:8px 14px;">➕
               Thêm Nhóm</button>
+            <button class="btn" onclick="toggleBulkImport()"
+              style="font-size:0.85rem;padding:8px 14px;background:linear-gradient(135deg,#0ea5e9,#6366f1);color:white;border:none;">📋
+              Bulk Import</button>
             <div class="filter-spacer"></div>
             <button class="btn" onclick="refreshGroupsData()" style="font-size:0.85rem;padding:8px 14px;">🔄
               Refresh</button>
+          </div>
+
+          <!-- Bulk Import Panel (hidden by default) -->
+          <div id="bulkImportPanel"
+            style="display:none;margin-bottom:20px;padding:20px;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.25);border-radius:14px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+              <span style="font-size:1.3rem;">📋</span>
+              <div>
+                <div style="font-weight:700;color:#818cf8;">Bulk Import Groups</div>
+                <div style="font-size:0.78rem;opacity:0.6;">Dán danh sách URL Facebook Groups, mỗi link 1 dòng</div>
+              </div>
+            </div>
+            <textarea id="bulkUrls" rows="5"
+              placeholder="https://www.facebook.com/groups/example1&#10;https://www.facebook.com/groups/example2&#10;https://www.facebook.com/groups/example3"
+              style="width:100%;padding:12px;border:1px solid rgba(99,102,241,0.3);background:rgba(0,0,0,0.2);color:white;border-radius:10px;resize:vertical;font-size:0.9rem;font-family:monospace;box-sizing:border-box;"></textarea>
+            <div style="display:flex;gap:12px;margin-top:12px;align-items:center;">
+              <button class="btn btn-primary" id="btnBulkImport" onclick="bulkImportGroups()"
+                style="background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;padding:10px 24px;font-weight:600;">
+                🚀 Nhập Hàng Loạt
+              </button>
+              <span id="bulkImportStatus" style="font-size:0.85rem;opacity:0.7;"></span>
+            </div>
           </div>
 
           <div id="groupsStatsBar" style="display:flex; gap:16px; margin-bottom:20px; flex-wrap:wrap;">

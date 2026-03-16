@@ -50,8 +50,6 @@ function initSchema() {
         seedGroups();
         console.log('[GroupDB] 🌱 Seeded', _db.prepare('SELECT COUNT(*) as c FROM fb_groups').get().c, 'groups');
     }
-    // Always sync prod_groups.json → DB
-    try { syncProdGroups(); } catch (e) { console.warn('[GroupDB] ⚠️ syncProdGroups:', e.message); }
 }
 
 // ════════════════════════════════════════════════════════
@@ -87,31 +85,6 @@ function autoClassifyCategory(name) {
     return 'unknown';
 }
 
-// ════════════════════════════════════════════════════════
-// Sync prod_groups.json → groups.db (runs on every startup)
-// ════════════════════════════════════════════════════════
-function syncProdGroups() {
-    const prodFile = path.join(DATA_DIR, 'prod_groups.json');
-    if (!fs.existsSync(prodFile)) return;
-    const groups = JSON.parse(fs.readFileSync(prodFile, 'utf8'));
-    let added = 0;
-    for (const g of groups) {
-        if (!g.url) continue;
-        const existing = _db.prepare('SELECT id FROM fb_groups WHERE url = ?').get(g.url);
-        if (!existing) {
-            const cat = autoClassifyCategory(g.name);
-            upsertGroup({
-                name: g.name,
-                url: g.url,
-                category: cat,
-                relevance_score: 80,
-                notes: 'Auto-synced from prod_groups.json',
-            });
-            added++;
-        }
-    }
-    if (added > 0) console.log(`[GroupDB] 🔄 Synced ${added} new groups from prod_groups.json`);
-}
 
 // ════════════════════════════════════════════════════════
 // CRUD Operations
@@ -345,6 +318,5 @@ module.exports = {
     getStats,
     extractGroupId,
     deactivateGroup,
-    syncProdGroups,
     autoClassifyCategory,
 };

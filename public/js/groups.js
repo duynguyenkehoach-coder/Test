@@ -218,3 +218,55 @@ async function toggleGroupStatus(url, newStatus) {
         showToast('Lỗi mạng', 'error');
     }
 }
+
+// -----------------------------------------
+// BULK IMPORT
+// -----------------------------------------
+function toggleBulkImport() {
+    const panel = document.getElementById('bulkImportPanel');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+async function bulkImportGroups() {
+    const textarea = document.getElementById('bulkUrls');
+    const btn = document.getElementById('btnBulkImport');
+    const status = document.getElementById('bulkImportStatus');
+    const text = textarea.value.trim();
+
+    if (!text) {
+        showToast('Vui lòng dán URL vào ô trước khi nhập!', 'error');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Đang nhập...';
+    status.textContent = '';
+
+    try {
+        const res = await fetch('/api/groups/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ urls: text })
+        });
+
+        const result = await res.json();
+        if (result.success) {
+            showToast(`✅ ${result.message}`, 'success');
+            status.textContent = `+${result.added} mới, ${result.skipped} trùng/bỏ qua (tổng ${result.total} URL)`;
+            status.style.color = '#10b981';
+            textarea.value = '';
+            loadGroups(); // Reload grid
+        } else {
+            showToast(result.error || 'Lỗi server', 'error');
+            status.textContent = '❌ ' + (result.error || 'Lỗi');
+            status.style.color = '#ef4444';
+        }
+    } catch (err) {
+        showToast('Lỗi kết nối server', 'error');
+        status.textContent = '❌ Lỗi mạng';
+        status.style.color = '#ef4444';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🚀 Nhập Hàng Loạt';
+    }
+}

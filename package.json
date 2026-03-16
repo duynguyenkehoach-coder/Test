@@ -14,7 +14,9 @@
     "prod:stop": "pm2 stop thg-lead-gen",
     "prod:restart": "pm2 restart thg-lead-gen",
     "prod:logs": "pm2 logs thg-lead-gen",
-    "prod:monit": "pm2 monit"
+    "prod:monit": "pm2 monit",
+    "squad": "node src/squad/squadRunner.js",
+    "squad:cron": "node src/squad/squadRunner.js --cron"
   },
   "keywords": [],
   "author": "THG",
