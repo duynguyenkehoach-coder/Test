@@ -254,10 +254,17 @@
 
         <!-- STATS BAR -->
         <div class="stats-bar" id="statsBar">
-          <div class="stat-card">
-            <div class="stat-label">Total Leads</div>
-            <div class="stat-value" id="statTotal">0</div>
-            <div class="stat-detail" id="statToday">0 hôm nay</div>
+          <div class="stat-card"
+            style="display:flex; justify-content:space-around; align-items:center; padding-right:16px;">
+            <div style="text-align:center">
+              <div class="stat-label">🌍 Foreign</div>
+              <div class="stat-value" id="statTotalForeign" style="color: #3b82f6;">0</div>
+            </div>
+            <div style="width:1px; height:40px; background:#e2e8f0; margin: 0 16px;"></div>
+            <div style="text-align:center">
+              <div class="stat-label">🇻🇳 Vietnamese</div>
+              <div class="stat-value" id="statTotalViet" style="color: #ef4444;">0</div>
+            </div>
           </div>
           <div class="stat-card">
             <div class="stat-label">High Value</div>

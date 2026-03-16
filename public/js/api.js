@@ -29,8 +29,8 @@ async function loadStats() {
     try {
         const res = await authFetch('/api/stats');
         const { data } = await res.json();
-        document.getElementById('statTotal').textContent = data.total || 0;
-        document.getElementById('statToday').textContent = `${data.today || 0} hôm nay`;
+        const statTotalForeign = document.getElementById('statTotalForeign');
+        const statTotalViet = document.getElementById('statTotalViet');
         document.getElementById('statHighValue').textContent = data.highValue || 0;
         document.getElementById('statAvgScore').textContent = data.avgScore || 0;
         document.getElementById('tabLeadsCount').textContent = data.total || 0;
@@ -88,10 +88,18 @@ async function loadLeads() {
             return /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(text);
         };
 
+        const totalVietCount = AppState.leads.filter(l => isVietnamese(l.content || '')).length;
+        const totalForeignCount = AppState.leads.length - totalVietCount;
+
+        const statForeign = document.getElementById('statTotalForeign');
+        const statViet = document.getElementById('statTotalViet');
+        if (statForeign) statForeign.textContent = totalForeignCount;
+        if (statViet) statViet.textContent = totalVietCount;
+
         if (currentCat.startsWith('Foreign-')) {
-            displayCount = AppState.leads.filter(l => !isVietnamese(l.content || '')).length;
+            displayCount = totalForeignCount;
         } else if (currentCat.startsWith('Viet-')) {
-            displayCount = AppState.leads.filter(l => isVietnamese(l.content || '')).length;
+            displayCount = totalVietCount;
         }
 
         const leadsCountEl = document.getElementById('leadsCount');
