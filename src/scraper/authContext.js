@@ -10,7 +10,6 @@ const {
     saveSession, loadSession
 } = require('./browserManager');
 const accountManager = require('../agent/accountManager');
-const { selfHealLogin, isSessionHealthy, clearInvalidSession } = require('../agents/fbSelfHeal');
 
 /**
  * Login to Facebook via Playwright

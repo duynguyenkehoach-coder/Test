@@ -5,7 +5,6 @@
  * @module scraper/orchestrator
  */
 const { chromium, delay, fs, path, generateFingerprint, extractGroupId } = require('./browserManager');
-const { isSessionHealthy, selfHealLogin, killZombieBrowsers } = require('../agents/fbSelfHeal');
 const accountManager = require('../agent/accountManager');
 const { bridgeToHub } = require('./hubBridge');
 const { runPersonaSession } = require('../squad/agents/personaAgent');
@@ -51,7 +50,6 @@ async function scrapeFacebookGroups(maxPosts = 20, options = {}, externalGroups 
     const allPosts = [];
 
     try {
-        killZombieBrowsers();
         browser = await chromium.launch({
             headless: true,
             executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
@@ -95,13 +93,6 @@ async function _scrapeWithContext(browser, account, groups) {
     const accEmail = account.email;
     const tag = `[${accEmail.split('@')[0]}]`;
     console.log(`\n${tag} ═══ Starting (${groups.length} groups) ═══`);
-
-    const health = isSessionHealthy(accEmail.split('@')[0]);
-    if (health.healthy) {
-        console.log(`${tag} 🏥 Session HEALTHY: ${health.cookieCount} cookies, c_user: ✅, xs: ✅`);
-    } else {
-        console.log(`${tag} 🏥 Session WEAK: ${health.cookieCount} cookies, c_user: ${health.hasCUser ? '✅' : '❌'}, xs: ${health.hasXs ? '✅' : '❌'} → will need self-healing`);
-    }
 
     const fp = generateFingerprint({ region: 'US', accountId: accEmail });
     let context = null;
@@ -162,7 +153,7 @@ async function _scrapeWithContext(browser, account, groups) {
             }
         }
 
-        // Validate session — PATIENT check (retry once before self-heal)
+        // Validate session — PATIENT check (retry once before abort)
         const testPage = await context.newPage();
         let sessionValid = false;
 
@@ -188,7 +179,7 @@ async function _scrapeWithContext(browser, account, groups) {
                 }
 
                 if (testUrl.includes('checkpoint')) {
-                    console.warn(`${tag} 🚨 Checkpoint detected — must self-heal`);
+                    console.warn(`${tag} 🚨 Checkpoint detected`);
                     break;
                 }
                 if (testUrl.includes('/login')) {
@@ -205,20 +196,10 @@ async function _scrapeWithContext(browser, account, groups) {
             console.log(`${tag} ✅ Session valid!`);
             await testPage.close();
         } else {
-            console.warn(`${tag} ❌ Session invalid after 2 attempts — attempting self-healing...`);
+            console.warn(`${tag} ❌ Session invalid after 2 attempts. Self-healing disabled to protect IP/User-Agent. Please extract cookies manually via Desktop.`);
             await testPage.close();
-            const ssPath = await selfHealLogin(browser, account, tag);
-            if (!ssPath) {
-                console.warn(`${tag} 💀 Self-healing failed — skipping account`);
-                await context.close(); return [];
-            }
             await context.close();
-            context = await browser.newContext({
-                storageState: ssPath,
-                userAgent: fp.userAgent, viewport: fp.viewport,
-                locale: 'en-US', timezoneId: 'America/New_York',
-            });
-            console.log(`${tag} 🔄 Self-healing successful! New context loaded from ${path.basename(ssPath)}`);
+            return [];
         }
 
         // AUTO-RENEW cookies
