@@ -168,15 +168,17 @@ async function phaseBroadcast(browser, accounts) {
             return;
         }
 
-        // Pick random active group from groups.db
+        // Pick random high-value POD/Dropship group from groups.db
         let targetGroup = null;
         try {
             const groupDiscovery = require('../agent/groupDiscovery');
-            const groups = groupDiscovery.getScanRotationList(200);
-            if (groups.length > 0) {
+            const groups = groupDiscovery.getBroadcastTargets(10);
+            if (groups && groups.length > 0) {
                 targetGroup = groups[Math.floor(Math.random() * groups.length)];
             }
-        } catch { }
+        } catch (e) {
+            console.warn(`${tag} ⚠️ getBroadcastTargets error: ${e.message}`);
+        }
 
         if (!targetGroup) {
             console.log(`${tag} ⚠️ No target groups for broadcast`);

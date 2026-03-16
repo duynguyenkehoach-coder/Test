@@ -24,24 +24,47 @@ function renderLeadsList(leadsArray, gridId = 'leadsGrid') {
   console.log('[THG] renderLeadsList:', leadsArray.length, 'in, cat:', currentCat, ', gridId:', gridId);
 
 
+  const isVietnamese = (text) => {
+    if (!text) return false;
+    return /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(text);
+  };
+
   const filteredLeads = leadsArray.filter(lead => {
     if (gridId === 'ignoredGrid') return true;
-    if (currentCat && currentCat !== 'All') {
-      const cat = lead.category || '';
-      // Support both old nav shorthand and new full DB names
-      if (currentCat === 'THG Fulfillment' || currentCat === 'Fulfill') {
-        if (!['THG Fulfillment', 'Fulfillment', 'POD', 'Dropship', 'THG Fulfill'].includes(cat)) return false;
-      } else if (currentCat === 'THG Express' || currentCat === 'Express') {
-        if (cat !== 'Express' && cat !== 'THG Express') return false;
-      } else if (currentCat === 'THG Warehouse' || currentCat === 'Warehouse') {
-        if (cat !== 'Warehouse' && cat !== 'THG Warehouse') return false;
-      } else if (currentCat === 'General') {
-        if (!['General', 'NotRelevant', ''].includes(cat)) return false;
-      } else {
-        // Generic: partial match
-        if (!cat.toLowerCase().includes(currentCat.toLowerCase())) return false;
+
+    if (currentCat && currentCat !== 'All' && currentCat !== 'Foreign-All' && currentCat !== 'Viet-All') {
+      let svcCat = currentCat;
+      const isViet = isVietnamese(lead.content || '');
+
+      // Handle Geography Split
+      if (currentCat.startsWith('Foreign-')) {
+        if (isViet) return false;
+        svcCat = currentCat.replace('Foreign-', '');
+      } else if (currentCat.startsWith('Viet-')) {
+        if (!isViet) return false;
+        svcCat = currentCat.replace('Viet-', '');
       }
+
+      if (svcCat !== 'All') {
+        const cat = lead.category || '';
+        if (svcCat === 'THG Fulfillment' || svcCat === 'Fulfill') {
+          if (!['THG Fulfillment', 'Fulfillment', 'POD', 'Dropship', 'THG Fulfill'].includes(cat)) return false;
+        } else if (svcCat === 'THG Express' || svcCat === 'Express') {
+          if (cat !== 'Express' && cat !== 'THG Express') return false;
+        } else if (svcCat === 'THG Warehouse' || svcCat === 'Warehouse') {
+          if (cat !== 'Warehouse' && cat !== 'THG Warehouse') return false;
+        } else if (svcCat === 'General') {
+          if (!['General', 'NotRelevant', ''].includes(cat)) return false;
+        } else {
+          if (!cat.toLowerCase().includes(svcCat.toLowerCase())) return false;
+        }
+      }
+    } else if (currentCat === 'Foreign-All') {
+      if (isVietnamese(lead.content || '')) return false;
+    } else if (currentCat === 'Viet-All') {
+      if (!isVietnamese(lead.content || '')) return false;
     }
+
     if (!filterDate && !filterTime) return true;
     const dt = getPostDate(lead);
     const d = dt.toLocaleDateString('sv-SE');

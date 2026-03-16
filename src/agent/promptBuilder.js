@@ -37,26 +37,27 @@ ${config.THG_CONTEXT}`;
 4. ĐẶC THÙ COMMENT NGẮN: Nếu nội dung là comment ngắn dưới post logistics/fulfillment như "xin giá", "check ib", "đi line us bao lâu", "có kho PA không", "rate?", "ib em", "giá bao nhiêu?" => "is_potential": true.
 
 🛑 CÁCH PHÂN BIỆT PROVIDER vs BUYER (CỰC KỲ QUAN TRỌNG - BẮT BUỘC ĐỌC KỸ):
-- PROVIDER (NGƯỜI BÁN DỊCH VỤ - RÁC MÀ BẠN PHẢI LOẠI BỎ): 
+- PROVIDER (NGƯỜI BÁN DỊCH VỤ - ĐỐI THỦ/RÁC MÀ BẠN PHẢI LOẠI BỎ): 
   Dấu hiệu nhận biết: Bài viết chứa các từ như "inb tư vấn", "inbox em", "inbox ...", "liên hệ số điện thoại", "liên hệ sđt", "hotline", "zalo", "nhận vận chuyển", "bên em chuyên/chúng tôi chuyên", "giá rẻ/bảng giá", "ưu đãi", "xin phép admin", "anh/chị seller tìm...". 
-  -> BẤT KỲ bài nào mang góc nhìn CUNG CẤP dịch vụ, CHÀO HÀNG hoặc ĐỂ LẠI THÔNG TIN LIÊN HỆ để SALE, bạn PHẢI ĐÁNH TRƯỢT NGAY LẬP TỨC ("is_potential": false, "score": 0, "role": "provider"). Kể cả khi bài đó có keyword "order" hay "thủy/bộ".
+  -> BẤT KỲ bài nào mang góc nhìn CUNG CẤP dịch vụ, CHÀO HÀNG hoặc ĐỂ LẠI THÔNG TIN LIÊN HỆ để SALE (đặc biệt là các dịch vụ giống THG: fulfillment, kho bãi, ship hàng), bạn PHẢI ĐÁNH TRƯỢT NGAY LẬP TỨC ("is_potential": false, "score": 0, "role": "provider"). Kể cả khi bài đó có keyword "order" hay "thủy/bộ". Tuyệt đối KHÔNG đưa đối thủ/nhà cung cấp vào hệ thống leads.
 
-- BUYER (NGƯỜI CẦN DỊCH VỤ - LEAD CHUẨN): 
+- BUYER (NGƯỜI CẦN DỊCH VỤ - LEAD CHUẨN MỤC TIÊU): 
+  TỆP KHÁCH HÀNG CHÍNH: Những người làm POD (Print on Demand), Dropship, E-commerce và có nhu cầu Express/vận chuyển/fulfillment từ Việt Nam (VN), Trung Quốc (CN) đi Mỹ (US) & Châu Âu (EU).
   Người ĐỨNG TRÊN GÓC NHÌN ĐANG PHÁT SINH NHU CẦU, CẦN TÌM ĐỐI TÁC. 
   Dấu hiệu: "cần tìm bên/người", "ai biết", "giới thiệu giúp", "cho hỏi", "giúp mình", "mình đang muốn", "cần đi hàng", "tìm đối tác". Đặt câu hỏi tìm kiếm dịch vụ chứ không phải chào hàng.
 - NẾU TÁC GIẢ VIẾT: "Bên em nhận order..." -> 100% LÀ PROVIDER.
 - NẾU TÁC GIẢ VIẾT: "Mình cần tìm bên order..." -> 100% LÀ BUYER.
 
 🚫 TUYẾN SAI — LOẠI BỎ NGAY (CỰC KỲ QUAN TRỌNG):
-THG CHỈ phục vụ chiều ĐI: VN/CN → MỸ/Thế giới. KHÔNG phục vụ chiều VỀ hoặc nội địa.
+THG CHỈ phục vụ chiều ĐI: VN/CN → MỸ/Châu Âu (EU)/Thế giới. KHÔNG phục vụ chiều VỀ hoặc nội địa.
 - BÀI VỀ NHẬP HÀNG TQ→VN (order taobao/1688 về VN, vận chuyển TQ về Việt Nam, nhập hàng TQ): → is_potential = false, score = 0, reasoning = "Sai tuyến: TQ→VN"
 - BÀI VỀ VẬN CHUYỂN NỘI ĐỊA VN (giao hàng nhanh, ship COD, chuyển phát nội tỉnh, giao toàn quốc): → is_potential = false, score = 0, reasoning = "Sai tuyến: nội địa VN"
 - BÀI VỀ GỬI HÀNG MỸ→VN (gửi đồ/quà về Việt Nam từ Mỹ): → is_potential = false, score = 0, reasoning = "Sai tuyến: US→VN"
-- KỂ CẢ khi tác giả là BUYER có nhu cầu thật, nếu tuyến KHÔNG PHẢI VN/CN→MỸ/Thế giới → vẫn PHẢI đánh trượt.
+- KỂ CẢ khi tác giả là BUYER có nhu cầu thật, nếu tuyến KHÔNG PHẢI VN/CN→MỸ/EU/Thế giới → vẫn PHẢI đánh trượt.
 
 🎯 PHÂN LUỒNG 2 DỊCH VỤ THG:
-- "THG Express": DDP/line US/air/sea/LCL/FCL/kg/cbm/customs/thông quan/ISF/HS code/ship VN-CN→Mỹ → Express
-- "THG Warehouse": 3PL/warehouse/kho PA-TX/fulfill/fulfillment/FBA prep/ship to Amazon/returns/cross-dock → Warehouse
+- "THG Express": DDP/line US/line EU/air/sea/LCL/FCL/kg/cbm/customs/thông quan/ISF/HS code/ship VN-CN→Mỹ/EU → Express
+- "THG Warehouse": 3PL/warehouse/kho PA-TX/kho Mỹ/fulfill/fulfillment/FBA prep/ship to Amazon/returns/cross-dock → Warehouse
 - "THG Fulfillment": POD/Dropship chưa có hàng, cần xưởng in/mua hộ và ship.
 - "Both": Có cả tín hiệu Express + Warehouse/Fulfillment
 - "None": Không khớp hoặc là bài quảng cáo.
@@ -84,7 +85,9 @@ score 0-39 = Không phải buyer HOẶC không liên quan
     const examples = `
 📝 VÍ DỤ MẪU:
 
-🛑 PROVIDER (is_potential: false, score: 0):
+🛑 PROVIDER (is_potential: false, score: 0) (CẢ TIẾNG VIỆT LẪN TIẾNG ANH):
+- "We are a dropshipping agent located in China, offering fast shipping to US/EU via YunExpress. Contact us on WhatsApp" → PROVIDER (chào hàng dịch vụ)
+- "Looking for more clients. Best price for POD fulfillment and 3PL warehousing in China." → PROVIDER (tìm khách hàng)
 - "Xin phép admin và anh/chị seller ạ 🙏 Nếu mọi người đang tìm đơn vị vận chuyển..." → PROVIDER ("xin phép admin" + giới thiệu dịch vụ = quảng cáo)
 - "SELLER SHIP US NÊN BIẾT: TUYẾN EPACKET GIÁ TỐT – NHẬN TỪ 1 ĐƠN 🔥 Chỉ từ 60k" → PROVIDER (bảng giá + "nhận từ 1 đơn" = quảng cáo)
 - "Anh/chị seller cần đvvc uy tín gửi hàng VN-US tham khảo ngay" → PROVIDER ("tham khảo ngay" = quảng cáo)
@@ -93,17 +96,19 @@ score 0-39 = Không phải buyer HOẶC không liên quan
 - "Ready to scale your eCommerce business? From warehousing to..." → PROVIDER (quảng cáo dịch vụ)
 - "EPACKET – GIẢI PHÁP GỬI HÀNG QUỐC TẾ SIÊU TỐC" → PROVIDER (giới thiệu sản phẩm)
 
-🎯 BUYER (is_potential: true, score >= 60):
+🎯 BUYER (is_potential: true, score >= 60) (MỤC TIÊU QUỐC TẾ):
+- "I am looking for a reliable sourcing and dropshipping agent in China who can ship to US fast." → is_potential:true, score:95, THG Express
+- "Looking for a POD supplier with quick fulfillment for my Shopify store" → is_potential:true, score:90, THG Fulfillment
+- "Need someone to source products from 1688 and handle dropshipping to Europe." → is_potential:true, score:88, THG Express
+- "Is there any 3PL warehouse in US (TX or PA) that can prep for Amazon FBA?" → is_potential:true, score:85, THG Warehouse
 - "Mới tập tành làm POD, cho hỏi app nào in áo rẻ ship US?" → is_potential:true, score:75, THG Fulfillment
 - "Mình đang muốn bắt đầu POD trên TikTok Shop US mà chưa chọn xưởng nào" → is_potential:true, score:88, THG Fulfillment
 - "Có 2 tạ hàng cần ship sang Mỹ trong tuần, ai nhận inbox" → is_potential:true, score:95, THG Express
 - "bên m nhận đi hàng lẻ từ kho tân bình ko ad?" → is_potential:true, score:80, THG Express
 - "bác nào có xưởng US k ạ" → is_potential:true, score:70, THG Warehouse
-- "ai biết chỗ nào ship hàng đi Mỹ không" → is_potential:true, score:75, THG Express
-- "cần kho ở PA hoặc TX để fulfill" → is_potential:true, score:85, THG Warehouse
 - "muốn mua hàng từ Trung Quốc ship về Mỹ, ai có nguồn?" → is_potential:true, score:85, THG Express
-- [COMMENT] "xin giá" (parent: bài về fulfillment) → is_potential:true, score:70, THG Fulfillment
-- [COMMENT] "rate?" (parent: bài về ship hàng Mỹ) → is_potential:true, score:65, THG Express
+- [COMMENT] "xin giá" | "check ib" (parent: bài về fulfillment) → is_potential:true, score:70, THG Fulfillment
+- [COMMENT] "rate?" | "dm me" | "check dm" (parent: bài về ship hàng Mỹ/China) → is_potential:true, score:65, THG Express
 
 🚫 SAI TUYẾN (is_potential: false, score: 0):
 - "mình ở Cali cần gửi đồ về VN cho gia đình, ai biết dịch vụ nào tốt" → is_potential:false, score:0 (US→VN = sai tuyến)

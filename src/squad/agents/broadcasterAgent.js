@@ -86,21 +86,83 @@ async function broadcastPost(page, groupId, opts = {}) {
         await humanDelay(500, 1000);
 
         // 6. Generate unique post content via Spintax
-        let finalPost;
-        if (customTemplate) {
-            finalPost = spinText(customTemplate);
-        } else {
-            finalPost = spinTemplate(templateName, templates);
+        let finalPost = '';
+        let imagePath = null;
+
+        let tplObj;
+        if (templates.templates && templates.templates.length > 0) {
+            // New format: { "templates": [ { "text": "...", "image": "..." } ] }
+            tplObj = templates.templates[Math.floor(Math.random() * templates.templates.length)];
+        } else if (templates[templateName]) {
+            // Old format: { "promo": [ "..." ] }
+            tplObj = templates[templateName];
+            if (Array.isArray(tplObj)) tplObj = tplObj[Math.floor(Math.random() * tplObj.length)];
         }
 
-        if (!finalPost) {
-            finalPost = spinText(templates.promo?.[0] || 'Chào mọi người, inbox mình nhé!');
+        if (typeof tplObj === 'string') {
+            finalPost = spinText(tplObj);
+        } else if (tplObj && tplObj.text) {
+            finalPost = spinText(tplObj.text);
+            imagePath = tplObj.image;
+        } else {
+            finalPost = 'Chào mọi người, inbox mình nhé!';
+        }
+
+        if (customTemplate) {
+            finalPost = spinText(customTemplate);
+            imagePath = null; // Custom text overrides template image
         }
 
         console.log(`[Broadcaster] ⌨️ Đang soạn bài PR...`);
 
         // 7. Type post content (faster than comment but still human-like)
         await humanType(page, finalPost, config.BROADCASTER_TYPING_DELAY);
+
+        // 7.5 Upload Image if present
+        if (imagePath) {
+            const absImagePath = path.resolve(__dirname, '..', '..', '..', imagePath);
+            if (fs.existsSync(absImagePath)) {
+                console.log(`[Broadcaster] 🖼️ Đang đính kèm ảnh: ${imagePath}`);
+                try {
+                    // Cố gắng tìm input type="file" bị ẩn của Facebook
+                    const fileChooserPromise = page.waitForEvent('filechooser', { timeout: 10000 });
+
+                    // Nhấp vào nút "Thêm ảnh/video" (aria-label="Photo/video" hoặc tương tự)
+                    const photoBtnSelectors = [
+                        'div[aria-label="Photo/video"]',
+                        'div[aria-label="Ảnh/video"]',
+                        'i[data-visualcompletion="css-img"][style*="background-position"]', // Icon ảnh
+                        'div[role="button"]:has-text("Photo/Video")',
+                        'div[role="button"]:has-text("Ảnh/video")'
+                    ];
+
+                    let clicked = false;
+                    for (const sel of photoBtnSelectors) {
+                        try {
+                            const btn = await page.$(sel);
+                            if (btn && await btn.isVisible()) {
+                                await btn.click();
+                                clicked = true;
+                                break;
+                            }
+                        } catch { }
+                    }
+
+                    if (clicked) {
+                        const fileChooser = await fileChooserPromise;
+                        await fileChooser.setFiles(absImagePath);
+                        console.log(`[Broadcaster] ✅ Upload ảnh thành công`);
+                        await humanDelay(3000, 5000); // Wait for upload to process
+                    } else {
+                        console.warn(`[Broadcaster] ⚠️ Không tìm thấy nút tải ảnh`);
+                    }
+                } catch (err) {
+                    console.warn(`[Broadcaster] ⚠️ Lỗi khi upload ảnh: ${err.message}`);
+                }
+            } else {
+                console.warn(`[Broadcaster] ⚠️ Không tìm thấy file ảnh tại: ${absImagePath}`);
+            }
+        }
 
         // 8. Pause to "review" before posting
         await humanDelay(1500, 3000);

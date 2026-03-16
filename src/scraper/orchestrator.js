@@ -558,27 +558,6 @@ async function _scrapeWithContext(browser, account, groups) {
                 posts.push(...gPosts);
                 console.log(`${tag} ✅ ${group.name}: ${gPosts.length} posts (total: ${posts.length})`);
                 accountManager.reportSuccess(account.id, gPosts.length);
-
-                // ═══ Lead → Squad Task Queue Pipeline ═══
-                // Check scraped posts for lead keywords → push to Sniper queue
-                try {
-                    const squadConfig = require('../squad/squadConfig');
-                    const sDB = require('../squad/core/squadDB');
-                    const keywords = squadConfig.LEAD_KEYWORDS || [];
-
-                    for (const post of gPosts) {
-                        const text = (post.content || '').toLowerCase();
-                        const matchedKw = keywords.find(kw => text.includes(kw.toLowerCase()));
-                        if (matchedKw && post.post_url) {
-                            sDB.pushTask('comment', post.post_url, {
-                                keyword: matchedKw,
-                                leadId: 0,
-                            });
-                        }
-                    }
-                } catch (e) {
-                    // Silent — squad module optional
-                }
             } catch (err) {
                 console.warn(`${tag} ❌ ${group.name}: ${err.message.substring(0, 80)}`);
             }
