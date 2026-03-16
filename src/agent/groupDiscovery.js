@@ -89,11 +89,14 @@ function autoClassifyCategory(name) {
 
 // ════════════════════════════════════════════════════════
 // Sync prod_groups.json → groups.db (runs on every startup)
+// Adds new groups + deactivates removed groups
 // ════════════════════════════════════════════════════════
 function syncProdGroups() {
     const prodFile = path.join(DATA_DIR, 'prod_groups.json');
     if (!fs.existsSync(prodFile)) return;
     const groups = JSON.parse(fs.readFileSync(prodFile, 'utf8'));
+    const prodUrls = new Set(groups.map(g => g.url).filter(Boolean));
+
     let added = 0;
     for (const g of groups) {
         if (!g.url) continue;
@@ -110,7 +113,20 @@ function syncProdGroups() {
             added++;
         }
     }
-    if (added > 0) console.log(`[GroupDB] 🔄 Synced ${added} new groups from prod_groups.json`);
+
+    // Deactivate groups that were removed from prod_groups.json
+    let deactivated = 0;
+    const dbGroups = _db.prepare("SELECT url FROM fb_groups WHERE status = 'active' AND notes LIKE '%prod_groups%'").all();
+    for (const row of dbGroups) {
+        if (!prodUrls.has(row.url)) {
+            _db.prepare("UPDATE fb_groups SET status = 'removed' WHERE url = ?").run(row.url);
+            deactivated++;
+        }
+    }
+
+    if (added > 0 || deactivated > 0) {
+        console.log(`[GroupDB] 🔄 Synced: +${added} new, -${deactivated} removed from prod_groups.json`);
+    }
 }
 
 // ════════════════════════════════════════════════════════
