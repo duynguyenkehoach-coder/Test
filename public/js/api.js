@@ -60,10 +60,14 @@ async function loadLeads() {
     try {
         const params = new URLSearchParams();
         const platform = document.getElementById('filterPlatform')?.value || '';
-        const category = AppState.currentCategory || '';
+        let category = AppState.currentCategory || '';
         const status = document.getElementById('filterStatus')?.value || '';
         const minScore = document.getElementById('filterScore')?.value || '';
         const search = document.getElementById('filterSearch')?.value || '';
+
+        // Strip UI-specific prefixes before sending to backend DB
+        if (category.startsWith('Foreign-')) category = category.replace('Foreign-', '');
+        else if (category.startsWith('Viet-')) category = category.replace('Viet-', '');
 
         if (platform) params.set('platform', platform);
         if (category && category !== 'All') params.set('category', category);
