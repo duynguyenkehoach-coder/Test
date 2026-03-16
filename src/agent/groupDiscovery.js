@@ -265,13 +265,6 @@ function seedGroups() {
         ['Cộng đồng DROPSHIP & POD - US, UK', 'https://www.facebook.com/groups/1110506846984730', '1110506846984730', 0, 'ecommerce', 92],
         ['Cộng đồng Dropshipping Ebay, Amazon, Etsy Chia sẻ từ a-z', 'https://www.facebook.com/groups/3043290549049105', '3043290549049105', 0, 'ecommerce', 90],
         ['CỘNG ĐỒNG SUPPLIER POD - DROPSHIPPING', 'https://www.facebook.com/groups/dropshippodvietnam', null, 0, 'ecommerce', 92],
-
-        // === 🇺🇸 US/INTL ENGLISH SOURCING & DROPSHIPPING ===
-        ['China Sourcing Agent | Shopify Dropshipping', 'https://www.facebook.com/groups/1278247436568684', '1278247436568684', 50000, 'cross-border', 95],
-        ['Shopify Entrepreneurs', 'https://www.facebook.com/groups/shopifyentrepreneurs', null, 100000, 'ecommerce', 95],
-        ['Ecom Empires - Shopify Dropshipping', 'https://www.facebook.com/groups/ecomempires', null, 80000, 'ecommerce', 92],
-        ['Print On Demand Ninjas', 'https://www.facebook.com/groups/podninjas', null, 40000, 'ecommerce', 92],
-        ['Shopify Dropshipping For Beginners', 'https://www.facebook.com/groups/225316431189312', '225316431189312', 30000, 'ecommerce', 90],
     ];
 
     const insertMany = _db.transaction((rows) => {
@@ -294,17 +287,6 @@ function getScanRotationList(limit = 30) {
         LIMIT ?
     `).all(limit);
     return groups.map(g => ({ name: g.name, url: g.url }));
-}
-
-function getBroadcastTargets(limit = 10) {
-    const groups = getDb().prepare(`
-        SELECT name, url FROM fb_groups
-        WHERE status = 'active' AND relevance_score >= 70
-          AND category IN ('pod', 'dropship', 'ecommerce')
-        ORDER BY relevance_score DESC
-        LIMIT ?
-    `).all(limit);
-    return groups;
 }
 
 // ════════════════════════════════════════════════════════
@@ -330,7 +312,6 @@ module.exports = {
     getTopGroups,
     getAllGroups,
     getScanRotationList,
-    getBroadcastTargets,
     markScanned,
     updateScore,
     setStatus,

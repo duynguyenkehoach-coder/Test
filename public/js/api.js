@@ -60,10 +60,14 @@ async function loadLeads() {
     try {
         const params = new URLSearchParams();
         const platform = document.getElementById('filterPlatform')?.value || '';
-        const category = AppState.currentCategory || '';
+        let category = AppState.currentCategory || '';
         const status = document.getElementById('filterStatus')?.value || '';
         const minScore = document.getElementById('filterScore')?.value || '';
         const search = document.getElementById('filterSearch')?.value || '';
+
+        // Strip UI-specific prefixes before sending to backend DB
+        if (category.startsWith('Foreign-')) category = category.replace('Foreign-', '');
+        else if (category.startsWith('Viet-')) category = category.replace('Viet-', '');
 
         if (platform) params.set('platform', platform);
         if (category && category !== 'All') params.set('category', category);
@@ -78,13 +82,40 @@ async function loadLeads() {
         const { data, count } = await res.json();
         AppState.leads = data || [];
         console.log('[THG] loadLeads:', AppState.leads.length, 'leads, category:', AppState.currentCategory);
+
+        // ── Client-side count segmentation (because the backend only knows Services, not Languages)
+        let displayCount = count || 0;
+        const currentCat = AppState.currentCategory || '';
+
+        const isVietnamese = (text) => {
+            if (!text) return false;
+            return /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(text);
+        };
+
+        if (currentCat.startsWith('Foreign-')) {
+            displayCount = AppState.leads.filter(l => !isVietnamese(l.content || '')).length;
+        } else if (currentCat.startsWith('Viet-')) {
+            displayCount = AppState.leads.filter(l => isVietnamese(l.content || '')).length;
+        }
+
         const leadsCountEl = document.getElementById('leadsCount');
         const tabLeadsCountEl = document.getElementById('tabLeadsCount');
-        if (leadsCountEl) leadsCountEl.textContent = `${count || 0} leads`;
-        if (tabLeadsCountEl) tabLeadsCountEl.textContent = count || 0;
+        if (leadsCountEl) leadsCountEl.textContent = `${displayCount} leads`;
+        if (tabLeadsCountEl) tabLeadsCountEl.textContent = displayCount;
         renderLeads();
     } catch (err) {
         console.error('Failed to load leads:', err);
+    }
+}
+
+async function loadLeadById(id) {
+    try {
+        const res = await authFetch(`/api/leads/${id}`);
+        const { data } = await res.json();
+        return data; // returns full lead object including content and original_post
+    } catch (err) {
+        console.error('Failed to load full lead:', err);
+        return null;
     }
 }
 

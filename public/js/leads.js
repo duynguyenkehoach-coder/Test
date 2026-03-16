@@ -24,47 +24,24 @@ function renderLeadsList(leadsArray, gridId = 'leadsGrid') {
   console.log('[THG] renderLeadsList:', leadsArray.length, 'in, cat:', currentCat, ', gridId:', gridId);
 
 
-  const isVietnamese = (text) => {
-    if (!text) return false;
-    return /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(text);
-  };
-
   const filteredLeads = leadsArray.filter(lead => {
     if (gridId === 'ignoredGrid') return true;
-
-    if (currentCat && currentCat !== 'All' && currentCat !== 'Foreign-All' && currentCat !== 'Viet-All') {
-      let svcCat = currentCat;
-      const isViet = isVietnamese(lead.content || '');
-
-      // Handle Geography Split
-      if (currentCat.startsWith('Foreign-')) {
-        if (isViet) return false;
-        svcCat = currentCat.replace('Foreign-', '');
-      } else if (currentCat.startsWith('Viet-')) {
-        if (!isViet) return false;
-        svcCat = currentCat.replace('Viet-', '');
+    if (currentCat && currentCat !== 'All') {
+      const cat = lead.category || '';
+      // Support both old nav shorthand and new full DB names
+      if (currentCat === 'THG Fulfillment' || currentCat === 'Fulfill') {
+        if (!['THG Fulfillment', 'Fulfillment', 'POD', 'Dropship', 'THG Fulfill'].includes(cat)) return false;
+      } else if (currentCat === 'THG Express' || currentCat === 'Express') {
+        if (cat !== 'Express' && cat !== 'THG Express') return false;
+      } else if (currentCat === 'THG Warehouse' || currentCat === 'Warehouse') {
+        if (cat !== 'Warehouse' && cat !== 'THG Warehouse') return false;
+      } else if (currentCat === 'General') {
+        if (!['General', 'NotRelevant', ''].includes(cat)) return false;
+      } else {
+        // Generic: partial match
+        if (!cat.toLowerCase().includes(currentCat.toLowerCase())) return false;
       }
-
-      if (svcCat !== 'All') {
-        const cat = lead.category || '';
-        if (svcCat === 'THG Fulfillment' || svcCat === 'Fulfill') {
-          if (!['THG Fulfillment', 'Fulfillment', 'POD', 'Dropship', 'THG Fulfill'].includes(cat)) return false;
-        } else if (svcCat === 'THG Express' || svcCat === 'Express') {
-          if (cat !== 'Express' && cat !== 'THG Express') return false;
-        } else if (svcCat === 'THG Warehouse' || svcCat === 'Warehouse') {
-          if (cat !== 'Warehouse' && cat !== 'THG Warehouse') return false;
-        } else if (svcCat === 'General') {
-          if (!['General', 'NotRelevant', ''].includes(cat)) return false;
-        } else {
-          if (!cat.toLowerCase().includes(svcCat.toLowerCase())) return false;
-        }
-      }
-    } else if (currentCat === 'Foreign-All') {
-      if (isVietnamese(lead.content || '')) return false;
-    } else if (currentCat === 'Viet-All') {
-      if (!isVietnamese(lead.content || '')) return false;
     }
-
     if (!filterDate && !filterTime) return true;
     const dt = getPostDate(lead);
     const d = dt.toLocaleDateString('sv-SE');
@@ -182,7 +159,7 @@ function renderLeadTableRow(lead, gridId) {
     : `<span class="author-name">${author}</span>`;
 
   return `
-    <tr class="ant-tr${isClaimed ? ' ant-tr-claimed' : ''}" onclick="openLeadDetail(${lead.id})" title="Click to open The Closing Room">
+    <tr class="ant-tr${isClaimed ? ' ant-tr-claimed' : ''}${score >= 80 ? ' hot-lead-row' : ''}" onclick="openLeadDetail(${lead.id})" title="Click to open The Closing Room">
       <td class="ant-td" style="text-align:center">
         <div class="score-tag ${scoreClass}">
           <span class="score-num">${score}</span>
@@ -233,9 +210,16 @@ function renderCompactLeadCard(lead) {
 }
 
 
-function openLeadDetail(leadId) {
-  const lead = AppState.leads.find(l => l.id === leadId) || AppState.ignoredLeads.find(l => l.id === leadId);
+async function openLeadDetail(leadId) {
+  let lead = AppState.leads.find(l => l.id === leadId) || AppState.ignoredLeads.find(l => l.id === leadId);
   if (!lead) return;
+
+  // Fetch full details (includes 'content' and 'original_post' which are omitted from list view for speed)
+  const fullData = await loadLeadById(leadId);
+  if (fullData) {
+    // Merge full data into the existing dashboard object
+    Object.assign(lead, fullData);
+  }
 
   document.getElementById('leadsMainView').style.display = 'none';
   const detailView = document.getElementById('leadDetailView');
@@ -259,7 +243,26 @@ function renderClosingRoom(lead) {
   const status = statusMap[lead.status] || statusMap['new'];
 
   const author = escapeHtml(lead.author_name || 'Unknown');
-  const content = escapeHtml(lead.content || '—');
+
+  // Clean raw scraped content
+  let rawContent = lead.content || '—';
+  if (lead.platform === 'facebook') {
+    rawContent = rawContent.replace(/(Facebook\n)+/gi, ''); // remove facebook watermark
+    let bulletIdx = rawContent.indexOf('·\n');
+    if (bulletIdx === -1) bulletIdx = rawContent.indexOf('· \n'); // some browsers add space
+    if (bulletIdx !== -1 && bulletIdx < 500) {
+      rawContent = rawContent.substring(bulletIdx + 2);
+    }
+    const stops = ['Like\nComment', 'Thích\nBình luận', 'Tất cả cảm xúc:', 'All reactions:'];
+    for (const s of stops) {
+      const idx = rawContent.indexOf(s);
+      if (idx !== -1) rawContent = rawContent.substring(0, idx);
+    }
+    // Remove isolated "+ number" before reactions often found
+    rawContent = rawContent.replace(/\+\d+\n$/, '');
+  }
+  const content = escapeHtml(rawContent.trim() || '—');
+
   const summary = escapeHtml(lead.summary || '');
   const gap = escapeHtml(lead.gap_opportunity || '');
   const postDateStr = lead.post_created_at || lead.scraped_at || lead.created_at;
@@ -300,7 +303,7 @@ function renderClosingRoom(lead) {
       </div>
       <div class="cr-topbar-title">🎯 The Closing Room</div>
       <div class="cr-topbar-actions">
-        ${lead.post_url ? `<a href="${lead.post_url}" target="_blank" class="cr-icon-btn" title="Xem post gốc">🔗 Post</a>` : ''}
+        ${lead.post_url ? `<a href="${lead.post_url}" target="_blank" class="cr-icon-btn" title="${lead.item_type === 'comment' ? 'Xem comment gốc' : 'Xem post gốc'}">${lead.item_type === 'comment' ? '💬 Comment' : '🔗 Post'}</a>` : ''}
         ${lead.author_url ? `<a href="${lead.author_url}" target="_blank" class="cr-icon-btn" title="Xem profile">👤 Profile</a>` : ''}
       </div>
     </div>
@@ -337,6 +340,13 @@ function renderClosingRoom(lead) {
           </div>
         </div>
 
+        <!-- Raw content card -->
+        <div class="cr-card">
+          <div class="cr-section-title">📄 Nội dung gốc</div>
+          <div class="cr-content-box" id="content-${lead.id}" style="white-space: pre-wrap;">${content}</div>
+          <button class="cr-expand-btn" onclick="toggleContent(${lead.id})">Xem thêm ▼</button>
+        </div>
+
         <!-- AI Analysis card -->
         ${summary || gap ? `
         <div class="cr-card">
@@ -362,13 +372,6 @@ function renderClosingRoom(lead) {
             <div class="cr-profit-value">💰 ${escapeHtml(lead.profit_estimate)}</div>
           </div>` : ''}
         </div>` : ''}
-
-        <!-- Raw content card -->
-        <div class="cr-card">
-          <div class="cr-section-title">📄 Nội dung gốc</div>
-          <div class="cr-content-box" id="content-${lead.id}">${content}</div>
-          <button class="cr-expand-btn" onclick="toggleContent(${lead.id})">Xem thêm ▼</button>
-        </div>
 
         <!-- Response / Notes / Agent tabs -->
         <div class="cr-card">

@@ -799,7 +799,57 @@ body.light-mode .sidebar-footer {
 .leads-count {
   font-size: 13px;
   color: var(--text-secondary);
+  font-weight: 500;
+  margin-left: 8px;
 }
+
+/* === INLINE CATEGORY TABS === */
+.leads-category-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  background: var(--bg-secondary);
+  padding: 8px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  overflow-x: auto;
+}
+
+.cat-tab-btn {
+  padding: 10px 20px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.cat-tab-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.cat-tab-btn.active {
+  background: rgba(129, 140, 248, 0.15);
+  color: #a5b4fc;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* === HOT LEAD HIGHLIGHT === */
+.hot-lead-row {
+  background: rgba(239, 68, 68, 0.08) !important;
+  border-left: 3px solid #ef4444 !important;
+}
+
+.hot-lead-row:hover {
+  background: rgba(239, 68, 68, 0.12) !important;
+}
+
+/* === LEADS GRID === */
 
 /* === MAIN LEADS GRID (Clean Layout) === */
 .leads-clean-grid {
