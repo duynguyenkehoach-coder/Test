@@ -321,12 +321,24 @@
               </select>
 
               <!-- Hidden inputs to trick browser autofill -->
-              <input type="text" name="fakeusernameremembered" style="display:none" aria-hidden="true">
-              <input type="password" name="fakepasswordremembered" style="display:none" aria-hidden="true">
+              <input type="text" name="fakeusernameremembered" style="position:absolute; top:-9999px; left:-9999px"
+                aria-hidden="true" tabindex="-1">
+              <input type="password" name="fakepasswordremembered" style="position:absolute; top:-9999px; left:-9999px"
+                aria-hidden="true" tabindex="-1">
 
               <input type="search" class="filter-input" id="filterSearch" autocomplete="new-password"
                 data-lpignore="true" data-1p-ignore="true" placeholder="Search content, author..."
                 oninput="debounceSearch()">
+              <script>
+                // Aggressive autofill clearing over the first 1.5 seconds
+                (function () {
+                  const i = setInterval(() => {
+                    const sb = document.getElementById('filterSearch');
+                    if (sb && sb.value.includes('@')) { sb.value = ''; if (window.loadLeads) window.loadLeads(); }
+                  }, 150);
+                  setTimeout(() => clearInterval(i), 1500);
+                })();
+              </script>
               <div class="filter-spacer"></div>
               <button class="btn" onclick="clearAllLeads()"
                 style="font-size:0.85rem;padding:8px 14px;background:linear-gradient(135deg,#ef4444,#dc2626);color:white;border:none;">

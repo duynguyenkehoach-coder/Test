@@ -517,10 +517,21 @@ const getPointsLog = (limit = 20) =>
 // --- Prepared statements ---
 
 
-const insertLead = db.prepare(`
-  INSERT OR IGNORE INTO leads (platform, post_url, author_name, author_url, author_avatar, content, score, category, summary, urgency, suggested_response, role, buyer_signals, scraped_at, post_created_at, profit_estimate, gap_opportunity, pain_score, spam_score, item_type)
-  VALUES (@platform, @post_url, @author_name, @author_url, @author_avatar, @content, @score, @category, @summary, @urgency, @suggested_response, @role, @buyer_signals, @scraped_at, @post_created_at, @profit_estimate, @gap_opportunity, @pain_score, @spam_score, @item_type)
+const _insertLeadStmt = db.prepare(`
+  INSERT OR IGNORE INTO leads (platform, post_url, author_name, author_url, author_avatar, content, score, category, summary, urgency, suggested_response, role, buyer_signals, scraped_at, post_created_at, profit_estimate, gap_opportunity, pain_score, spam_score, item_type, language)
+  VALUES (@platform, @post_url, @author_name, @author_url, @author_avatar, @content, @score, @category, @summary, @urgency, @suggested_response, @role, @buyer_signals, @scraped_at, @post_created_at, @profit_estimate, @gap_opportunity, @pain_score, @spam_score, @item_type, @language)
 `);
+
+const insertLead = {
+  run: (lead) => {
+    const isVietnamese = (text) => {
+      if (!text) return false;
+      return /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(text);
+    };
+    const lang = lead.language || (isVietnamese(lead.content) ? 'vietnamese' : 'foreign');
+    return _insertLeadStmt.run({ ...lead, language: lang });
+  }
+};
 
 // Dashboard columns — only fields needed for list view (skip heavy content/suggested_response)
 const LEADS_LIST_COLS = `id, platform, author_name, author_url, author_avatar, post_url,
