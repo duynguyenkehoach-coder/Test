@@ -60,8 +60,10 @@ jobs:
           # Ensure PM2 is installed
           which pm2 || npm install -g pm2
 
-          # Restart all processes with updated env
-          pm2 restart ecosystem.config.js --update-env 2>/dev/null || pm2 start ecosystem.config.js
+          # Full stop + fresh start (not restart) to ensure server.js
+          # re-evaluates fs.existsSync(frontend/dist) on startup
+          pm2 delete all 2>/dev/null || true
+          pm2 start ecosystem.config.js
           pm2 save
 
           echo "⏳ Waiting for API..."
