@@ -9,6 +9,8 @@ module.exports = {
   AI_MODEL: 'llama-3.3-70b-versatile',
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
   GEMINI_MODEL: 'gemini-2.0-flash',
+  CEREBRAS_API_KEY: process.env.CEREBRAS_API_KEY,
+  SAMBANOVA_API_KEY: process.env.SAMBANOVA_API_KEY,
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
 
