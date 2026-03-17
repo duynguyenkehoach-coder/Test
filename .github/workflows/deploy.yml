@@ -34,6 +34,15 @@ jobs:
 
           echo "✅ Code synced!"
 
+          # Update Gemini API key in VPS .env (one-time fix — .env excluded from rsync)
+          if grep -q 'GEMINI_API_KEY=' /root/THG_tool/.env; then
+            sed -i 's|GEMINI_API_KEY=.*|GEMINI_API_KEY=AIzaSyC1xLCrxoYOkLFaGzD2gyIXW4nV64WkF50|' /root/THG_tool/.env
+            echo "🔑 Gemini API key updated in .env"
+          else
+            echo "GEMINI_API_KEY=AIzaSyC1xLCrxoYOkLFaGzD2gyIXW4nV64WkF50" >> /root/THG_tool/.env
+            echo "🔑 Gemini API key added to .env"
+          fi
+
       - name: Install Dependencies
         run: |
           cd /root/THG_tool
