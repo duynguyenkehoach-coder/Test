@@ -45,6 +45,7 @@ function routeLead(content) {
 
 // ── Regex pre-filters (mirrors leadQualifier.js) ─────────────────────
 const PROVIDER_RE = /(chúng tôi nhận|bên em nhận|bên em chuyên|bên mình chuyên|bên mình nhận|dịch vụ vận chuyển|nhận gửi hàng|nhận ship|offering fulfillment|we ship|we offer|lh em|ib em|inbox em|liên hệ em|zalo:|chỉ từ \d+k|giải pháp gửi hàng|giải pháp ship|giải pháp vận chuyển|xin phép admin|cam kết giao|cước phí cạnh tranh|liên hệ ngay|tham khảo ngay|đăng ký ngay|nhận từ 1 đơn|dạ em nhận|em chuyên nhận|chúng tôi chuyên|seller nên biết.*:|seller cần biết.*:|ready to scale|just launched|free quote|get started today|contact us.*whatsapp|nhắn em để|nhắn em ngay|inbox ngay|mở rộng sản xuất|sẵn sàng cùng seller|xưởng.*sản xuất|fulfill trực tiếp|fulfill ngay tại|giá xưởng|giá gốc|báo giá|cần thêm thông tin.*nhắn|hỗ trợ.*nhanh nhất|đánh chiếm|siêu lợi nhuận|ưu đãi.*seller|chương trình.*ưu đãi|dm\s+for|dm\s+me|message\s+us|book\s+a\s+call|schedule\s+a\s+call|sign\s+up\s+now|sẵn sàng phục vụ|phục vụ.*seller|cung cấp dịch vụ|chúng tôi cung cấp|we\s+provide|we\s+specialize|our\s+service)/i;
+const SERVICE_AD_RE = /((bên em|bên mình|chúng tôi|chúng mình|shop em|shop mình|team em|team mình).{0,30}(cho thuê|cung cấp|nhận làm|sẵn kho|sẵn sàng|có sẵn|chuyên bán|chuyên cung|nhận order|gom order|nhà cung cấp|mở bán|đang bán|bán sỉ|bán lẻ|sỉ lẻ)|(cho thuê|cung cấp|nhận làm|sẵn kho|chuyên bán|chuyên cung|nhà cung cấp|mở bán|bán sỉ|sỉ lẻ).{0,30}(inbox em|ib em|liên hệ em|nhắn em|zalo em|lh em|check ib|inbox ngay|liên hệ ngay)|(bên em|bên mình|chúng tôi).{0,20}(cho thuê tài khoản|cho thuê acc|cho thuê shop|cho thuê kho|cho thuê dịch vụ)|(bên em|bên mình|chúng tôi|em).{0,15}(có|cung cấp|chuyên).{0,20}(sản phẩm|nguyên liệu|vật tư|hàng hóa).{0,20}(giá thấp|giá tốt|giá rẻ|giá cạnh tranh|giá gốc|chất lượng cao|giao nhanh))/i;
 const WRONG_ROUTE_RE = /(giao hàng nhanh nội|ship cod toàn|vận chuyển nội địa|gửi.*về việt nam|order.*về vn|nhập hàng.*về vn|ship.*từ mỹ.*về)/i;
 const VAT_RE = /(thuế nhập khẩu|thuế vat|vat refund|ioss|eori|tariff|biểu thuế|customs duty|duty rate|khai báo hải quan|luật nhập khẩu|tax compliance|anti.?dumping)/i;
 const KNOWLEDGE_RE = /(chia sẻ kinh nghiệm|chia sẻ kiến thức|bài viết tổng hợp|tutorial|step.by.step|how to.*guide|tip.*seller|tips.*cho|mẹo.*bán hàng)/i;
@@ -52,6 +53,7 @@ const MUST_HAVE_RE = /(ship|vận chuyển|fulfillment|fulfill|pod|dropship|gử
 
 function preFilter(content) {
     if (PROVIDER_RE.test(content)) return { pass: false, reason: 'Provider/quảng cáo' };
+    if (SERVICE_AD_RE.test(content)) return { pass: false, reason: 'Quảng cáo dịch vụ (provider context)' };
     if (WRONG_ROUTE_RE.test(content)) return { pass: false, reason: 'Sai tuyến (nội địa/nhập về VN)' };
     if (VAT_RE.test(content)) return { pass: false, reason: 'VAT/Tax/Compliance (không phải lead)' };
     if (KNOWLEDGE_RE.test(content)) return { pass: false, reason: 'Bài chia sẻ kiến thức (không phải lead)' };

@@ -34,6 +34,12 @@ const AI_MODELS = [
 ];
 
 const PROVIDER_REGEX = /(chúng tôi nhận gửi|quy trình gửi hàng|lợi ích khi gửi hàng với chúng tôi|nhận gửi hàng đi|chuyên tuyến việt|cước phí cạnh tranh|cam kết giao tận tay|hỗ trợ tư vấn, chăm sóc khách hàng 24\/7|we offer fulfillment|shipping services from us|dịch vụ vận chuyển uy tín|không phát sinh chi phí|bao thuế bao luật|nhận pick up|đóng gói miễn phí|hút chân không|lh em ngay|lh em|liên hệ em|ib em ngay|ib em|inbox em|cmt em|chấm em|check ib|check inbox|dạ em nhận|em chuyên nhận|gửi hàng đi mỹ inbox|nhận vận chuyển|zalo: 0|tham khảo ngay|viettel post|epacket|saigonbay|nhận ship hàng|dịch vụ ship|cước ship|giá ship từ|bảng giá ship|đặt ship ngay|cam kết|chuyên gửi|nhận gửi|dịch vụ gửi|giao hàng nhanh|giao tận nơi|ship cod|bên em chuyên|bên em nhận|bên mình chuyên|bên mình nhận|anh.chị.*(tham khảo|liên hệ|ib|inbox)|giải pháp gửi hàng|ready to scale|from warehousing|we ship|we offer|contact us|whatsapp|xin phép admin|seller nên biết|nhận từ 1 đơn|chỉ từ \d+k|chỉ từ \d+đ|giá tốt nhất|nếu mọi người đang tìm|nếu anh.chị.*(cần|tìm|đang)|just launched.*(fulfillment|warehouse)|moving into our new|ecoli express|free quote|get started today|our warehouse|customs clearance|nhắn em để|nhắn em ngay|inbox ngay|mở rộng sản xuất|sẵn sàng cùng seller|xưởng.*sản xuất|fulfill trực tiếp|fulfill ngay tại|giá xưởng|giá gốc|báo giá|cần thêm thông tin.*nhắn|hỗ trợ.*nhanh nhất|đánh chiếm|siêu lợi nhuận|ưu đãi.*seller|chương trình.*ưu đãi|dm\s+for|dm\s+me|message\s+us|book\s+a\s+call|schedule\s+a\s+call|sign\s+up\s+now|sẵn sàng phục vụ|phục vụ.*seller|cung cấp dịch vụ|chúng tôi cung cấp|we\s+provide|we\s+specialize|our\s+service)/i;
+
+// SERVICE_AD_REGEX — catches service ads with SELF-PROMOTION CONTEXT
+// These patterns REQUIRE provider self-identification words ("bên em", "bên mình", "chúng tôi")
+// to avoid false-positive blocking of BUYERS who mention similar terms while SEEKING services.
+const SERVICE_AD_REGEX = /((bên em|bên mình|chúng tôi|chúng mình|shop em|shop mình|team em|team mình).{0,30}(cho thuê|cung cấp|nhận làm|sẵn kho|sẵn sàng|có sẵn|chuyên bán|chuyên cung|nhận order|gom order|nhà cung cấp|mở bán|đang bán|bán sỉ|bán lẻ|sỉ lẻ)|(cho thuê|cung cấp|nhận làm|sẵn kho|chuyên bán|chuyên cung|nhà cung cấp|mở bán|bán sỉ|sỉ lẻ).{0,30}(inbox em|ib em|liên hệ em|nhắn em|zalo em|lh em|check ib|inbox ngay|liên hệ ngay)|(bên em|bên mình|chúng tôi).{0,20}(cho thuê tài khoản|cho thuê acc|cho thuê shop|cho thuê kho|cho thuê dịch vụ)|(bên em|bên mình|chúng tôi|em).{0,15}(có|cung cấp|chuyên).{0,20}(sản phẩm|nguyên liệu|vật tư|hàng hóa).{0,20}(giá thấp|giá tốt|giá rẻ|giá cạnh tranh|giá gốc|chất lượng cao|giao nhanh))/i;
+
 const IRRELEVANT_REGEX = /(recipe|cooking|football|soccer|gaming|movie|trailer|music video|crypto airdrop|token launch|weight loss|diet pill|korean bbq|beef|chicken|salad|mushroom|makeup|skincare|nail art|hair style|workout|gym|fitness|bible verse|prayer|astrology|horoscope|ritual|spell|food stamp|military|warzone|nuclear|missile|burmese|myanmar|capcut pioneer|kpop|anime|concert|healing|meditation)/i;
 const MARKETING_REGEX = /(link in bio|tap to shop|shop now|save for later|#ad\b|#sponsored|swipe up|limited time offer|use code|promo code|giveaway alert|we're hiring)/i;
 
@@ -449,6 +455,13 @@ async function classifyPosts(posts) {
             continue;
         }
 
+        // ── LAYER 1b: Service advertisement regex (safe — requires provider context) ──
+        if (SERVICE_AD_REGEX.test(content)) {
+            preFiltered.push({ ...post, isLead: false, role: 'provider', score: 0, category: 'NotRelevant', summary: 'Service ad detected (provider context)', urgency: 'low', buyerSignals: '', spamScore, painScore: 0 });
+            console.log(`[Sieve] 🚫 ServiceAd block: ${content.substring(0, 80)}...`);
+            continue;
+        }
+
         // ── LAYER 2a: Phone number in content → almost always provider ──
         if (PHONE_VN_REGEX.test(content) && !painScore) {
             preFiltered.push({ ...post, isLead: false, role: 'provider', score: 0, category: 'NotRelevant', summary: 'Phone number detected — Provider', urgency: 'low', buyerSignals: '', spamScore, painScore });
@@ -533,7 +546,19 @@ async function classifyPosts(posts) {
             for (let j = 0; j < batch.length; j++) {
                 const merged = { ...batch[j], ...(batchResults[j] || makeFallback()) };
 
-                // Apply intent-based score boost
+                // ── BOOST GUARD: KHÔNG cộng điểm cho rác ──
+                // Nếu AI trả về isLead=false hoặc score < 60 → đi thẳng vào results, KHÔNG boost
+                if (!merged.isLead || merged.score < 60) {
+                    merged.spamScore = batch[j]._spamScore || 0;
+                    merged.painScore = batch[j]._painScore || 0;
+                    delete merged._spamScore;
+                    delete merged._painScore;
+                    delete merged._intent;
+                    results.push(merged);
+                    continue;
+                }
+
+                // Apply intent-based score boost (CHỈ cho leads đã đạt base >= 60)
                 const intent = batch[j]._intent;
                 if (intent && merged.role === 'buyer') {
                     merged.score = Math.min(100, (merged.score || 0) + intent.boost);
@@ -561,8 +586,8 @@ async function classifyPosts(posts) {
                     merged.buyerSignals = `${merged.buyerSignals || ''} [INTL-Route +${INTL_ROUTE_BOOST}]`.trim();
                 }
                 // Even if AI says irrelevant, strong intent override
-                // BUT: block override if content matches PROVIDER_REGEX (prevents Viettel Post ads from scoring 100)
-                const isProviderContent = PROVIDER_REGEX.test(batch[j].content || '');
+                // BUT: block override if content matches PROVIDER_REGEX or SERVICE_AD_REGEX
+                const isProviderContent = PROVIDER_REGEX.test(batch[j].content || '') || SERVICE_AD_REGEX.test(batch[j].content || '');
                 if (intent && intent.priority === 'HIGH' && merged.role !== 'provider' && !isProviderContent) {
                     if (!merged.isLead) {
                         merged.isLead = true;
@@ -573,6 +598,15 @@ async function classifyPosts(posts) {
                         merged.buyerSignals = `[Intent Override: ${intent.categories.join('+')}]`;
                         console.log(`[Classifier] 🔥 Intent override → buyer (${intent.categories.join('+')}): ${(batch[j].content || '').substring(0, 60)}`);
                     }
+                }
+
+                // ── POST-BOOST SAFETY NET: catch service ads that slipped through AI ──
+                if (merged.isLead && merged.spamScore >= 3 && SERVICE_AD_REGEX.test(batch[j].content || '')) {
+                    merged.isLead = false;
+                    merged.role = 'provider';
+                    merged.score = 0;
+                    merged.summary = 'Post-boost safety: service ad detected (spamScore=' + merged.spamScore + ')';
+                    console.log(`[Classifier] 🛡️ Post-boost safety net caught service ad: ${(batch[j].content || '').substring(0, 60)}`);
                 }
                 delete merged._intent;
 
