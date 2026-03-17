@@ -218,6 +218,34 @@ async function _scrapeWithContext(browser, account, groups) {
             console.log(`${tag} ✅ Session valid!`);
             await testPage.close();
         } else {
+            // ═══ SCREENSHOT DEBUG: Capture what Facebook is showing ═══
+            try {
+                const debugUrl = testPage.url();
+                const debugTitle = await testPage.title().catch(() => 'N/A');
+                console.warn(`${tag} 🔍 DEBUG: URL = ${debugUrl}`);
+                console.warn(`${tag} 🔍 DEBUG: Title = ${debugTitle}`);
+
+                const screenshotPath = path.join(__dirname, '..', '..', 'data', `error_${accUsername}.png`);
+                await testPage.screenshot({ path: screenshotPath, fullPage: true });
+                console.warn(`${tag} 📸 Screenshot saved → ${screenshotPath}`);
+
+                // Check for common Facebook popups/blockers
+                const bodyText = await testPage.textContent('body').catch(() => '');
+                if (bodyText.includes('checkpoint')) {
+                    console.warn(`${tag} 🚨 CHECKPOINT DETECTED in page body`);
+                } else if (bodyText.includes('Đăng nhập') || bodyText.includes('Log in') || bodyText.includes('Log In')) {
+                    console.warn(`${tag} 🔒 LOGIN PAGE — cookies expired or revoked`);
+                } else if (bodyText.includes('confirm your identity') || bodyText.includes('xác minh')) {
+                    console.warn(`${tag} 🛡️ IDENTITY VERIFICATION popup detected`);
+                } else if (bodyText.includes('cookie') || bodyText.includes('consent')) {
+                    console.warn(`${tag} 🍪 COOKIE CONSENT popup blocking — may need auto-dismiss`);
+                } else {
+                    console.warn(`${tag} ❓ Unknown blocker. First 200 chars: ${bodyText.substring(0, 200)}`);
+                }
+            } catch (ssErr) {
+                console.warn(`${tag} ⚠️ Screenshot failed: ${ssErr.message}`);
+            }
+
             console.warn(`${tag} ❌ Session invalid after 2 attempts. Self-healing disabled to protect IP/User-Agent. Please extract cookies manually via Desktop.`);
             await testPage.close();
             await context.close();
