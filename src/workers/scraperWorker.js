@@ -252,6 +252,13 @@ async function runPipeline(options = {}) {
             'seller nên biết.*:', 'seller cần biết.*:',
             'ready to scale', 'just launched', 'our warehouse', 'free quote',
             'get started today', 'contact us', 'whatsapp.*\\+',
+            // Service-ad patterns (cho thuê/cung cấp with provider context)
+            'bên em.{0,20}cho thuê', 'bên mình.{0,20}cho thuê', 'chúng tôi.{0,20}cho thuê',
+            'bên em.{0,20}cung cấp', 'bên mình.{0,20}cung cấp', 'chúng tôi.{0,20}cung cấp',
+            'shop em.{0,20}(có sẵn|đang bán|mở bán)', 'shop mình.{0,20}(có sẵn|đang bán|mở bán)',
+            'bên em.{0,20}(nhận order|gom order|nhà cung cấp)',
+            'bên mình.{0,20}(nhận order|gom order|nhà cung cấp)',
+            'team em.{0,20}(nhận|cung cấp|cho thuê|sẵn sàng)',
         ];
         const providerAdRegex = new RegExp(PROVIDER_AD_KEYWORDS.join('|'), 'i');
 

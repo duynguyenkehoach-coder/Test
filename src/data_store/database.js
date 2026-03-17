@@ -544,9 +544,10 @@ const getLeads = (filters = {}) => {
   const params = {};
 
   // ── GLOBAL: Always exclude NotRelevant + error leads from dashboard ──
+  query += " AND score >= 60";
   query += " AND (category IS NULL OR category != 'NotRelevant')";
   query += " AND (summary IS NULL OR summary NOT LIKE '%Lỗi phân tích%')";
-  query += " AND role != 'provider'";
+  query += " AND role = 'buyer'";
 
   if (filters.platform) {
     query += ' AND platform = @platform';

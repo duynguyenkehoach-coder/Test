@@ -119,7 +119,20 @@ score 0-39 = Không phải buyer HOẶC không liên quan
 - "Cho hỏi về lời khuyên liệt kê sản phẩm Amazon" → Hỏi listing/SEO tip, KHÔNG cần ship/fulfill → score: 0
 - "Tìm inf LTD Hong Kong chính chủ" → Tìm công ty/giấy phép, KHÔNG cần logistics → score: 0
 - "Ai biết chỗ bán buôn quần áo giá rẻ?" → Tìm nguồn hàng nội địa, KHÔNG đề cập ship quốc tế → score: 0
-- "Giúp mình review sản phẩm trên Amazon" → Hỏi review/marketing, KHÔNG liên quan logistics → score: 0`;
+- "Giúp mình review sản phẩm trên Amazon" → Hỏi review/marketing, KHÔNG liên quan logistics → score: 0
+
+🚫 QUẢNG CÁO DỊCH VỤ (TUYỆT ĐỐI KHÔNG PHẢI LEAD — BẮT BUỘC score: 0):
+- "Bên em cho thuê tài khoản TikTok Shop US, cam kết uy tín, inbox em" → PROVIDER (cho thuê dịch vụ + CTA inbox)
+- "Bên mình cung cấp sản phẩm với giao hàng nhanh và giá thấp" → PROVIDER (cung cấp + giá/giao hàng = quảng cáo)
+- "Shop mình có sẵn hàng mỹ phẩm, order từ 1 đơn, ib em" → PROVIDER (có sẵn hàng + CTA ibem)
+- "Chúng tôi cho thuê kho tại PA, chất lượng cao, liên hệ ngay" → PROVIDER (cho thuê kho + CTA liên hệ)
+- "Team em nhận order hàng từ TQ, gom hàng ship US, inbox ngay" → PROVIDER (nhận order + gom hàng = dịch vụ)
+- "Bên mình chuyên bán nguyên liệu in áo, giá gốc xưởng" → PROVIDER (chuyên bán nguyên liệu = quảng cáo)
+- "Em có xưởng sản xuất tại VN, nhận đơn từ 50 cái, zalo em" → PROVIDER (có xưởng + nhận đơn + CTA)
+
+⚠️ CHÚ Ý PHÂN BIỆT — BUYER đang TÌM KIẾM vs PROVIDER đang CHÀO HÀNG:
+- "Có bác nào cho thuê tài khoản quảng cáo không ạ?" → BUYER (đang HỎI TÌM, không phải chào bán) → CÓ THỂ là lead nếu đi kèm tín hiệu POD/ecom
+- "Bên em cho thuê acc TikTok, inbox em nhé" → PROVIDER (đang CHÀO BÁN dịch vụ) → score: 0`;
 
     // Combine all parts
     return [base, kbContext, feedbackSection, rules, examples,
