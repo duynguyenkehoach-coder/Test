@@ -11,7 +11,7 @@ router.get('/api/groups', (req, res) => {
             category: req.query.category || null,
             status: req.query.status || null,
         };
-        const groups = groupDb.getGroups(filters);
+        const groups = groupDb.getAllGroups(filters);
         res.json({ success: true, data: groups, count: groups.length });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -22,8 +22,19 @@ router.get('/api/groups', (req, res) => {
 router.get('/api/groups/stats', (req, res) => {
     try {
         const groupDb = require('../ai/agents/groupDiscovery');
-        const stats = groupDb.getStats();
-        res.json({ success: true, data: stats });
+        const raw = groupDb.getStats();
+        // Map to what frontend expects
+        const by_category = {};
+        (raw.byCategory || []).forEach(r => { by_category[r.category] = r.c; });
+        res.json({
+            success: true,
+            data: {
+                total: raw.total || 0,
+                active: raw.active || 0,
+                paused: (raw.total || 0) - (raw.active || 0),
+                by_category,
+            },
+        });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
@@ -36,19 +47,20 @@ router.post('/api/groups', (req, res) => {
         if (!name || !url) return res.status(400).json({ success: false, error: 'Name and URL are required' });
 
         const groupDb = require('../ai/agents/groupDiscovery');
-        const id = groupDb.addGroup({ name, url, category: category || 'uncategorized', notes: notes || '' });
-        res.json({ success: true, id, message: 'Group added' });
+        groupDb.upsertGroup({ name, url, category: category || 'uncategorized', notes: notes || '', status: 'active' });
+        res.json({ success: true, message: 'Group added' });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
 });
 
-// ── PATCH /api/groups/:id — Toggle group status ─────────────────────────────
-router.patch('/api/groups/:id', (req, res) => {
+// ── PATCH /api/groups/:encodedUrl/status — Toggle group status ──────────────
+router.patch('/api/groups/:encodedUrl/status', (req, res) => {
     try {
         const { status } = req.body;
+        const url = decodeURIComponent(req.params.encodedUrl);
         const groupDb = require('../ai/agents/groupDiscovery');
-        groupDb.updateGroupStatus(parseInt(req.params.id), status);
+        groupDb.setStatus(url, status);
         res.json({ success: true, message: 'Group status updated' });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -75,11 +87,12 @@ router.post('/api/groups/bulk', (req, res) => {
             const slug = cleanUrl.split('/groups/')[1] || 'unknown';
 
             try {
-                groupDb.addGroup({
+                groupDb.upsertGroup({
                     name: slug.replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
                     url: cleanUrl,
                     category: 'uncategorized',
                     notes: 'Bulk import',
+                    status: 'active',
                 });
                 added++;
             } catch (e) {

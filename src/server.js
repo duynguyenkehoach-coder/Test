@@ -75,22 +75,6 @@ app.use(express.static(reactDistPath));
 // Fallback: legacy public/ (only dev.html remains)
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// ── TEMP DEBUG ROUTE (remove after fixing) ───────────────────────────────────
-app.get('/debug/paths', (req, res) => {
-    const indexPath = path.join(reactDistPath, 'index.html');
-    const info = {
-        __dirname,
-        cwd: process.cwd(),
-        reactDistPath,
-        reactDistExists: fs.existsSync(reactDistPath),
-        indexHtmlPath: indexPath,
-        indexHtmlExists: fs.existsSync(indexPath),
-        distContents: fs.existsSync(reactDistPath) ? fs.readdirSync(reactDistPath) : 'DIR_NOT_FOUND',
-        frontendDir: fs.existsSync(path.join(__dirname, '..', 'frontend')) ? fs.readdirSync(path.join(__dirname, '..', 'frontend')) : 'DIR_NOT_FOUND',
-    };
-    res.json(info);
-});
-
 // ── Public routes (no JWT) ──────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 
