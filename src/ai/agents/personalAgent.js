@@ -13,15 +13,10 @@
 
 'use strict';
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-const Groq = require('groq-sdk');
 const config = require('../../config');
 const database = require('../../core/data_store/database');
 const { getStyleProfile, getWritingSamples } = require('./styleExtractor');
-
-const genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY);
-const geminiModel = genAI.getGenerativeModel({ model: config.GEMINI_MODEL || 'gemini-1.5-flash' });
-const groq = new Groq({ apiKey: config.GROQ_API_KEY });
+const { generateText } = require('../aiProvider');
 
 const SALES_TEAM = ['Trang', 'Min', 'Moon', 'Lê Huyền', 'Ngọc Huyền'];
 
@@ -114,64 +109,39 @@ async function generateAgentReply(salesName, customerMessage, context = {}) {
 ${salesName} Agent, hãy reply:`;
 
     try {
-        const result = await geminiModel.generateContent({
-            contents: [
-                { role: 'user', parts: [{ text: systemPrompt + '\n\n' + userPrompt }] },
-            ],
-        });
-        let reply = result.response.text().trim();
+        const fullPrompt = systemPrompt + '\n\n' + userPrompt;
+        const reply = await generateText(
+            systemPrompt,
+            userPrompt,
+            { maxTokens: 300, temperature: 0.4 }
+        );
+
+        if (!reply) {
+            return generateGenericReply(customerMessage);
+        }
+
+        let cleaned = reply.trim();
         // Xoá quotes nếu AI bọc
-        if ((reply.startsWith('"') && reply.endsWith('"')) ||
-            (reply.startsWith("'") && reply.endsWith("'"))) {
-            reply = reply.slice(1, -1).trim();
+        if ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+            (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+            cleaned = cleaned.slice(1, -1).trim();
         }
 
         // Log reply vào chat_history (để tích lũy data học)
         if (context.leadId) {
-            database.logChatMessage(salesName, context.leadId, 'sales', reply, 0);
+            database.logChatMessage(salesName, context.leadId, 'sales', cleaned, 0);
         }
 
-        console.log(`[${salesName}Agent] ✅ Reply: ${reply.substring(0, 80)}...`);
-        return reply;
+        console.log(`[${salesName}Agent] ✅ Reply: ${cleaned.substring(0, 80)}...`);
+        return cleaned;
 
     } catch (err) {
-        const is429 = err.message?.includes('429') || err.message?.includes('quota');
-        if (is429) {
-            // Fallback Groq
-            return generateGroqFallback(salesName, profile, customerMessage);
-        }
-        console.error(`[${salesName}Agent] ❌ Gemini error: ${err.message}`);
+        console.error(`[${salesName}Agent] ❌ AI error: ${err.message}`);
         return generateGenericReply(customerMessage);
     }
 }
 
-/**
- * Fallback: Groq reply (nhanh + miễn phí khi Gemini 429)
- */
-async function generateGroqFallback(salesName, profile, message) {
-    try {
-        const pronounSelf = profile.pronouns?.self || salesName;
-        const icon = (profile.favorite_icons || [])[0] || '';
-        const response = await groq.chat.completions.create({
-            model: 'llama-3.1-8b-instant',
-            messages: [
-                {
-                    role: 'system',
-                    content: `Bạn là ${salesName} — Sales tại THG Logistics. Xưng "${pronounSelf}". Viết reply ngắn gọn, thân thiện (2-3 câu). Kết thúc bằng CTA nhẹ. Dùng icon: ${icon}. CHỈ trả về nội dung reply.`,
-                },
-                { role: 'user', content: `Khách: "${message.substring(0, 300)}"` },
-            ],
-            temperature: 0.4,
-            max_tokens: 150,
-        });
-        const reply = response.choices[0].message.content.trim();
-        console.log(`[${salesName}Agent] ✅ Groq fallback: ${reply.substring(0, 60)}...`);
-        return reply;
-    } catch (err) {
-        console.error(`[${salesName}Agent] ❌ Groq fallback: ${err.message}`);
-        return generateGenericReply(null);
-    }
-}
+// Groq fallback removed — cascade handles all fallbacks automatically via aiProvider.js
 
 /**
  * Last resort reply khi AI không khả dụng

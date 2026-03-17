@@ -12,12 +12,9 @@
 
 'use strict';
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const config = require('../../config');
 const database = require('../../core/data_store/database');
-
-const genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: config.GEMINI_MODEL || 'gemini-1.5-flash' });
+const { generateText } = require('../aiProvider');
 
 // ─── Default profile (dùng khi chưa đủ data để học) ────────────────────────
 const DEFAULT_PROFILES = {
@@ -107,13 +104,19 @@ Hãy trả về JSON với cấu trúc sau (CHỈ JSON, không giải thích th�
 }`;
 
     try {
-        const result = await model.generateContent(prompt);
-        let text = result.response.text().trim();
+        const sysPrompt = 'Bạn là AI chuyên phân tích văn phong. Trả về JSON mô tả phống cách viết, KHÔNG giải thích thêm.';
+        const text = await generateText(sysPrompt, prompt, { maxTokens: 500, temperature: 0.2 });
+
+        if (!text) {
+            console.error(`[StyleExtractor] ❌ ${salesName}: All AI providers failed`);
+            return null;
+        }
 
         // Strip markdown code block nếu có
-        text = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+        let cleaned = text.trim();
+        cleaned = cleaned.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
 
-        const profile = JSON.parse(text);
+        const profile = JSON.parse(cleaned);
         console.log(`[StyleExtractor] ✅ ${salesName}: Đã chiết xuất profile`);
         return profile;
     } catch (err) {

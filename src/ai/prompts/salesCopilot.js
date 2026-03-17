@@ -2,21 +2,15 @@
  * salesCopilot.js — THG AI Sales Assistant
  * 
  * Combines:
- * - Sales Copilot (Messenger reply drafting via Gemini)
- * - Lead Response Generator (Comment/DM response via Gemini)
- * - Intent Classifier (Groq lightweight)
+ * - Sales Copilot (Messenger reply drafting)
+ * - Lead Response Generator (Comment/DM response)
+ * - Intent Classifier (lightweight)
+ * 
+ * Uses shared AI Provider cascade: Cerebras → Sambanova → Groq → Gemini
  */
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-const Groq = require('groq-sdk');
 const config = require('../../config');
-
-// Gemini for response generation
-const genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY);
-const geminiModel = genAI.getGenerativeModel({ model: config.GEMINI_MODEL });
-
-// Groq for lightweight intent classification (free, fast)
-const groq = new Groq({ apiKey: config.GROQ_API_KEY });
+const { generateText } = require('../aiProvider');
 
 // ╔═══════════════════════════════════════════════════════════╗
 // ║  COPILOT — Draft replies for Messenger                    ║
@@ -79,33 +73,33 @@ ${context.platform ? `Platform: ${context.platform}` : 'Platform: Facebook Messe
 Soạn câu trả lời phù hợp:`;
 
     try {
-        const result = await geminiModel.generateContent(prompt);
-        const reply = result.response.text().trim();
-        console.log(`[Copilot] ✅ Generic reply: ${reply.substring(0, 80)}...`);
-        return reply;
+        const reply = await generateText(
+            COPILOT_SYSTEM,
+            `Khách hàng vừa nhắn tin vào Fanpage THG:\n"${customerMessage}"\n\n${context.senderName ? `Tên khách: ${context.senderName}` : ''}\n${context.platform ? `Platform: ${context.platform}` : 'Platform: Facebook Messenger'}\n\nSoạn câu trả lời phù hợp:`,
+            { maxTokens: 300, temperature: 0.3 }
+        );
+        if (reply) {
+            console.log(`[Copilot] ✅ Generic reply: ${reply.substring(0, 80)}...`);
+            return reply.trim();
+        }
+        return '⚠️ AI đang bận, Sale vui lòng tự reply khách nhé!';
     } catch (err) {
-        console.error('[Copilot] ✗ Gemini error:', err.message);
+        console.error('[Copilot] ✗ AI error:', err.message);
         return '⚠️ AI đang bận, Sale vui lòng tự reply khách nhé!';
     }
 }
 
 /**
- * Classify intent of incoming message (Groq — lightweight, free)
+ * Classify intent of incoming message (lightweight, uses provider cascade)
  */
 async function classifyIntent(message) {
     try {
-        const response = await groq.chat.completions.create({
-            model: 'llama-3.1-8b-instant',
-            messages: [{
-                role: 'user',
-                content: `Phân loại tin nhắn sau thành 1 trong: "price_inquiry", "service_inquiry", "urgent_need", "general", "spam"
-Tin nhắn: "${message.substring(0, 200)}"
-Chỉ trả về 1 từ duy nhất.`,
-            }],
-            temperature: 0,
-            max_tokens: 10,
-        });
-        return response.choices[0].message.content.trim().toLowerCase();
+        const result = await generateText(
+            'Bạn là AI phân loại tin nhắn. Chỉ trả về 1 từ duy nhất.',
+            `Phân loại tin nhắn sau thành 1 trong: "price_inquiry", "service_inquiry", "urgent_need", "general", "spam"\nTin nhắn: "${message.substring(0, 200)}"\nChỉ trả về 1 từ duy nhất.`,
+            { maxTokens: 10, temperature: 0 }
+        );
+        return result ? result.trim().toLowerCase() : 'general';
     } catch {
         return 'general';
     }
@@ -165,39 +159,23 @@ ${template}
 
 Viết response phù hợp nhất:`;
 
-        const result = await geminiModel.generateContent(prompt);
-        let text = result.response.text().trim();
+        const sysPrompt = `Bạn là sales representative của THG. Nhiệm vụ: viết một comment/message phản hồi lại bài đăng/bình luận của khách hàng trên ${lead.platform}.\n${config.THG_CONTEXT}\n\nQuy tắc:\n${lenRule}\n${toneRule}\n- Đề cập đúng nhu cầu của họ\n- Kết thúc bằng CTA nhẹ nhàng\n- Ngôn ngữ: cùng ngôn ngữ với bài gốc\n- CHỈ trả về nội dung response, KHÔNG giải thích thêm.`;
+        const usrPrompt = `Bài đăng gốc:\n"${lead.content.substring(0, 1000)}"\n\nCategory: ${lead.category}\nNhu cầu: ${lead.summary}\nMức độ cấp bách: ${lead.urgency}\n\nTemplate tham khảo:\n${template}\n\nViết response:`;
 
-        // Remove quotes if AI accidentally adds them
-        if (text.startsWith('"') && text.endsWith('"')) {
-            text = text.substring(1, text.length - 1);
-        }
+        const text = await generateText(sysPrompt, usrPrompt, { maxTokens: 300, temperature: 0.3 });
 
-        console.log(`[Responder] ✅ Gemini generated response: ${text.substring(0, 80)}...`);
-        return text;
-    } catch (err) {
-        const is429 = err.message?.includes('429') || err.message?.includes('quota');
-        if (is429) {
-            // Gemini free tier exhausted — fallback to Groq
-            try {
-                const groqResp = await groq.chat.completions.create({
-                    model: 'llama-3.1-8b-instant',
-                    messages: [
-                        { role: 'system', content: `Bạn là sales rep THG Logistics. Viết comment ngắn (2-3 câu) phản hồi bài đăng khách trên ${lead.platform}. Xưng "em THG". Nhẹ nhàng, không pushy. CHỈ trả về nội dung comment.` },
-                        { role: 'user', content: `Bài đăng: "${lead.content.substring(0, 300)}"\nDịch vụ phù hợp: ${lead.category || 'General'}` },
-                    ],
-                    temperature: 0.3,
-                    max_tokens: 150,
-                });
-                const groqText = groqResp.choices[0].message.content.trim();
-                console.log(`[Responder] ✅ Groq fallback: ${groqText.substring(0, 60)}...`);
-                return groqText;
-            } catch (groqErr) {
-                console.warn(`[Responder] ⚠️ Groq fallback also failed: ${groqErr.message}`);
+        if (text) {
+            let cleaned = text.trim();
+            // Remove quotes if AI accidentally adds them
+            if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+                cleaned = cleaned.substring(1, cleaned.length - 1);
             }
-        } else {
-            console.error('[Responder] ✗ Gemini error:', err.message);
+            console.log(`[Responder] ✅ AI generated response: ${cleaned.substring(0, 80)}...`);
+            return cleaned;
         }
+        return RESPONSE_TEMPLATES[lead.category] || RESPONSE_TEMPLATES.General;
+    } catch (err) {
+        console.error('[Responder] ✗ AI error:', err.message);
         return RESPONSE_TEMPLATES[lead.category] || RESPONSE_TEMPLATES.General;
     }
 }
@@ -206,7 +184,7 @@ Viết response phù hợp nhất:`;
  * Generate responses for a batch of leads
  */
 async function generateResponses(leads) {
-    console.log(`[Responder] 💬 Generating responses for ${leads.length} leads with Gemini 1.5 Flash...`);
+    console.log(`[Responder] 💬 Generating responses for ${leads.length} leads (AI cascade)...`);
     const results = [];
 
     for (const lead of leads) {

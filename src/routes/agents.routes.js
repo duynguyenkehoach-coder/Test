@@ -68,24 +68,14 @@ router.post('/api/agents/generate-reply', express.json(), async (req, res) => {
 
         let reply = '';
         try {
-            const OpenAI = require('openai');
-            const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-            const completion = await openai.chat.completions.create({
-                model: 'gpt-4o-mini',
-                messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-                max_tokens: 300, temperature: 0.7,
-            });
-            reply = completion.choices[0]?.message?.content?.trim() || '';
-        } catch (aiErr) {
-            try {
-                const { GoogleGenerativeAI } = require('@google/generative-ai');
-                const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-                const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-                const result = await model.generateContent(`${system}\n\n${user}`);
-                reply = result.response.text();
-            } catch (geminiErr) {
+            const { generateText } = require('../ai/aiProvider');
+            reply = await generateText(system, user, { maxTokens: 300, temperature: 0.7 });
+            if (!reply) {
                 return res.status(500).json({ success: false, error: 'AI providers unavailable' });
             }
+            reply = reply.trim();
+        } catch (aiErr) {
+            return res.status(500).json({ success: false, error: 'AI providers unavailable' });
         }
         res.json({ success: true, reply, agent: agent_name });
     } catch (err) {
