@@ -11,7 +11,7 @@
  */
 const cron = require('node-cron');
 const config = require('./config');
-const database = require('./data_store/database');
+const database = require('./core/data_store/database');
 const { startServer } = require('./server');
 
 /**
@@ -43,7 +43,7 @@ async function main() {
 
     // ═══ Initialize Infrastructure Agent ═══
     try {
-        const { infraAgent } = require('./agents/infraAgent');
+        const { infraAgent } = require('./ai/infraAgent');
         await infraAgent.init();
         process.on('SIGINT', async () => {
             await infraAgent.shutdown();

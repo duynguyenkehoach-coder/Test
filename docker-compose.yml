@@ -39,7 +39,7 @@ services:
       target: runner-slim
     container_name: thg-ai-worker
     restart: unless-stopped
-    command: ["node", "src/workers/aiWorker.js"]
+    command: ["node", "src/infra/workers/aiWorker.js"]
     volumes: *vols
     environment:
       - NODE_ENV=production
@@ -60,7 +60,7 @@ services:
       target: runner-heavy
     container_name: thg-scraper
     restart: unless-stopped
-    command: ["node", "src/workers/scraperWorker.js"]
+    command: ["node", "src/infra/workers/scraperWorker.js"]
     volumes: *vols
     environment:
       - NODE_ENV=production
