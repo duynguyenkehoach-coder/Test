@@ -38,7 +38,14 @@ jobs:
         run: |
           cd /root/THG_tool
           npm install --omit=dev 2>&1 | tail -5
-          echo "✅ Dependencies installed"
+          echo "✅ Backend dependencies installed"
+
+      - name: Build React Frontend
+        run: |
+          cd /root/THG_tool/frontend
+          npm install 2>&1 | tail -3
+          npm run build
+          echo "✅ Frontend built → frontend/dist/"
 
       - name: Stop Docker (if running)
         run: |
