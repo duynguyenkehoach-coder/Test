@@ -65,8 +65,15 @@ jobs:
           # Ensure PM2 is installed
           which pm2 || npm install -g pm2
 
-          # Full stop + fresh start
-          pm2 delete all 2>/dev/null || true
+          # Full stop — kill ALL PM2 processes AND any orphaned node process on port 3000
+          pm2 kill 2>/dev/null || true
+          sleep 1
+          # Force kill anything still holding port 3000
+          fuser -k 3000/tcp 2>/dev/null || true
+          pkill -f 'node src/' 2>/dev/null || true
+          sleep 2
+
+          # Fresh start
           pm2 start ecosystem.config.js
           pm2 save
 
