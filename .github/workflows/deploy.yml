@@ -57,11 +57,15 @@ jobs:
         run: |
           cd /root/THG_tool
 
+          # Verify frontend build exists
+          echo "📂 Checking frontend/dist..."
+          ls -la frontend/dist/ 2>/dev/null || echo "❌ frontend/dist NOT FOUND!"
+          ls -la frontend/dist/index.html 2>/dev/null || echo "❌ index.html NOT FOUND!"
+
           # Ensure PM2 is installed
           which pm2 || npm install -g pm2
 
-          # Full stop + fresh start (not restart) to ensure server.js
-          # re-evaluates fs.existsSync(frontend/dist) on startup
+          # Full stop + fresh start
           pm2 delete all 2>/dev/null || true
           pm2 start ecosystem.config.js
           pm2 save
@@ -72,11 +76,22 @@ jobs:
             sleep 2
             HTTP=$(curl -so /dev/null -w "%{http_code}" http://localhost:3000/health 2>/dev/null || echo "000")
             if [ "$HTTP" = "200" ]; then
-              echo "✅ Deploy done! HTTP 200 in $((i*2+5))s"
+              echo "✅ Health check: HTTP 200 in $((i*2+5))s"
+              
+              # Test root path specifically
+              ROOT_HTTP=$(curl -so /dev/null -w "%{http_code}" http://localhost:3000/ 2>/dev/null || echo "000")
+              echo "🌐 Root path test: HTTP ${ROOT_HTTP}"
+              ROOT_BODY=$(curl -s http://localhost:3000/ 2>/dev/null | head -c 200)
+              echo "📄 Root body: ${ROOT_BODY}"
+              
               pm2 status
               break
             fi
             echo "  [$((i*2+5))s] HTTP ${HTTP}..."
           done
+
+          # Show PM2 logs (last 10 lines) for debugging
+          echo "📋 PM2 API logs:"
+          pm2 logs thg-api --lines 10 --nostream 2>/dev/null || true
 
           echo "🎉 THG PM2 Deploy hoàn tất!"
