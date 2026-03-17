@@ -62,7 +62,7 @@ async function scrapeFacebookGroups(maxPosts = 20, options = {}, externalGroups 
         });
         console.log('[FBScraper] 🌐 Browser launched');
 
-        const MAX_PARALLEL = 2; // Max 2 per IP — 3 simultaneous = botnet red flag
+        const MAX_PARALLEL = parseInt(process.env.MAX_PARALLEL || '2', 10); // VPS-safe default; local .env can set 4
         const entries = Object.values(accountGroupMap);
         for (let i = 0; i < entries.length; i += MAX_PARALLEL) {
             const batch = entries.slice(i, i + MAX_PARALLEL);
@@ -108,11 +108,33 @@ async function _scrapeWithContext(browser, account, groups) {
     }
 
     try {
+        // ═══ Proxy Injection (1 static IP per account) ═══
+        const proxyEnvKey = `PROXY_${accUsername}`;
+        const proxyUrl = process.env[proxyEnvKey] || '';
+        let proxyConfig = undefined;
+
+        if (proxyUrl) {
+            try {
+                const parsed = new URL(proxyUrl);
+                proxyConfig = {
+                    server: `${parsed.protocol}//${parsed.hostname}:${parsed.port}`,
+                    username: decodeURIComponent(parsed.username),
+                    password: decodeURIComponent(parsed.password),
+                };
+                console.log(`${tag} 🌐 Proxy: ${parsed.hostname}:${parsed.port}`);
+            } catch (e) {
+                console.warn(`${tag} ⚠️ Invalid proxy URL in ${proxyEnvKey}: ${e.message}`);
+            }
+        } else {
+            console.log(`${tag} 🏠 No proxy (using local IP)`);
+        }
+
         context = await browser.newContext({
             userAgent: syncedUA,
             viewport: fp.viewport,
             locale: 'en-US',
             timezoneId: 'America/New_York',
+            ...(proxyConfig ? { proxy: proxyConfig } : {}),
         });
 
         // Load cookies
@@ -539,27 +561,6 @@ async function _scrapeWithContext(browser, account, groups) {
                 posts.push(...gPosts);
                 console.log(`${tag} ✅ ${group.name}: ${gPosts.length} posts (total: ${posts.length})`);
                 accountManager.reportSuccess(account.id, gPosts.length);
-
-                // ═══ Lead → Squad Task Queue Pipeline ═══
-                // Check scraped posts for lead keywords → push to Sniper queue
-                try {
-                    const squadConfig = require('../squad/squadConfig');
-                    const sDB = require('../squad/core/squadDB');
-                    const keywords = squadConfig.LEAD_KEYWORDS || [];
-
-                    for (const post of gPosts) {
-                        const text = (post.content || '').toLowerCase();
-                        const matchedKw = keywords.find(kw => text.includes(kw.toLowerCase()));
-                        if (matchedKw && post.post_url) {
-                            sDB.pushTask('comment', post.post_url, {
-                                keyword: matchedKw,
-                                leadId: 0,
-                            });
-                        }
-                    }
-                } catch (e) {
-                    // Silent — squad module optional
-                }
             } catch (err) {
                 console.warn(`${tag} ❌ ${group.name}: ${err.message.substring(0, 80)}`);
             }

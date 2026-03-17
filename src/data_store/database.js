@@ -543,6 +543,11 @@ const getLeads = (filters = {}) => {
   let query = `SELECT ${LEADS_LIST_COLS} FROM leads WHERE 1=1`;
   const params = {};
 
+  // ── GLOBAL: Always exclude NotRelevant + error leads from dashboard ──
+  query += " AND (category IS NULL OR category != 'NotRelevant')";
+  query += " AND (summary IS NULL OR summary NOT LIKE '%Lỗi phân tích%')";
+  query += " AND role != 'provider'";
+
   if (filters.platform) {
     query += ' AND platform = @platform';
     params.platform = filters.platform;
@@ -561,7 +566,7 @@ const getLeads = (filters = {}) => {
     } else if (cat === 'THG Warehouse' || cat === 'Warehouse') {
       query += " AND category IN ('THG Warehouse', 'Warehouse')";
     } else if (cat === 'General') {
-      query += " AND (category IN ('General', 'NotRelevant') OR category IS NULL OR category = '')";
+      query += " AND (category IN ('General') OR category IS NULL OR category = '')";
     } else {
       // Fallback: LIKE search so partial names still match
       query += ' AND category LIKE @category';

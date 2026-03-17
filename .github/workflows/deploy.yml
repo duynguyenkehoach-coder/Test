@@ -1,91 +1,61 @@
-name: THG Ultimate Deploy (Self-hosted)
+name: THG Deploy (PM2)
 
 on:
   push:
     branches: [main]
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: self-hosted
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Build Docker Images (Optimized Cache)
+      - name: Deploy Code to /root/THG_tool
         run: |
-          cd ${{ github.workspace }}
-
-          # Bật BuildKit để dùng cache mount
-          export DOCKER_BUILDKIT=1
-          BUST="${{ github.sha }}"
-
-          echo "🔨 Build builder stage trước (1 lần duy nhất)..."
-          # Build builder stage riêng để cache — 2 target bên dưới dùng chung
-          docker build \
-            --target builder \
-            --cache-from thg-builder:cache \
-            -t thg-builder:cache \
-            -f Dockerfile .
-
-          echo "🔨 Build 2 targets song song (cache-bust: $BUST)..."
-          docker build \
-            --target runner-slim \
-            --build-arg CACHE_BUST="$BUST" \
-            --cache-from thg-builder:cache \
-            -t thg-api-slim:latest \
-            -f Dockerfile . &
-
-          docker build \
-            --target runner-heavy \
-            --build-arg CACHE_BUST="$BUST" \
-            --cache-from thg-builder:cache \
-            -t thg-scraper-heavy:latest \
-            -f Dockerfile . &
-
-          wait
-          echo "✅ Both images built!"
-          docker images | grep thg-
-
-      - name: Deploy to Docker Compose
-        run: |
-          cd /root/THG_tool
-
+          echo "📦 Syncing code to /root/THG_tool..."
           rsync -a --delete \
             --exclude='data' \
             --exclude='logs' \
             --exclude='.env' \
             --exclude='node_modules' \
             --exclude='.git' \
+            --exclude='.pm2' \
             ${{ github.workspace }}/ /root/THG_tool/
 
           # Sync config files from data/ (excluded by rsync above)
           mkdir -p /root/THG_tool/data
           mkdir -p /root/THG_tool/data/sessions
+          mkdir -p /root/THG_tool/logs
           cp -f ${{ github.workspace }}/data/prod_groups.json /root/THG_tool/data/prod_groups.json 2>/dev/null || true
           cp -f ${{ github.workspace }}/data/fb_cookies_*.json /root/THG_tool/data/ 2>/dev/null || true
           cp -f ${{ github.workspace }}/data/recovery_codes_*.json /root/THG_tool/data/ 2>/dev/null || true
 
-          # Sync TOTP secrets and new accounts to VPS .env (append if missing)
-          grep -q 'FB_ACCOUNT_2_TOTP_SECRET' /root/THG_tool/.env || echo 'FB_ACCOUNT_2_TOTP_SECRET=' >> /root/THG_tool/.env
-          grep -q 'FB_ACCOUNT_3_EMAIL' /root/THG_tool/.env && echo "Account 3 already in .env" || {
-            echo 'FB_ACCOUNT_3_EMAIL=dalunistarotapp@gmail.com' >> /root/THG_tool/.env
-            echo 'FB_ACCOUNT_3_PASSWORD=Uyenxinhdep03102001' >> /root/THG_tool/.env
-            echo 'FB_ACCOUNT_3_TOTP_SECRET=' >> /root/THG_tool/.env
-          }
-          # Update TOTP secrets and passwords from source .env
-          if [ -f "${{ github.workspace }}/.env" ]; then
-            for key in FB_ACCOUNT_2_TOTP_SECRET FB_ACCOUNT_3_TOTP_SECRET FB_ACCOUNT_1_PASSWORD FB_ACCOUNT_2_PASSWORD FB_ACCOUNT_3_PASSWORD; do
-              VAL=$(grep "^${key}=" "${{ github.workspace }}/.env" | cut -d'=' -f2-)
-              if [ -n "$VAL" ]; then
-                sed -i "s|^${key}=.*|${key}=${VAL}|" /root/THG_tool/.env
-              fi
-            done
-          fi
+          echo "✅ Code synced!"
 
-          echo "🚀 Force-recreating ALL containers from new images..."
-          docker compose down --timeout 10
-          docker compose up -d --force-recreate --remove-orphans
+      - name: Install Dependencies
+        run: |
+          cd /root/THG_tool
+          npm install --omit=dev 2>&1 | tail -5
+          echo "✅ Dependencies installed"
+
+      - name: Stop Docker (if running)
+        run: |
+          cd /root/THG_tool
+          docker compose down --timeout 5 2>/dev/null || true
+          echo "✅ Docker stopped (or was not running)"
+
+      - name: Restart PM2 Processes
+        run: |
+          cd /root/THG_tool
+
+          # Ensure PM2 is installed
+          which pm2 || npm install -g pm2
+
+          # Restart all processes with updated env
+          pm2 restart ecosystem.config.js --update-env 2>/dev/null || pm2 start ecosystem.config.js
+          pm2 save
 
           echo "⏳ Waiting for API..."
           sleep 5
@@ -94,12 +64,10 @@ jobs:
             HTTP=$(curl -so /dev/null -w "%{http_code}" http://localhost:3000/health 2>/dev/null || echo "000")
             if [ "$HTTP" = "200" ]; then
               echo "✅ Deploy done! HTTP 200 in $((i*2+5))s"
-              docker compose ps
+              pm2 status
               break
             fi
             echo "  [$((i*2+5))s] HTTP ${HTTP}..."
           done
 
-          # Chỉ xóa images không dùng, GIỮ LẠI cache builder
-          docker image prune -f --filter "label!=cache=true"
-          echo "🎉 THG Deploy hoàn tất!"
+          echo "🎉 THG PM2 Deploy hoàn tất!"

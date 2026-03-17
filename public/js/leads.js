@@ -255,7 +255,6 @@ window.toggleLanguage = async function (event, id, currentLang) {
   }
 };
 
-
 async function openLeadDetail(leadId) {
   let lead = AppState.leads.find(l => l.id === leadId) || AppState.ignoredLeads.find(l => l.id === leadId);
   if (!lead) return;
@@ -1221,10 +1220,45 @@ function updateSpeedCounters() {
 // ═══════════════════════════════════════════════════════
 
 function toggleNavGroup(groupId) {
-  const group = document.getElementById(`navGroup${groupId.charAt(0).toUpperCase() + groupId.slice(1)}`);
+  // Map groupId string to the right element ID
+  const idMap = {
+    'foreign-leads': 'navGroupForeignLeads',
+    'viet-leads': 'navGroupVietLeads',
+    'leads': 'navGroupLeads',
+    'inbox': 'navGroupInbox',
+  };
+  const group = document.getElementById(idMap[groupId] || `navGroup${groupId.charAt(0).toUpperCase() + groupId.slice(1)}`);
   if (!group) return;
   group.classList.toggle('collapsed');
 }
+
+// ═══════════════════════════════════════════════════════
+// MOBILE SIDEBAR TOGGLE
+// ═══════════════════════════════════════════════════════
+function toggleMobileSidebar() {
+  const sidebar = document.getElementById('sidebarEl');
+  const overlay = document.getElementById('sidebarOverlay');
+  const btn = document.getElementById('mobileMenuBtn');
+  if (!sidebar) return;
+
+  const isOpen = sidebar.classList.contains('mobile-open');
+  sidebar.classList.toggle('mobile-open', !isOpen);
+  overlay?.classList.toggle('active', !isOpen);
+  btn?.classList.toggle('active', !isOpen);
+  document.body.style.overflow = isOpen ? '' : 'hidden';
+}
+
+// Auto-close sidebar on mobile when a menu item is clicked
+document.addEventListener('click', (e) => {
+  if (window.innerWidth > 768) return;
+  const sidebar = document.getElementById('sidebarEl');
+  if (!sidebar?.classList.contains('mobile-open')) return;
+
+  // Close if clicked a nav-sub-item or nav-item (a menu button)
+  if (e.target.closest('.nav-sub-item') || (e.target.closest('.nav-item') && !e.target.closest('.nav-item-header'))) {
+    setTimeout(() => toggleMobileSidebar(), 200);
+  }
+});
 
 function filterByMenu(category, btnEl) {
   // 1. Clear all active states across the full sidebar

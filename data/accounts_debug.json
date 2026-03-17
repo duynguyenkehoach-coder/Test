@@ -1,0 +1,26 @@
+[
+  {
+    "email": "manyhope0502@gmail.com",
+    "status": "resting",
+    "trust_score": 65,
+    "checkpoint_count": 1
+  },
+  {
+    "email": "mystictarot98@gmail.com",
+    "status": "resting",
+    "trust_score": 65,
+    "checkpoint_count": 1
+  },
+  {
+    "email": "hairypotter0502@gmail.com",
+    "status": "active",
+    "trust_score": 100,
+    "checkpoint_count": 0
+  },
+  {
+    "email": "hairypotter050298@gmail.com",
+    "status": "active",
+    "trust_score": 100,
+    "checkpoint_count": 0
+  }
+]

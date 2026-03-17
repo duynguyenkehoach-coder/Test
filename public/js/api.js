@@ -92,10 +92,25 @@ async function loadLeads() {
         AppState.leads = data || [];
         console.log('[THG] loadLeads:', AppState.leads.length, 'leads, category:', AppState.currentCategory);
 
+        // ── Client-side count segmentation (because the backend only knows Services, not Languages)
+        let displayCount = count || 0;
+        const currentCat = AppState.currentCategory || '';
+
+        const isVietnamese = (text) => {
+            if (!text) return false;
+            return /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(text);
+        };
+
+        if (currentCat.startsWith('Foreign-')) {
+            displayCount = AppState.leads.filter(l => !isVietnamese(l.content || '')).length;
+        } else if (currentCat.startsWith('Viet-')) {
+            displayCount = AppState.leads.filter(l => isVietnamese(l.content || '')).length;
+        }
+
         const leadsCountEl = document.getElementById('leadsCount');
         const tabLeadsCountEl = document.getElementById('tabLeadsCount');
-        if (leadsCountEl) leadsCountEl.textContent = `${count} leads`;
-        if (tabLeadsCountEl) tabLeadsCountEl.textContent = count;
+        if (leadsCountEl) leadsCountEl.textContent = `${displayCount} leads`;
+        if (tabLeadsCountEl) tabLeadsCountEl.textContent = displayCount;
         renderLeads();
     } catch (err) {
         console.error('Failed to load leads:', err);

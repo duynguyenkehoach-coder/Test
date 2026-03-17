@@ -15,11 +15,17 @@
 
 <body>
 
+  <!-- Mobile hamburger -->
+  <button class="mobile-menu-btn" id="mobileMenuBtn" onclick="toggleMobileSidebar()">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleMobileSidebar()"></div>
+
   <div class="app-layout">
     <!-- ============================== -->
     <!--  SIDEBAR                       -->
     <!-- ============================== -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebarEl">
       <div class="sidebar-header">
         <div class="logo">
           <div class="logo-icon">🔍</div>
@@ -65,7 +71,7 @@
                 <span class="nav-text">Tất cả Khách Ngoại</span>
               </button>
               <button class="nav-sub-item" onclick="filterByMenu('Foreign-Fulfill', this)">
-                <span class="nav-text">📦 Fulfill & POD</span>
+                <span class="nav-text">📦 Fulfill &amp; POD</span>
               </button>
               <button class="nav-sub-item" onclick="filterByMenu('Foreign-Express', this)">
                 <span class="nav-text">✈️ Ship Express</span>
@@ -88,7 +94,7 @@
                 <span class="nav-text">Tất cả Khách Việt</span>
               </button>
               <button class="nav-sub-item" onclick="filterByMenu('Viet-Fulfill', this)">
-                <span class="nav-text">📦 Fulfill & POD</span>
+                <span class="nav-text">📦 Fulfill &amp; POD</span>
               </button>
               <button class="nav-sub-item" onclick="filterByMenu('Viet-Express', this)">
                 <span class="nav-text">✈️ Ship Express</span>
@@ -98,6 +104,7 @@
               </button>
             </div>
           </div>
+
 
           <!-- LEADERBOARD NAV ITEM -->
           <button class="nav-item" id="tabLeaderboard" onclick="switchTab('leaderboard')">
