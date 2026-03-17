@@ -35,7 +35,7 @@ const database = require('../../core/data_store/database');
 const { runFullScan } = require('../pipelines/scraperEngine');
 const { classifyPosts } = require('../../ai/prompts/leadQualifier');
 const { generateResponses } = require('../../ai/prompts/salesCopilot');
-const { sendMessage } = require('../integrations/telegramBot');
+const { sendMessage } = require('../../core/integrations/telegramBot');
 const { cleanOldData, saveLeadsToFile } = require('../../core/data_store/fileManager');
 
 // Hub-Worker mode: poll VPS for jobs instead of local DB
