@@ -11,6 +11,14 @@ data/*.db-wal
 src/data_store/*.db
 src/data_store/*.db-wal
 src/data_store/*.db-journal
+src/data/*.db
+src/data/*.db-wal
+src/data/*.db-journal
+
+# Facebook cookies & sessions (sensitive!)
+data/fb_cookies_*.json
+data/sessions/
+*.png.json
 
 # Exported data files
 data/leads_*.json
