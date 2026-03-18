@@ -132,5 +132,41 @@ module.exports = {
             merge_logs: true,
             max_size: '20M',
         },
+
+        // ── Social Worker 24/7 (Browser Automation) ─────────────────────────
+        {
+            name: 'thg-social-worker',
+            script: 'src/infra/workers/socialWorker.js',
+            cwd: __dirname,
+
+            exec_mode: 'fork',
+            instances: 1,
+
+            env: {
+                NODE_ENV: 'production',
+            },
+
+            // Stability
+            autorestart: true,
+            max_restarts: 15,
+            min_uptime: '10s',
+            restart_delay: 10000, // 10 seconds between restarts
+
+            // Memory constraints — uses Chromium
+            max_memory_restart: '600M',
+
+            kill_timeout: 10000,
+            shutdown_with_message: true,
+
+            watch: false,
+
+            // Logging
+            log_file: 'logs/social_worker_combined.log',
+            out_file: 'logs/social_worker_out.log',
+            error_file: 'logs/social_worker_error.log',
+            log_date_format: 'YYYY-MM-DD HH:mm:ss',
+            merge_logs: true,
+            max_size: '30M',
+        },
     ],
 };

@@ -239,6 +239,41 @@ async function runSession() {
         logActivity(session.sessionId, 'inbox_check',
             `Messages: ${inboxResult.newMessages}, Convos: ${inboxResult.conversations.length}`, email);
 
+        // 6.5. AUTOMATED OUTREACH (24/7 Agent Commenting & Engaging)
+        console.log(`${tag} 🚀 Phase 3.5: Automated Outreach (Strategies 1 & 2)`);
+
+        try {
+            // A) Expert Replier (Auto-Comment)
+            const db = require('../../core/data_store/database');
+            const { batchReply } = require('../strategies/expertReplier');
+
+            const hotLeads = db.db.prepare(`
+                SELECT * FROM leads 
+                WHERE score >= 70 AND role = 'buyer' AND post_url IS NOT NULL 
+                AND status NOT IN ('ignored', 'converted', 'contacted') 
+                ORDER BY score DESC LIMIT 3
+            `).all();
+
+            if (hotLeads.length > 0) {
+                console.log(`${tag} 💬 Found ${hotLeads.length} leads to comment on`);
+                logActivity(session.sessionId, 'expert_reply', `Attempting ${hotLeads.length} AI comments`, email);
+                const replyResults = await batchReply(hotLeads, { staffName: salesName, page });
+                const successL = replyResults.filter(r => r.success).length;
+                logActivity(session.sessionId, 'expert_reply', `Sent ${successL}/${hotLeads.length} comments`, email);
+            }
+
+            // B) Profile Engager (Auto-Like/React)
+            const { runEngagementSession } = require('../strategies/profileEngager');
+            console.log(`${tag} 👀 Engaging profiles...`);
+            logActivity(session.sessionId, 'profile_engage', 'Starting profile engagement', email);
+            const engageResults = await runEngagementSession(page, { staffName: salesName });
+            if (engageResults) {
+                logActivity(session.sessionId, 'profile_engage', `Visited ${engageResults.visited}, Engaged ${engageResults.engaged}`, email);
+            }
+        } catch (strategyErr) {
+            console.error(`[SocialAgent] ⚠️ Outreach strategies failed: ${strategyErr.message}`);
+        }
+
         // 7. COOL-DOWN — scroll feed again (1-3 min)
         console.log(`${tag} 🌙 Phase 4: Cool-down`);
 
