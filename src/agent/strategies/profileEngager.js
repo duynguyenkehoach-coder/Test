@@ -177,38 +177,122 @@ function getUnengagedLeads(opts = {}) {
     }
 }
 
+// ─── Content Filters (chọn lọc — KHÔNG bão like rẻ tiền) ────────────────────
+
+// Posts chứa từ khóa này → KHÔNG LIKE
+const BLACKLIST_PATTERNS = [
+    // Quảng cáo / spam
+    /(?:giảm giá|khuyến mãi|sale off|flash sale|mua ngay|đặt hàng|order now|inbox giá|dm for price)/i,
+    // Chính trị / nhạy cảm
+    /(?:chính trị|bầu cử|biểu tình|đảng|chính phủ|trump|biden|election|protest)/i,
+    // Buồn / tang / tiêu cực
+    /(?:rip|ra đi|qua đời|mất rồi|chia tay|tang lễ|buồn quá|tuyệt vọng|condolence|passed away)/i,
+    // Scam / đa cấp
+    /(?:đa cấp|mlm|thu nhập thụ động|passive income|forex signal|crypto.*x\d|ponzi|binance signal)/i,
+    // Đối thủ trực tiếp
+    /(?:anex|yanwen|vnpost express|ghn us|shipment.*competitor)/i,
+    // Religious / gây tranh cãi
+    /(?:kinh thánh|phật|chúa|nhà thờ|đền|church|pray for)/i,
+];
+
+// Posts chứa từ khóa này → ƯU TIÊN LIKE (liên quan đến business/logistics)
+const WHITELIST_PATTERNS = [
+    /(?:ship|vận chuyển|fulfillment|kho hàng|warehouse|ecommerce|e-commerce|etsy|amazon|tiktok shop)/i,
+    /(?:kinh doanh|business|startup|doanh thu|khởi nghiệp|seller|dropship|pod|print on demand)/i,
+    /(?:review|chia sẻ kinh nghiệm|tips|hướng dẫn|tutorial|milestone|thành công|success)/i,
+    /(?:hàng mỹ|ship mỹ|order mỹ|us warehouse|ship to us|gửi hàng)/i,
+];
+
+/**
+ * Check if a post's content is worth liking
+ * @param {string} text - Post text content
+ * @returns {'like' | 'skip' | 'neutral'}
+ */
+function evaluatePostContent(text) {
+    if (!text || text.length < 10) return 'skip';
+
+    // Check blacklist first — any match → skip
+    for (const pattern of BLACKLIST_PATTERNS) {
+        if (pattern.test(text)) return 'skip';
+    }
+
+    // Check whitelist — any match → like
+    for (const pattern of WHITELIST_PATTERNS) {
+        if (pattern.test(text)) return 'like';
+    }
+
+    // Neutral content — like only if post is positive/casual (photos, life updates)
+    // Skip if too short (just a link/share) or too long (article/rant)
+    if (text.length < 30 || text.length > 2000) return 'skip';
+
+    return 'neutral';
+}
+
 // ─── Browser Interaction Helpers ─────────────────────────────────────────────
 
 /**
- * Try to like a recent post on the profile page
+ * Try to like a SELECTED post on the profile page
+ * Reads post content first → evaluates → only likes if worth it
+ * Max 1 like per profile visit
  */
 async function tryLikeRecentPost(page) {
     try {
-        // Facebook like button selectors (multi-language support)
-        const likeSelectors = [
-            '[aria-label="Like"]',
-            '[aria-label="Thích"]',
-            '[aria-label="Like"][role="button"]',
-            '[data-testid="like_button"]',
+        // Get all visible post containers
+        const postSelectors = [
+            'div[data-pagelet^="ProfileTimeline"] div[role="article"]',
+            'div[role="article"]',
         ];
 
-        for (const sel of likeSelectors) {
-            const buttons = await page.$$(sel);
-            if (buttons.length > 0) {
-                // Pick a random like button (not the first one — more natural)
-                const idx = Math.min(randomInt(0, 2), buttons.length - 1);
-                const btn = buttons[idx];
-                if (await btn.isVisible()) {
-                    // Check if already liked
-                    const ariaPressed = await btn.getAttribute('aria-pressed');
-                    if (ariaPressed === 'true') continue; // Already liked
-
-                    await humanClick(page, btn);
-                    await humanDelay(1000, 2000);
-                    return true;
-                }
-            }
+        let posts = [];
+        for (const sel of postSelectors) {
+            posts = await page.$$(sel);
+            if (posts.length > 0) break;
         }
+
+        if (posts.length === 0) return false;
+
+        // Scan up to 5 posts, find the first one worth liking
+        const maxScan = Math.min(posts.length, 5);
+        for (let i = 0; i < maxScan; i++) {
+            const post = posts[i];
+            try {
+                // Read post content
+                const postText = await post.innerText().catch(() => '');
+                const verdict = evaluatePostContent(postText);
+
+                if (verdict === 'skip') {
+                    console.log(`[ProfileEngager] ⏭️ Skip post #${i + 1} (blacklisted/irrelevant)`);
+                    continue;
+                }
+
+                // For 'neutral' posts — only 30% chance to like (selective)
+                if (verdict === 'neutral' && Math.random() > 0.3) {
+                    console.log(`[ProfileEngager] 🤷 Neutral post #${i + 1} — skip this time`);
+                    continue;
+                }
+
+                // Found a good post → find its Like button
+                const likeSelectors = [
+                    '[aria-label="Like"]', '[aria-label="Thích"]',
+                    '[aria-label="Like"][role="button"]',
+                ];
+
+                for (const sel of likeSelectors) {
+                    const btn = await post.$(sel);
+                    if (btn && await btn.isVisible()) {
+                        const pressed = await btn.getAttribute('aria-pressed');
+                        if (pressed === 'true') continue; // Already liked
+
+                        console.log(`[ProfileEngager] 🎯 Selected post #${i + 1} to like (verdict: ${verdict})`);
+                        await humanClick(page, btn);
+                        await humanDelay(1000, 2000);
+                        return true;
+                    }
+                }
+            } catch { continue; }
+        }
+
+        console.log(`[ProfileEngager] 🚫 No post worth liking — skipped all`);
         return false;
     } catch {
         return false;
