@@ -27,6 +27,7 @@ const leaderboardRoutes = require('./routes/leaderboard.routes');
 const workerRoutes = require('./routes/worker.routes');
 const socialRoutes = require('./routes/social.routes');
 const outreachRoutes = require('./routes/outreach.routes');
+const strategyRoutes = require('./routes/strategy.routes');
 const dataRoutes = require('./routes/data.routes');
 const devRoutes = require('./routes/dev.routes');
 const webhookRoutes = require('./routes/webhook.routes');
@@ -148,6 +149,7 @@ app.use(devRoutes);
 app.use(webhookRoutes);
 app.use('/api/social', socialRoutes);
 app.use(outreachRoutes);
+app.use('/api/strategy', strategyRoutes);
 
 // ── Initialize Group Discovery DB ───────────────────────────────────────────
 try {
