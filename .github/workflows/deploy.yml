@@ -78,28 +78,30 @@ jobs:
           echo "✅ Docker stopped (or was not running)"
 
       - name: Ensure Ollama is Running
+        continue-on-error: true
+        env:
+          HOME: /root
         run: |
           # Check if Ollama is installed
           if ! command -v ollama &> /dev/null; then
-            echo "⚠️ Ollama not installed — run scripts/setup-ollama.sh first"
-          else
-            # Ensure Ollama service is running
-            sudo systemctl start ollama 2>/dev/null || true
-            sleep 3
-
-            # Verify model is available
-            if ollama list 2>/dev/null | grep -q "qwen2.5:3b"; then
-              echo "✅ Ollama running with qwen2.5:3b"
-            else
-              echo "📥 Pulling qwen2.5:3b model..."
-              ollama pull qwen2.5:3b
-              echo "✅ Model pulled"
-            fi
-
-            # Health check
-            HTTP=$(curl -so /dev/null -w "%{http_code}" http://127.0.0.1:11434/api/tags 2>/dev/null || echo "000")
-            echo "🩺 Ollama health: HTTP ${HTTP}"
+            echo "⚠️ Ollama not installed — cloud fallbacks (Cerebras/Sambanova) will be used"
+            exit 0
           fi
+
+          export HOME=${HOME:-/root}
+
+          sudo systemctl start ollama 2>/dev/null || (ollama serve &>/dev/null &)
+          sleep 3
+
+          if ollama list 2>/dev/null | grep -q "qwen2.5:3b"; then
+            echo "✅ Ollama running with qwen2.5:3b"
+          else
+            echo "📥 Pulling qwen2.5:3b model..."
+            ollama pull qwen2.5:3b || echo "⚠️ Model pull failed — will use cloud fallbacks"
+          fi
+
+          HTTP=$(curl -so /dev/null -w "%{http_code}" http://127.0.0.1:11434/api/tags 2>/dev/null || echo "000")
+          echo "🩺 Ollama health: HTTP ${HTTP}"
 
       - name: Restart PM2 Processes
         run: |
