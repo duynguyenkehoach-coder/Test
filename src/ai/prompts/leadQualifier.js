@@ -15,7 +15,7 @@ const { saveClassification } = require('../agents/memoryStore');
 const { runProviderGuard, buildKnownProviderSet, buildKnownProviderNameSet } = require('../agents/providerGuard');
 
 // ═══════════════════════════════════════════════════════
-// AI Provider Chain: Cerebras → Sambanova → Groq → Gemini
+// AI Provider Chain: Cerebras → Sambanova → Groq (NO Gemini — key suspended)
 // ═══════════════════════════════════════════════════════
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -26,7 +26,7 @@ if (config.CEREBRAS_API_KEY) {
         apiKey: config.CEREBRAS_API_KEY,
         baseURL: 'https://api.cerebras.ai/v1',
     });
-    console.log('[Classifier] ✅ Cerebras AI loaded (primary)');
+    console.log('[Classifier] ✅ Cerebras loaded (primary — llama3.1-8b)');
 }
 
 // Provider 2: Sambanova (FALLBACK — free 30 RPM, 6000 RPD)
@@ -36,43 +36,31 @@ if (config.SAMBANOVA_API_KEY) {
         apiKey: config.SAMBANOVA_API_KEY,
         baseURL: 'https://api.sambanova.ai/v1',
     });
-    console.log('[Classifier] ✅ Sambanova AI loaded (fallback)');
+    console.log('[Classifier] ✅ Sambanova loaded (fallback — Meta-Llama-3.3-70B-Instruct)');
 }
 
 // Provider 3: Groq (BACKUP)
-const groq = new Groq({ apiKey: config.GROQ_API_KEY });
-
-// Provider 4: Gemini (LAST RESORT)
-let geminiModel = null;
-try {
-    const { GoogleGenerativeAI } = require('@google/generative-ai');
-    if (config.GEMINI_API_KEY) {
-        const genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY);
-        geminiModel = genAI.getGenerativeModel({ model: config.GEMINI_MODEL || 'gemini-2.0-flash' });
-        console.log('[Classifier] ✅ Gemini AI loaded (last resort)');
-    }
-} catch (e) { }
-
-// Rate limiter for Gemini (free tier: 15 RPM)
-let lastGeminiCall = 0;
-const GEMINI_MIN_INTERVAL_MS = 4200;
-async function geminiThrottle() {
-    const elapsed = Date.now() - lastGeminiCall;
-    if (elapsed < GEMINI_MIN_INTERVAL_MS) await sleep(GEMINI_MIN_INTERVAL_MS - elapsed);
-    lastGeminiCall = Date.now();
+let groq = null;
+if (config.GROQ_API_KEY) {
+    groq = new Groq({ apiKey: config.GROQ_API_KEY });
+    console.log('[Classifier] ✅ Groq loaded (backup — llama-3.1-8b-instant)');
 }
 
-// Provider list for cascade
+// ❌ Gemini REMOVED — API key permanently suspended by Google
+
+// Provider list for cascade (Cerebras → Sambanova → Groq)
 const PROVIDERS = [
-    { name: 'Cerebras', client: cerebras, model: 'llama-3.3-70b', type: 'openai' },
+    { name: 'Cerebras', client: cerebras, model: 'llama3.1-8b', type: 'openai' },
     { name: 'Sambanova', client: sambanova, model: 'Meta-Llama-3.3-70B-Instruct', type: 'openai' },
     { name: 'Groq', client: groq, model: 'llama-3.1-8b-instant', type: 'groq' },
-].filter(p => p.client); // Only include providers with valid API keys
+].filter(p => p.client);
+
+console.log(`[Classifier] 🔄 Provider chain: ${PROVIDERS.map(p => p.name).join(' → ')} (NO Gemini)`);
 
 let activeProviderIndex = 0;
 let consecutiveErrors = 0;
-const BATCH_SIZE = 10; // Posts per batch
-const BATCH_DELAY_MS = 3000; // 3s sleep between batches
+const BATCH_SIZE = 5; // Posts per batch (smaller = less rate limit pressure)
+const BATCH_DELAY_MS = 10000; // 10s strict sleep between ALL batches
 
 const PROVIDER_REGEX = /(chúng tôi nhận gửi|quy trình gửi hàng|lợi ích khi gửi hàng với chúng tôi|nhận gửi hàng đi|chuyên tuyến việt|cước phí cạnh tranh|cam kết giao tận tay|hỗ trợ tư vấn, chăm sóc khách hàng 24\/7|we offer fulfillment|shipping services from us|dịch vụ vận chuyển uy tín|không phát sinh chi phí|bao thuế bao luật|bao thuế 2 đầu|bao thuế|nhận pick up|đóng gói miễn phí|hút chân không|lh em ngay|lh em|liên hệ em|ib em ngay|ib em|ibox em|ibox ngay|inbox em|cmt em|chấm em|check ib|check inbox|dạ em nhận|em chuyên nhận|em chuyên vận chuyển|em chuyên gửi|em nhận ship|em nhận gửi|gửi hàng đi mỹ inbox|nhận vận chuyển|zalo: 0|tham khảo ngay|viettel post|epacket|saigonbay|nhận ship hàng|dịch vụ ship|cước ship|giá ship từ|bảng giá ship|đặt ship ngay|cam kết|chuyên gửi|nhận gửi|dịch vụ gửi|giao hàng nhanh|giao tận nơi|ship cod|bên em chuyên|bên em nhận|bên em có kho|bên em sẵn|bên mình chuyên|bên mình nhận|bên mình có kho|bên mình sẵn|anh.chị.*(tham khảo|liên hệ|ib|inbox|ibox)|giải pháp gửi hàng|ready to scale|from warehousing|we ship|we offer|contact us|whatsapp|xin phép admin|seller nên biết|nhận từ 1 đơn|chỉ từ \d+k|chỉ từ \d+đ|giá tốt nhất|nếu mọi người đang tìm|nếu anh.chị.*(cần|tìm|đang)|just launched.*(fulfillment|warehouse)|moving into our new|ecoli express|free quote|get started today|our warehouse|customs clearance|nhắn em để|nhắn em ngay|inbox ngay|mở rộng sản xuất|sẵn sàng cùng seller|xưởng.*sản xuất|fulfill trực tiếp|fulfill ngay tại|giá xưởng|giá gốc|báo giá|cần thêm thông tin.*nhắn|hỗ trợ.*nhanh nhất|đánh chiếm|siêu lợi nhuận|ưu đãi.*seller|chương trình.*ưu đãi|dm\s+for|dm\s+me|message\s+us|book\s+a\s+call|schedule\s+a\s+call|sign\s+up\s+now|sẵn sàng phục vụ|phục vụ.*seller|cung cấp dịch vụ|chúng tôi cung cấp|we\s+provide|we\s+specialize|our\s+service|tele\s*:\s*@|\bpm\s+em\b|\bpm\s+mình\b|gom đồ hộ|nhận mua hộ|nhận mua và gom|đường sea chỉ từ|đường bay chỉ từ|bay cargo|cước.{0,10}\d+[eđdk]\/kg|sẵn kho ở|em sẵn kho|hỗ trợ đóng gói|hỗ trợ lưu kho|pick.?up tận nơi|pick.?up tận nhà|free nhận đồ|free nhận hàng|nhận đồ tại nhà|gom hàng|xử lý trọn gói|tận tâm trên từng|đừng chần chừ|đừng bỏ lỡ|mở ưu đãi|cước.*chỉ\s*(?:từ\s*)?\d|bay thẳng.*\d+[eđdk]|traking|tracking theo dõi)/i;
 
@@ -331,20 +319,10 @@ async function classifySmallBatch(posts) {
             console.warn(`[Classifier] ⚠️ ${prov.name} error: ${err.message?.substring(0, 120)}`);
         }
     }
-    // Gemini last resort
-    if (geminiModel) {
-        try {
-            await geminiThrottle();
-            console.log('[Classifier] 🔄 All providers failed → Gemini');
-            const postsList = posts.map((p, idx) => `[POST ${idx + 1}] Platform: ${p.platform}\nContent: ${(p.content || '').substring(0, 600)}`).join('\n\n');
-            const prompt = sysPrompt + `\n\nPhân tích ${posts.length} bài. Trả về {"results": [...]}:\n\n${postsList}`;
-            const result = await geminiModel.generateContent(prompt);
-            const arr = parseAIResponse(result.response.text());
-            if (arr) return arr.map(r => parseResult(r));
-        } catch (e) { console.error('[Classifier] ❌ Gemini batch failed:', e.message); }
-    }
+    // All 3 providers failed — fallback to individual classification
+    console.warn('[Classifier] ⚠️ All providers failed for batch → trying individual...');
     const individual = [];
-    for (const post of posts) { individual.push(await classifyPost(post)); await sleep(1000); }
+    for (const post of posts) { individual.push(await classifyPost(post)); await sleep(2000); }
     return individual;
 }
 
@@ -357,10 +335,15 @@ async function classifyBatch(posts) {
     const total = Math.ceil(posts.length / BATCH_SIZE);
     for (let b = 0; b < total; b++) {
         const chunk = posts.slice(b * BATCH_SIZE, (b + 1) * BATCH_SIZE);
-        console.log(`[Classifier]   → ${(b * BATCH_SIZE) + chunk.length}/${posts.length} classified (batch ${b + 1}/${total}, provider: ${PROVIDERS[activeProviderIndex]?.name || 'Gemini'})`);
+        console.log(`[Classifier]   → ${(b * BATCH_SIZE) + chunk.length}/${posts.length} classified (batch ${b + 1}/${total}, provider: ${PROVIDERS[activeProviderIndex]?.name || 'None'})`);
         const results = await classifySmallBatch(chunk);
         allResults.push(...results);
-        if (b < total - 1) await sleep(BATCH_DELAY_MS);
+        // ⏱️ STRICT 10s sleep between ALL batches — prevents rate limit cascading
+        // This runs ALWAYS, even if we're on the last batch or if errors occurred
+        if (b < total - 1) {
+            console.log(`[Classifier] 💤 Sleeping ${BATCH_DELAY_MS / 1000}s before next batch...`);
+            await sleep(BATCH_DELAY_MS);
+        }
     }
     return allResults;
 }
@@ -387,15 +370,7 @@ async function classifyPost(post) {
             if (isLimit && i < PROVIDERS.length - 1) { continue; }
         }
     }
-    if (geminiModel) {
-        try {
-            await geminiThrottle();
-            const prompt = buildSystemPrompt(post.content) + '\n\n' + buildUserPrompt(post);
-            const result = await geminiModel.generateContent(prompt);
-            const arr = parseAIResponse(result.response.text());
-            if (arr && arr.length > 0) return parseResult(arr[0]);
-        } catch { /* give up */ }
-    }
+    // All providers failed
     return makeFallback();
 }
 

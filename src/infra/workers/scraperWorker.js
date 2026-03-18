@@ -577,24 +577,40 @@ async function pollQueue() {
 async function reportToHub(jobId, status, result, error) {
     if (!HUB_URL || !axios) return;
     try {
-        // Collect all leads saved during this pipeline run
+        // Collect leads saved during this pipeline run
         let posts = [];
         try {
-            // Get leads from the last scan — widened to 2h because scans can take 60+ minutes
             const rows = database.db.prepare(
-                `SELECT * FROM leads WHERE scraped_at > datetime('now', '-2 hours') ORDER BY id DESC LIMIT 200`
+                `SELECT id, platform, post_url, author_name, author_url, score, category, summary, assigned_sales, status, scraped_at FROM leads WHERE scraped_at > datetime('now', '-2 hours') ORDER BY id DESC LIMIT 50`
             ).all();
-            posts = rows;
+            // Slim payload — only essential fields (fixes 413 Payload Too Large)
+            posts = rows.map(r => ({
+                id: r.id,
+                platform: r.platform,
+                post_url: r.post_url,
+                author_name: (r.author_name || '').substring(0, 50),
+                author_url: r.author_url,
+                score: r.score,
+                category: r.category,
+                summary: (r.summary || '').substring(0, 200),
+                assigned_sales: r.assigned_sales,
+                status: r.status,
+                scraped_at: r.scraped_at,
+            }));
         } catch { }
 
         await axios.post(`${HUB_URL}/api/worker/jobs/${jobId}/complete`, {
             status,
-            result: result || {},
-            error: error || null,
+            result: {
+                totalLeads: result?.totalLeads || 0,
+                duration: result?.duration || 0,
+            },
+            error: error ? error.substring(0, 200) : null,
             posts,
         }, {
             headers: { 'x-thg-auth-key': WORKER_AUTH_KEY },
             timeout: 30000,
+            maxContentLength: 5 * 1024 * 1024, // 5MB max
         });
         console.log(`[Worker] 📡 Reported job #${jobId} to Hub (${posts.length} leads sent)`);
     } catch (err) {
