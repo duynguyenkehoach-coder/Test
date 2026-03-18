@@ -35,6 +35,7 @@ const database = require('../../core/data_store/database');
 const { runFullScan } = require('../pipelines/scraperEngine');
 const { classifyPosts } = require('../../ai/prompts/leadQualifier');
 const { generateResponses } = require('../../ai/prompts/salesCopilot');
+const { onHotLeadDetected, HOT_SCORE_THRESHOLD } = require('../../agent/strategies/hotLeadAlert');
 const { sendMessage } = require('../../core/integrations/telegramBot');
 const { cleanOldData, saveLeadsToFile } = require('../../core/data_store/fileManager');
 
@@ -374,7 +375,7 @@ async function runPipeline(options = {}) {
         console.log('\n[Pipeline] 💾 Step 4: Saving to database...');
         for (const lead of withResponses) {
             try {
-                database.insertLead.run({
+                const info = database.insertLead.run({
                     platform: lead.platform,
                     post_url: lead.post_url,
                     author_name: lead.author_name,
@@ -396,8 +397,22 @@ async function runPipeline(options = {}) {
                     spam_score: lead.spamScore || 0,
                     item_type: lead.item_type || 'post',
                 });
-                totalLeads++;
-                if (stats.platforms[lead.platform]) stats.platforms[lead.platform].leads++;
+
+                if (info.changes > 0) {
+                    totalLeads++;
+                    if (stats.platforms[lead.platform]) stats.platforms[lead.platform].leads++;
+
+                    // Trigger real-time Hot Lead Alert (Strategy 3)
+                    if (lead.score >= HOT_SCORE_THRESHOLD && lead.role === 'buyer') {
+                        const leadDbId = info.lastInsertRowid;
+                        const leadDb = database.getLeadById.get(leadDbId);
+                        if (leadDb) {
+                            onHotLeadDetected(leadDb, { staffName: 'Trang' }).catch(err => {
+                                console.error(`[Pipeline] ⚠️ Hot Alert failed for lead #${leadDbId}: ${err.message}`);
+                            });
+                        }
+                    }
+                }
             } catch (err) {
                 if (!err.message.includes('UNIQUE constraint')) {
                     console.error(`[Pipeline] ✗ Error saving lead:`, err.message);
