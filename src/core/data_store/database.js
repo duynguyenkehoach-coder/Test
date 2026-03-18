@@ -858,14 +858,57 @@ const getCreditLog = () => {
   `).all();
 };
 
+// ─── Social Agent Activity Log ────────────────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS social_activity_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_email TEXT DEFAULT '',
+    action TEXT NOT NULL,
+    details TEXT DEFAULT '',
+    session_id TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_social_session ON social_activity_log(session_id);
+  CREATE INDEX IF NOT EXISTS idx_social_action  ON social_activity_log(action);
+`);
+
+const logSocialActivity = (accountEmail, action, details = '', sessionId = '') =>
+  db.prepare(`
+    INSERT INTO social_activity_log (account_email, action, details, session_id)
+    VALUES (?, ?, ?, ?)
+  `).run(accountEmail || '', action, details, sessionId);
+
+const getSocialActivityLog = (limit = 50) =>
+  db.prepare(`SELECT * FROM social_activity_log ORDER BY created_at DESC LIMIT ?`).all(limit);
+
+// ─── Outreach Log (AI-generated messages to leads) ────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS outreach_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lead_id INTEGER NOT NULL,
+    staff_name TEXT NOT NULL,
+    channel TEXT DEFAULT 'messenger',
+    message TEXT NOT NULL,
+    ai_generated INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'draft',
+    sent_at TEXT,
+    replied_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_outreach_lead ON outreach_log(lead_id);
+  CREATE INDEX IF NOT EXISTS idx_outreach_staff ON outreach_log(staff_name);
+`);
+
+// Pipeline stage on leads
+try { db.exec(`ALTER TABLE leads ADD COLUMN pipeline_stage TEXT DEFAULT 'new'`); } catch { }
+
 module.exports = {
   db,
   insertLead,
   getLeads,
   getLeadById,
   updateLeadStatus,
-  getStats,
-  getStatsCached,
+  getStats: getStatsCached,
   invalidateStatsCache,
   getAnalytics,
   insertScanLog,
@@ -906,6 +949,7 @@ module.exports = {
   completeScan,
   failScan,
   getScanQueueStatus,
+  // Social Agent
+  logSocialActivity,
+  getSocialActivityLog,
 };
-
-
