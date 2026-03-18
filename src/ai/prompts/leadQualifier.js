@@ -221,8 +221,6 @@ function analyzeLeadIntent(content) {
     };
 }
 
-let currentModelIndex = 0;
-let consecutiveErrors = 0;
 
 // ═══════════════════════════════════════════════════════
 // Parse + enforce scoring rules
@@ -599,7 +597,7 @@ async function classifyPosts(posts) {
 
     const BATCH_SIZE = 5;
     const results = [...preFiltered];
-    currentModelIndex = 0;
+    activeProviderIndex = 0;
     consecutiveErrors = 0;
     let stopEarly = false;
 
