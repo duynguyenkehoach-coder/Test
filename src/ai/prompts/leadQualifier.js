@@ -7,46 +7,74 @@
  * - Prompt Builder: assembles context-aware prompts
  */
 
-const Groq = require('groq-sdk');
+const OpenAI = require('openai');
 const config = require('../../config');
 const { buildSystemPrompt, buildUserPrompt, buildBatchPrompt } = require('../agents/promptBuilder');
 const { saveClassification } = require('../agents/memoryStore');
 const { runProviderGuard, buildKnownProviderSet, buildKnownProviderNameSet } = require('../agents/providerGuard');
 
-const groq = new Groq({ apiKey: config.GROQ_API_KEY });
+// ═══════════════════════════════════════════════════════
+// AI Provider Chain: Ollama (local, NO limit) → Cerebras → Sambanova
+// ❌ Groq REMOVED — constantly rate limited (429)
+// ❌ Gemini REMOVED — key permanently suspended
+// ═══════════════════════════════════════════════════════
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-let geminiModel = null;
+// Provider 1: Ollama (PRIMARY — self-hosted on VPS, $0, NO rate limit!)
+let ollama = null;
+const OLLAMA_BASE_URL = config.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
+const OLLAMA_MODEL = config.OLLAMA_MODEL || 'qwen2.5:3b';
 try {
-    const { GoogleGenerativeAI } = require('@google/generative-ai');
-    if (config.GEMINI_API_KEY) {
-        const genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY);
-        geminiModel = genAI.getGenerativeModel({ model: config.GEMINI_MODEL || 'gemini-2.0-flash' });
-        console.log('[Classifier] ✅ Gemini AI fallback loaded');
-    }
-} catch (e) { }
-
-// ═══ Gemini Rate Limiter (Free Tier: 15 RPM = 4s between calls) ═══
-let lastGeminiCall = 0;
-const GEMINI_MIN_INTERVAL_MS = 4200; // ~14 RPM to stay safely under 15 RPM
-async function geminiThrottle() {
-    const now = Date.now();
-    const elapsed = now - lastGeminiCall;
-    if (elapsed < GEMINI_MIN_INTERVAL_MS) {
-        await new Promise(r => setTimeout(r, GEMINI_MIN_INTERVAL_MS - elapsed));
-    }
-    lastGeminiCall = Date.now();
+    ollama = new OpenAI({
+        apiKey: 'ollama',
+        baseURL: `${OLLAMA_BASE_URL}/v1`,
+    });
+    console.log(`[Classifier] ✅ Ollama loaded (primary — ${OLLAMA_MODEL} @ ${OLLAMA_BASE_URL})`);
+} catch (e) {
+    console.warn('[Classifier] ⚠️ Ollama not available:', e.message);
 }
 
-const AI_MODELS = [
-    config.AI_MODEL || 'llama-3.3-70b-versatile',
-    'meta-llama/llama-4-scout-17b-16e-instruct',
-    'llama-3.3-70b-specdec',
-    'llama-3.1-8b-instant',
-    'mixtral-8x7b-32768',
-    'qwen-qwq-32b',
-];
+// Provider 2: Cerebras (FALLBACK — cloud, free 30 RPM)
+let cerebras = null;
+if (config.CEREBRAS_API_KEY) {
+    cerebras = new OpenAI({
+        apiKey: config.CEREBRAS_API_KEY,
+        baseURL: 'https://api.cerebras.ai/v1',
+    });
+    console.log('[Classifier] ✅ Cerebras loaded (fallback — llama3.1-8b)');
+}
 
-const PROVIDER_REGEX = /(chúng tôi nhận gửi|quy trình gửi hàng|lợi ích khi gửi hàng với chúng tôi|nhận gửi hàng đi|chuyên tuyến việt|cước phí cạnh tranh|cam kết giao tận tay|hỗ trợ tư vấn, chăm sóc khách hàng 24\/7|we offer fulfillment|shipping services from us|dịch vụ vận chuyển uy tín|không phát sinh chi phí|bao thuế bao luật|nhận pick up|đóng gói miễn phí|hút chân không|lh em ngay|lh em|liên hệ em|ib em ngay|ib em|inbox em|cmt em|chấm em|check ib|check inbox|dạ em nhận|em chuyên nhận|gửi hàng đi mỹ inbox|nhận vận chuyển|zalo: 0|tham khảo ngay|viettel post|epacket|saigonbay|nhận ship hàng|dịch vụ ship|cước ship|giá ship từ|bảng giá ship|đặt ship ngay|cam kết|chuyên gửi|nhận gửi|dịch vụ gửi|giao hàng nhanh|giao tận nơi|ship cod|bên em chuyên|bên em nhận|bên mình chuyên|bên mình nhận|anh.chị.*(tham khảo|liên hệ|ib|inbox)|giải pháp gửi hàng|ready to scale|from warehousing|we ship|we offer|contact us|whatsapp|xin phép admin|seller nên biết|nhận từ 1 đơn|chỉ từ \d+k|chỉ từ \d+đ|giá tốt nhất|nếu mọi người đang tìm|nếu anh.chị.*(cần|tìm|đang)|just launched.*(fulfillment|warehouse)|moving into our new|ecoli express|free quote|get started today|our warehouse|customs clearance|nhắn em để|nhắn em ngay|inbox ngay|mở rộng sản xuất|sẵn sàng cùng seller|xưởng.*sản xuất|fulfill trực tiếp|fulfill ngay tại|giá xưởng|giá gốc|báo giá|cần thêm thông tin.*nhắn|hỗ trợ.*nhanh nhất|đánh chiếm|siêu lợi nhuận|ưu đãi.*seller|chương trình.*ưu đãi|dm\s+for|dm\s+me|message\s+us|book\s+a\s+call|schedule\s+a\s+call|sign\s+up\s+now|sẵn sàng phục vụ|phục vụ.*seller|cung cấp dịch vụ|chúng tôi cung cấp|we\s+provide|we\s+specialize|our\s+service)/i;
+// Provider 3: Sambanova (FALLBACK 2 — cloud, free 30 RPM)
+let sambanova = null;
+if (config.SAMBANOVA_API_KEY) {
+    sambanova = new OpenAI({
+        apiKey: config.SAMBANOVA_API_KEY,
+        baseURL: 'https://api.sambanova.ai/v1',
+    });
+    console.log('[Classifier] ✅ Sambanova loaded (fallback 2 — Meta-Llama-3.3-70B-Instruct)');
+}
+
+// Provider list for cascade (Ollama → Cerebras → Sambanova)
+const PROVIDERS = [
+    { name: 'Ollama', client: ollama, model: OLLAMA_MODEL, type: 'openai' },
+    { name: 'Cerebras', client: cerebras, model: 'llama3.1-8b', type: 'openai' },
+    { name: 'Sambanova', client: sambanova, model: 'Meta-Llama-3.3-70B-Instruct', type: 'openai' },
+].filter(p => p.client);
+
+console.log(`[Classifier] 🔄 Provider chain: ${PROVIDERS.map(p => p.name).join(' → ')}`);
+
+let activeProviderIndex = 0;
+let consecutiveErrors = 0;
+const BATCH_SIZE = 5; // Posts per batch
+const BATCH_DELAY_MS = 3000; // 3s sleep (Ollama = no rate limit, can be faster)
+
+const PROVIDER_REGEX = /(chúng tôi nhận gửi|quy trình gửi hàng|lợi ích khi gửi hàng với chúng tôi|nhận gửi hàng đi|chuyên tuyến việt|cước phí cạnh tranh|cam kết giao tận tay|hỗ trợ tư vấn, chăm sóc khách hàng 24\/7|we offer fulfillment|shipping services from us|dịch vụ vận chuyển uy tín|không phát sinh chi phí|bao thuế bao luật|bao thuế 2 đầu|bao thuế|nhận pick up|đóng gói miễn phí|hút chân không|lh em ngay|lh em|liên hệ em|ib em ngay|ib em|ibox em|ibox ngay|inbox em|cmt em|chấm em|check ib|check inbox|dạ em nhận|em chuyên nhận|em chuyên vận chuyển|em chuyên gửi|em nhận ship|em nhận gửi|gửi hàng đi mỹ inbox|nhận vận chuyển|zalo: 0|tham khảo ngay|viettel post|epacket|saigonbay|nhận ship hàng|dịch vụ ship|cước ship|giá ship từ|bảng giá ship|đặt ship ngay|cam kết|chuyên gửi|nhận gửi|dịch vụ gửi|giao hàng nhanh|giao tận nơi|ship cod|bên em chuyên|bên em nhận|bên em có kho|bên em sẵn|bên mình chuyên|bên mình nhận|bên mình có kho|bên mình sẵn|anh.chị.*(tham khảo|liên hệ|ib|inbox|ibox)|giải pháp gửi hàng|ready to scale|from warehousing|we ship|we offer|contact us|whatsapp|xin phép admin|seller nên biết|nhận từ 1 đơn|chỉ từ \d+k|chỉ từ \d+đ|giá tốt nhất|nếu mọi người đang tìm|nếu anh.chị.*(cần|tìm|đang)|just launched.*(fulfillment|warehouse)|moving into our new|ecoli express|free quote|get started today|our warehouse|customs clearance|nhắn em để|nhắn em ngay|inbox ngay|mở rộng sản xuất|sẵn sàng cùng seller|xưởng.*sản xuất|fulfill trực tiếp|fulfill ngay tại|giá xưởng|giá gốc|báo giá|cần thêm thông tin.*nhắn|hỗ trợ.*nhanh nhất|đánh chiếm|siêu lợi nhuận|ưu đãi.*seller|chương trình.*ưu đãi|dm\s+for|dm\s+me|message\s+us|book\s+a\s+call|schedule\s+a\s+call|sign\s+up\s+now|sẵn sàng phục vụ|phục vụ.*seller|cung cấp dịch vụ|chúng tôi cung cấp|we\s+provide|we\s+specialize|our\s+service|tele\s*:\s*@|\bpm\s+em\b|\bpm\s+mình\b|gom đồ hộ|nhận mua hộ|nhận mua và gom|đường sea chỉ từ|đường bay chỉ từ|bay cargo|cước.{0,10}\d+[eđdk]\/kg|sẵn kho ở|em sẵn kho|hỗ trợ đóng gói|hỗ trợ lưu kho|pick.?up tận nơi|pick.?up tận nhà|free nhận đồ|free nhận hàng|nhận đồ tại nhà|gom hàng|xử lý trọn gói|tận tâm trên từng|đừng chần chừ|đừng bỏ lỡ|mở ưu đãi|cước.*chỉ\s*(?:từ\s*)?\d|bay thẳng.*\d+[eđdk]|traking|tracking theo dõi)/i;
+
+// Pricing regex — catches logistics pricing ads: 159.000đ/kg, $2.5/kg, 8.2e/kg
+const PRICING_AD_REGEX = /(?:cước|giá|price|rate|cost|phí)\s*.{0,20}\d+[.,]?\d*\s*(?:đ|d|k|usd|\$|e)\/(?:kg|kiện|cbm|m3|đơn|order|pcs)/i;
+
+// Company name in content — "Phúc An Logistics", "XYZ Express", etc.
+const COMPANY_IN_CONTENT_REGEX = /(?:[A-ZÀ-Ỹ][a-zà-ỹ]+\s+){1,3}(?:logistics|express|shipping|cargo|freight|fulfillment|warehouse|vận chuyển|chuyển phát)/i;
 
 // SERVICE_AD_REGEX — catches service ads with SELF-PROMOTION CONTEXT
 // These patterns REQUIRE provider self-identification words ("bên em", "bên mình", "chúng tôi")
@@ -234,7 +262,81 @@ function parseResult(result) {
 }
 
 // ═══════════════════════════════════════════════════════
-// Batch classification with dynamic prompts
+// Core: Call any OpenAI-compatible provider
+// ═══════════════════════════════════════════════════════
+async function callProvider(provider, systemPrompt, userPrompt, maxTokens = 400) {
+    const params = {
+        model: provider.model,
+        messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.1,
+        max_tokens: maxTokens,
+    };
+    if (provider.type === 'openai') {
+        // All providers support json_object via OpenAI-compatible API
+    }
+    const response = await provider.client.chat.completions.create(params);
+    return response.choices[0].message.content;
+}
+
+function parseAIResponse(text) {
+    let arr;
+    try {
+        const parsed = JSON.parse(text);
+        arr = parsed.results || parsed.items || parsed.data;
+        if (!Array.isArray(arr)) arr = Object.values(parsed).find(v => Array.isArray(v));
+        if (!Array.isArray(arr) && parsed.is_potential !== undefined) return [parsed];
+    } catch {
+        const arrMatch = text.match(/\[[\s\S]*\]/);
+        if (arrMatch) try { arr = JSON.parse(arrMatch[0]); } catch { }
+        if (!arr) {
+            const objMatch = text.match(/\{[\s\S]*\}/);
+            if (objMatch) try { const obj = JSON.parse(objMatch[0]); arr = obj.results || [obj]; } catch { }
+        }
+    }
+    return Array.isArray(arr) ? arr : null;
+}
+
+// ═══════════════════════════════════════════════════════
+// Classify ≤10 posts with provider cascade
+// ═══════════════════════════════════════════════════════
+async function classifySmallBatch(posts) {
+    const combinedContent = posts.map(p => p.content || '').join(' ');
+    const sysPrompt = buildSystemPrompt(combinedContent);
+    const usrPrompt = buildBatchPrompt(posts);
+
+    for (let i = activeProviderIndex; i < PROVIDERS.length; i++) {
+        const prov = PROVIDERS[i];
+        try {
+            const text = await callProvider(prov, sysPrompt, usrPrompt, 500 * posts.length);
+            const arr = parseAIResponse(text);
+            if (!arr || arr.length === 0) throw new Error('No valid array');
+            consecutiveErrors = 0;
+            if (i !== activeProviderIndex) {
+                activeProviderIndex = i;
+                console.log(`[Classifier] 🔄 Switched to: ${prov.name} (${prov.model})`);
+            }
+            return arr.map(r => parseResult(r));
+        } catch (err) {
+            const isLimit = err.message?.includes('429') || err.message?.includes('rate_limit') || err.message?.includes('Too Many Requests');
+            if (isLimit && i < PROVIDERS.length - 1) {
+                console.warn(`[Classifier] ⚠️ ${prov.name} rate-limited → trying ${PROVIDERS[i + 1].name}...`);
+                continue;
+            }
+            console.warn(`[Classifier] ⚠️ ${prov.name} error: ${err.message?.substring(0, 120)}`);
+        }
+    }
+    // All 3 providers failed — fallback to individual classification
+    console.warn('[Classifier] ⚠️ All providers failed for batch → trying individual...');
+    const individual = [];
+    for (const post of posts) { individual.push(await classifyPost(post)); await sleep(2000); }
+    return individual;
+}
+
+// ═══════════════════════════════════════════════════════
+// Batch: split into sub-batches of BATCH_SIZE with sleep
 // ═══════════════════════════════════════════════════════
 async function classifyBatch(posts) {
     // Build dynamic system prompt using the first post's content for KB context
@@ -460,7 +562,7 @@ const delay = (ms) => new Promise(r => setTimeout(r, ms));
 // ═══════════════════════════════════════════════════════
 async function classifyPosts(posts) {
     console.log(`[Classifier] 🧠 Classifying ${posts.length} posts (Agent-powered)...`);
-    console.log(`[Classifier] 🔄 Models: ${AI_MODELS.join(' → ')}`);
+    console.log(`[Classifier] 🔄 Providers: ${PROVIDERS.map(p => p.name).join(' → ')}`);
 
     const toClassify = [];
     const preFiltered = [];
@@ -684,8 +786,8 @@ async function classifyPosts(posts) {
             for (const post of batch) results.push({ ...post, ...makeFallback() });
         }
 
-        const done = Math.min(i + BATCH_SIZE, toClassify.length);
-        console.log(`[Classifier]   → ${done}/${toClassify.length} classified (batch ${Math.ceil(done / BATCH_SIZE)}/${Math.ceil(toClassify.length / BATCH_SIZE)}, model: ${AI_MODELS[currentModelIndex]})`);
+        const done = Math.min(i + PIPELINE_BATCH, toClassify.length);
+        console.log(`[Classifier]   → ${done}/${toClassify.length} classified (batch ${Math.ceil(done / PIPELINE_BATCH)}/${Math.ceil(toClassify.length / PIPELINE_BATCH)}, provider: ${PROVIDERS[activeProviderIndex]?.name || 'None'})`);
 
         if (i + BATCH_SIZE < toClassify.length && !stopEarly) await delay(1000);
     }

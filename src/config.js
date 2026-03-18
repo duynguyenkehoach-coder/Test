@@ -2,13 +2,17 @@ require('dotenv').config();
 
 module.exports = {
   // ════════════════════════════════════════════════════
-  // API KEYS
+  // API KEYS & AI PROVIDERS
   // ════════════════════════════════════════════════════
-  SOCIAVAULT_API_KEY: process.env.SOCIAVAULT_API_KEY,
+  // Ollama (self-hosted, PRIMARY — no rate limit)
+  OLLAMA_BASE_URL: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
+  OLLAMA_MODEL: process.env.OLLAMA_MODEL || 'qwen2.5:3b',
+  // Cloud fallbacks
+  CEREBRAS_API_KEY: process.env.CEREBRAS_API_KEY,
+  SAMBANOVA_API_KEY: process.env.SAMBANOVA_API_KEY,
+  // Legacy (kept for reference, NOT used in cascade)
   GROQ_API_KEY: process.env.GROQ_API_KEY,
-  AI_MODEL: 'llama-3.3-70b-versatile',
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
-  GEMINI_MODEL: 'gemini-2.0-flash',
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
 
