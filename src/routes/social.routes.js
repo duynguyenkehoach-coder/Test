@@ -16,7 +16,7 @@ const router = express.Router();
 // Lazy-load to avoid circular deps
 let socialAgent = null;
 function getAgent() {
-    if (!socialAgent) socialAgent = require('../agent/social/socialAgent');
+    if (!socialAgent) socialAgent = require('../ai/agents/social/socialAgent');
     return socialAgent;
 }
 

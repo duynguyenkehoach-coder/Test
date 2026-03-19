@@ -6,7 +6,7 @@ const router = require('express').Router();
 // ── GET /api/groups — List groups with filters ──────────────────────────────
 router.get('/api/groups', (req, res) => {
     try {
-        const groupDb = require('../agent/groupDiscovery');
+        const groupDb = require('../ai/agents/groupDiscovery');
         const filters = {
             category: req.query.category || null,
             status: req.query.status || null,
@@ -21,7 +21,7 @@ router.get('/api/groups', (req, res) => {
 // ── GET /api/groups/stats — Group statistics ────────────────────────────────
 router.get('/api/groups/stats', (req, res) => {
     try {
-        const groupDb = require('../agent/groupDiscovery');
+        const groupDb = require('../ai/agents/groupDiscovery');
         const raw = groupDb.getStats();
         // Map to what frontend expects
         const by_category = {};
@@ -46,7 +46,7 @@ router.post('/api/groups', (req, res) => {
         const { name, url, category, notes } = req.body;
         if (!name || !url) return res.status(400).json({ success: false, error: 'Name and URL are required' });
 
-        const groupDb = require('../agent/groupDiscovery');
+        const groupDb = require('../ai/agents/groupDiscovery');
         groupDb.upsertGroup({ name, url, category: category || 'uncategorized', notes: notes || '', status: 'active' });
         res.json({ success: true, message: 'Group added' });
     } catch (err) {
@@ -59,7 +59,7 @@ router.patch('/api/groups/:encodedUrl/status', (req, res) => {
     try {
         const { status } = req.body;
         const url = decodeURIComponent(req.params.encodedUrl);
-        const groupDb = require('../agent/groupDiscovery');
+        const groupDb = require('../ai/agents/groupDiscovery');
         groupDb.setStatus(url, status);
         res.json({ success: true, message: 'Group status updated' });
     } catch (err) {
@@ -75,7 +75,7 @@ router.post('/api/groups/bulk', (req, res) => {
             return res.status(400).json({ success: false, error: 'urls (string) is required' });
         }
 
-        const groupDb = require('../agent/groupDiscovery');
+        const groupDb = require('../ai/agents/groupDiscovery');
         const lines = urls.split('\n').map(l => l.trim()).filter(l => l.includes('facebook.com/groups/'));
         let added = 0, skipped = 0;
 

@@ -13,9 +13,9 @@ const path = require('path');
 const database = require('../core/data_store/database');
 
 // Lazy-load to avoid circular deps
-function getExpertReplier() { return require('../agent/strategies/expertReplier'); }
-function getAudienceExporter() { return require('../agent/strategies/audienceExporter'); }
-function getHotLeadAlert() { return require('../agent/strategies/hotLeadAlert'); }
+function getExpertReplier() { return require('../ai/agents/strategies/expertReplier'); }
+function getAudienceExporter() { return require('../ai/agents/strategies/audienceExporter'); }
+function getHotLeadAlert() { return require('../ai/agents/strategies/hotLeadAlert'); }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 🏆 STRATEGY 1: Expert Reply
@@ -153,7 +153,7 @@ router.post('/hot-alert-all', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // 👀 STRATEGY 2B: Profile Engager (Organic Retargeting — FREE)
 // ═══════════════════════════════════════════════════════════════════════════════
-function getProfileEngager() { return require('../agent/strategies/profileEngager'); }
+function getProfileEngager() { return require('../ai/agents/strategies/profileEngager'); }
 
 // GET /api/strategy/engager-leads — Get leads ready for profile engagement
 router.get('/engager-leads', (req, res) => {

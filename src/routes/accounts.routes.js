@@ -5,7 +5,7 @@ const router = require('express').Router();
 const database = require('../core/data_store/database');
 
 try {
-    const accountManager = require('../agent/accountManager');
+    const accountManager = require('../ai/agents/accountManager');
 
     // GET /api/accounts — Pool status
     router.get('/api/accounts', (req, res) => {

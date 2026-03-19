@@ -155,7 +155,7 @@ app.use('/api/activity', activityRoutes);
 
 // ── Initialize Group Discovery DB ───────────────────────────────────────────
 try {
-    const groupDiscovery = require('./agent/groupDiscovery');
+    const groupDiscovery = require('./ai/agents/groupDiscovery');
     groupDiscovery.getDb();
     logger.info('GroupDB', 'Group database initialized');
 } catch (e) {

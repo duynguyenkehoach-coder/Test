@@ -19,7 +19,7 @@
 'use strict';
 
 const { generateComment } = require('../../ai/outreachGenerator');
-const { sniperComment } = require('../../squad/agents/sniperAgent');
+const { sniperComment } = require('../../ai/squad/agents/sniperAgent');
 const accountManager = require('../accountManager');
 const database = require('../../core/data_store/database');
 const path = require('path');

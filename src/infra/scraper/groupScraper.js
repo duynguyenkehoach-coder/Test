@@ -6,7 +6,7 @@
  */
 const { state, delay, FB_URL, fs, path, extractGroupId, closeBrowser } = require('./browserManager');
 const { getAuthContext } = require('./authContext');
-const accountManager = require('../../agent/accountManager');
+const accountManager = require('../../ai/agents/accountManager');
 
 /**
  * Get posts from a Facebook group (with 2-minute timeout).
@@ -88,7 +88,7 @@ async function _getGroupPostsInner(groupUrl, groupName, account = null) {
             if (isDead) {
                 console.warn(`[FBScraper] 💀 ${groupName}: DEAD GROUP — auto-deactivating`);
                 try {
-                    const gd = require('../../agent/groupDiscovery');
+                    const gd = require('../../ai/agents/groupDiscovery');
                     if (gd.deactivateGroup) gd.deactivateGroup(groupUrl);
                 } catch (_) { }
                 await page.close();

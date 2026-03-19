@@ -35,7 +35,7 @@ const database = require('../../core/data_store/database');
 const { runFullScan } = require('../pipelines/scraperEngine');
 const { classifyPosts } = require('../../ai/prompts/leadQualifier');
 const { generateResponses } = require('../../ai/prompts/salesCopilot');
-const { onHotLeadDetected, HOT_SCORE_THRESHOLD } = require('../../agent/strategies/hotLeadAlert');
+const { onHotLeadDetected, HOT_SCORE_THRESHOLD } = require('../../ai/agents/strategies/hotLeadAlert');
 const { sendMessage } = require('../../core/integrations/telegramBot');
 const { cleanOldData, saveLeadsToFile } = require('../../core/data_store/fileManager');
 

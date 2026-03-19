@@ -4,7 +4,7 @@
 const router = require('express').Router();
 const database = require('../core/data_store/database');
 const logger = require('../logger');
-const memoryStore = require('../agent/memoryStore');
+const memoryStore = require('../ai/agents/memoryStore');
 
 // ── Helper ───────────────────────────────────────────────────────────────────
 function csvEscape(text) {

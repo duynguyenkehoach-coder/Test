@@ -10,7 +10,7 @@
  */
 'use strict';
 
-const socialAgent = require('../../agent/social/socialAgent');
+const socialAgent = require('../../ai/agents/social/socialAgent');
 
 console.log('=============================================');
 console.log('🤖 Starting THG Social Agent Worker 24/7 🚀');

@@ -5,7 +5,7 @@
  * @module scraper/orchestrator
  */
 const { chromium, delay, fs, path, generateFingerprint, extractGroupId } = require('./browserManager');
-const accountManager = require('../../agent/accountManager');
+const accountManager = require('../../ai/agents/accountManager');
 const { bridgeToHub } = require('./hubBridge');
 const { runPersonaSession } = require('../../ai/squad/agents/personaAgent');
 

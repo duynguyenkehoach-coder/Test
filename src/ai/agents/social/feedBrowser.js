@@ -9,7 +9,7 @@
  * 
  * @module agent/social/feedBrowser
  */
-const { humanDelay, humanScroll, humanClick } = require('../../squad/core/humanizer');
+const { humanDelay, humanScroll, humanClick } = require('../../ai/squad/core/humanizer');
 const { randInt } = require('./sessionManager');
 
 // ─── Selectors (Facebook 2024+) ──────────────────────────────────────────────

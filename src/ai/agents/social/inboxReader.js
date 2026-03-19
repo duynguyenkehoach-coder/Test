@@ -10,7 +10,7 @@
  * 
  * @module agent/social/inboxReader
  */
-const { humanDelay, humanScroll } = require('../../squad/core/humanizer');
+const { humanDelay, humanScroll } = require('../../ai/squad/core/humanizer');
 const { randInt } = require('./sessionManager');
 
 // ─── Selectors ───────────────────────────────────────────────────────────────

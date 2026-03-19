@@ -24,11 +24,11 @@ try {
  * Execute a sniper mission — comment on a target post
  * @param {Page} page - Playwright page (already authenticated)
  * @param {string} postUrl - URL of the target post
- * @param {object} opts - { templateName, customTemplate, account }
+ * @param {object} opts - { templateName, customTemplate, account, imagePath }
  * @returns {boolean} success
  */
 async function sniperComment(page, postUrl, opts = {}) {
-    const { templateName = 'default', customTemplate = null, account = 'unknown' } = opts;
+    const { templateName = 'default', customTemplate = null, account = 'unknown', imagePath = null } = opts;
 
     console.log(`[Sniper] 🎯 Đang ngắm mục tiêu: ${postUrl.substring(0, 70)}`);
 
@@ -80,6 +80,30 @@ async function sniperComment(page, postUrl, opts = {}) {
 
         // 7. Pause before sending (human hesitation)
         await humanDelay(1000, 2000);
+
+        // 7.5. Attach Image if provided
+        if (imagePath && fs.existsSync(imagePath)) {
+            console.log(`[Sniper] 📸 Đang đính kèm ảnh: ${path.basename(imagePath)}`);
+            try {
+                // Find file input near the comment box
+                const fileInputs = await page.$$('input[type="file"][accept*="image"]');
+                let uploaded = false;
+                for (const input of fileInputs) {
+                    const boundingBox = await input.boundingBox();
+                    // Just set the file on the first available file input (Facebook usually has one active for the focused comment box)
+                    if (input) {
+                        await input.setInputFiles(imagePath);
+                        uploaded = true;
+                        await humanDelay(3000, 5000); // Wait for upload to complete
+                        console.log(`[Sniper] ✅ Đã tải ảnh lên thành công`);
+                        break;
+                    }
+                }
+                if (!uploaded) console.warn(`[Sniper] ⚠️ Không tìm thấy nút upload ảnh`);
+            } catch (imgError) {
+                console.warn(`[Sniper] ⚠️ Lỗi khi upload ảnh: ${imgError.message}`);
+            }
+        }
 
         // 8. Submit comment
         await page.keyboard.press('Enter');
