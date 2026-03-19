@@ -254,7 +254,7 @@ function parseResult(result) {
         category: serviceNone ? 'NotRelevant' : (result.service_match || 'General'),
         summary: isPotential ? (result.sales_angle || result.reasoning || '') : (result.reasoning || ''),
         urgency: isPotential ? (result.urgency || 'low') : 'low',
-        buyerSignals: isPotential ? (result.pain_points || result.reasoning || '') : '',
+        buyerSignals: isPotential ? (result.customer_persona ? `[${result.customer_persona}] ${result.pain_points || ''}` : (result.pain_points || result.reasoning || '')) : '',
         profitEstimate: isPotential ? (result.profit_estimate || '') : '',
         gapOpportunity: isPotential ? (result.gap_opportunity || '') : '',
     };
