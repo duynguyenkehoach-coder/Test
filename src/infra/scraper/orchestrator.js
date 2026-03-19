@@ -25,8 +25,8 @@ async function scrapeFacebookGroups(maxPosts = 20, options = {}, externalGroups 
     }
 
     const allAccounts = accountManager.getActiveAccounts
-        ? accountManager.getActiveAccounts()
-        : [accountManager.getNextAccount(options)].filter(Boolean);
+        ? accountManager.getActiveAccounts({ forScraping: true })
+        : [accountManager.getNextAccount({ ...options, forScraping: true })].filter(Boolean);
 
     if (allAccounts.length === 0) {
         console.log('[FBScraper] ❌ No accounts available');

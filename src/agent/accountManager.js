@@ -103,16 +103,29 @@ function isInActiveWindow() {
     return vnHour >= ACTIVE_HOUR_START || vnHour <= ACTIVE_HOUR_END;
 }
 
+const SCRAPER_ONLY_EMAILS = [
+    'thacher8agqa@hotmail.com',
+    'guntar_geoffry460.jared@hotmail.com'
+];
+
 /**
  * Lấy tài khoản tốt nhất để sử dụng ngay bây giờ.
  * Ưu tiên: trust_score cao → ít dùng gần đây → proxy sẵn sàng
+ * @param {object} options - { forScraping: boolean }
  * @returns {object|null} account row or null
  */
 function getNextAccount(options = {}) {
+    // Nếu ĐANG THỰC HIỆN COMMENT/SALES (forScraping = false), 
+    // không được dùng 2 acc clone cùi này để tránh spam.
+    const excludeScrapers = !options.forScraping
+        ? `AND email NOT IN (${SCRAPER_ONLY_EMAILS.map(e => `'${e}'`).join(',')})`
+        : '';
+
     const account = db.db.prepare(`
         SELECT * FROM fb_accounts
         WHERE status = 'active'
           AND trust_score > 20
+          ${excludeScrapers}
         ORDER BY trust_score DESC, last_used ASC
         LIMIT 1
     `).get();
@@ -123,6 +136,7 @@ function getNextAccount(options = {}) {
             SELECT * FROM fb_accounts
             WHERE status = 'resting'
               AND datetime(last_used) < datetime('now', '-4 hours')
+              ${excludeScrapers}
             LIMIT 1
         `).get();
 
