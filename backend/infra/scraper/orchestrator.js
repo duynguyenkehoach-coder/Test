@@ -299,6 +299,10 @@ async function _scrapeWithContext(browser, account, groups) {
 
         // Scrape each group
         const page = await context.newPage();
+        page.on('console', msg => {
+            const text = msg.text();
+            if (text.includes('Loại khỏi vòng quét post')) console.log(`${tag} ⏭️ ${text}`);
+        });
         for (let i = 0; i < groups.length; i++) {
             const group = groups[i];
             const groupId = extractGroupId(group.url);
@@ -558,7 +562,19 @@ async function _scrapeWithContext(browser, account, groups) {
                         if (ageDays === null && timeStr) return;
 
                         let postedAt = '';
-                        if (ageHours !== null) postedAt = new Date(now - ageHours * 3600 * 1000).toISOString();
+                        if (ageHours !== null) {
+                            const pDate = new Date(now - ageHours * 3600 * 1000);
+                            if (pDate.getFullYear() < 2026 || (pDate.getFullYear() === 2026 && pDate.getMonth() < 2)) {
+                                console.log('Loại khỏi vòng quét post (cũ hơn 03/2026): ' + timeStr);
+                                return;
+                            }
+                            postedAt = pDate.toISOString();
+                        } else {
+                            if (timeStr && timeStr.match(/\b(202[0-5]|201\d|200\d)\b/)) {
+                                console.log('Loại khỏi vòng quét post (chứa năm cũ): ' + timeStr);
+                                return;
+                            }
+                        }
 
                         // Author extraction (5 strategies)
                         let author = '';
