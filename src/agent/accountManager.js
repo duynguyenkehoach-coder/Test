@@ -75,6 +75,33 @@ function ensureAccountsTable() {
         `).run(acct.id, acct.email, acct.password, '', sessionPath);
         console.log(`[AccountManager] 📋 Seeded: ${acct.email}`);
     }
+
+    // --- Load Scraper Accounts from JSON (since .env is Git ignored) ---
+    try {
+        const scrapersPath = path.join(__dirname, '..', 'config', 'scraper_accounts.json');
+        if (fs.existsSync(scrapersPath)) {
+            const scraperAccs = JSON.parse(fs.readFileSync(scrapersPath, 'utf8'));
+            for (const acct of scraperAccs) {
+                const sessionPath = path.join(SESSIONS_DIR, `${acct.email.replace(/[^a-z0-9]/gi, '_')}.json`);
+
+                db.db.prepare(`
+                    INSERT OR IGNORE INTO fb_accounts (id, email, password, proxy_url, session_path)
+                    VALUES (?, ?, ?, ?, ?)
+                `).run(`acc_${acct.email}`, acct.email, acct.password, acct.proxyUrl || '', sessionPath);
+
+                // Auto-generate Playwright session file if missing
+                if (!fs.existsSync(sessionPath) && acct.cookieStr) {
+                    const pwCookies = acct.cookieStr.split(';').map(p => p.trim()).filter(Boolean).map(pair => {
+                        const [name, ...val] = pair.split('=');
+                        return { name, value: val.join('='), domain: ".facebook.com", path: "/", expires: Date.now() / 1000 + 31536000, httpOnly: ['xs', 'c_user', 'datr', 'fr'].includes(name), secure: true, sameSite: "None" };
+                    });
+                    fs.writeFileSync(sessionPath, JSON.stringify([{ cookies: pwCookies, origins: [{ origin: "https://www.facebook.com", localStorage: [] }] }]));
+                    console.log(`[AccountManager] 🍪 Generated session for scraper: ${acct.email}`);
+                }
+            }
+        }
+    } catch (err) { console.warn('[AccountManager] ⚠️ Error loading scraper_accounts.json:', err.message); }
+
     fs.mkdirSync(SESSIONS_DIR, { recursive: true });
 }
 
@@ -277,13 +304,19 @@ function shouldRest(accountId) {
 
 /**
  * Get ALL active accounts (for splitting groups across accounts)
+ * @param {object} options - { forScraping: boolean }
  * @returns {object[]} array of active account rows
  */
-function getActiveAccounts() {
+function getActiveAccounts(options = {}) {
+    const excludeScrapers = !options.forScraping
+        ? `AND email NOT IN (${SCRAPER_ONLY_EMAILS.map(e => `'${e}'`).join(',')})`
+        : `AND email IN (${SCRAPER_ONLY_EMAILS.map(e => `'${e}'`).join(',')})`;
+
     const accounts = db.db.prepare(`
         SELECT * FROM fb_accounts
         WHERE status = 'active'
           AND trust_score > 20
+          ${excludeScrapers}
         ORDER BY trust_score DESC
     `).all();
 
@@ -292,6 +325,7 @@ function getActiveAccounts() {
         SELECT * FROM fb_accounts
         WHERE status = 'resting'
           AND datetime(last_used) < datetime('now', '-4 hours')
+          ${excludeScrapers}
     `).all();
 
     for (const acc of resting) {
