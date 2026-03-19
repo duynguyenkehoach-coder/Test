@@ -14,7 +14,7 @@
  * @module squad/agents/personaAgent
  */
 
-const squadDB = require('../../../backend/core/squadDB');
+const squadDB = require('../core/squadDB');
 
 // ═══════════════════════════════════════════════════════
 // Random Delay — Tạo khoảng dừng phi quy luật

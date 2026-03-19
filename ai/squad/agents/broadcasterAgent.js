@@ -4,9 +4,9 @@
  * 
  * @module squad/agents/broadcasterAgent
  */
-const { humanDelay, humanType, humanScroll, waitAndClick } = require('../../../backend/core/humanizer');
-const { spinText, spinTemplate } = require('../../../backend/core/spintax');
-const squadDB = require('../../../backend/core/squadDB');
+const { humanDelay, humanType, humanScroll, waitAndClick } = require('../core/humanizer');
+const { spinText, spinTemplate } = require('../core/spintax');
+const squadDB = require('../core/squadDB');
 const config = require('../squadConfig');
 const fs = require('fs');
 const path = require('path');
