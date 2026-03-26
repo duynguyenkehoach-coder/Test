@@ -69,5 +69,5 @@ module.exports = {
     MAX_POST_AGE_DAYS: parseInt(process.env.MAX_POST_AGE_DAYS || '3', 10),
 
     // Google Sheets
-    GOOGLE_SHEET_ID: '1TxzKr9K7opWIzrir4jRPUuh2ER6ggAmJhiBwM4LKQe8',
+    GOOGLE_SHEET_ID: process.env.GOOGLE_SHEET_ID || '1TxzKr9K7opWIzrir4jRPUuh2ER6ggAmJhiBwM4LKQe8',
 };

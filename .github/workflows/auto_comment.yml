@@ -1,0 +1,37 @@
+name: Facebook Auto-Comment Bot
+
+on:
+  schedule:
+    - cron: '0 * * * *' # Chạy mỗi giờ một lần
+  workflow_dispatch:      # Cho phép chạy thủ công từ giao diện GitHub
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Scanner
+        env:
+          FB_COOKIES: ${{ secrets.FB_COOKIES }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          # Các biến môi trường khác
+          SCAN_INTERVAL_MINUTES: 60
+          MAX_POSTS_PER_GROUP: 20
+        run: npm run scan
