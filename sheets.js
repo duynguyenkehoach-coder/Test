@@ -22,29 +22,33 @@ async function getCommentTemplates() {
     
     try {
         console.log('[Sheets] 📥 Đang tải mẫu bình luận từ Google Sheets...');
-        const response = await axios.get(url, { timeout: 10000 });
+        const response = await axios.get(url, { timeout: 15000 });
         const csvData = response.data;
 
-        // Parse CSV đơn giản
-        // Layout: Group name, T1, I1, T2, I2, T3, I3, T4, I4, T5, I5 (11 cột)
-        const lines = csvData.split(/\r?\n/).filter(line => line.trim().length > 0);
+        const { parse } = require('csv-parse/sync');
+        const records = parse(csvData, {
+            columns: false,
+            skip_empty_lines: true,
+            trim: true
+        });
+
         const templates = {};
 
-        lines.forEach((line, index) => {
-            // Sử dụng regex để split CSV bảo toàn dấu ngoặc kép
-            const parts = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+        records.forEach((parts, index) => {
+            // Bỏ qua dòng tiêu đề (thường là dòng đầu tiên)
+            if (index === 0) return;
             
             if (parts.length >= 2) {
-                const groupNameOrig = parts[0].replace(/^"|"$/g, '').trim();
-                // Bỏ qua dòng tiêu đề hoặc dòng trống
+                const groupNameOrig = parts[0].trim();
+                // Bỏ qua dòng trống hoặc không có tên
                 if (!groupNameOrig || groupNameOrig.toLowerCase() === 'group name') return;
                 const groupName = groupNameOrig.toLowerCase();
 
                 const pairs = [];
                 // Lấy tối đa 5 cặp (cột 1-2, 3-4, 5-6, 7-8, 9-10)
                 for (let i = 1; i <= 9; i += 2) {
-                    const text = parts[i]?.replace(/^"|"$/g, '').trim() || '';
-                    const image = parts[i+1]?.replace(/^"|"$/g, '').trim() || '';
+                    const text = parts[i]?.trim() || '';
+                    const image = parts[i+1]?.trim() || '';
                     
                     if (text || image) {
                         pairs.push({ text, image });
@@ -57,10 +61,12 @@ async function getCommentTemplates() {
             }
         });
 
-        console.log(`[Sheets] ✅ Đã tải mẫu bình luận cho ${Object.keys(templates).length} nhóm.`);
+        console.log(`[Sheets] ✅ Đã tải mẫu bình luận cho ${Object.keys(templates).length} nhóm:`);
+        Object.keys(templates).forEach(k => console.log(`   - ${k}`));
+        
         return templates;
-    } catch (error) {
-        console.error(`[Sheets] ❌ Lỗi khi tải Sheet: ${error.message}`);
+    } catch (err) {
+        console.error(`[Sheets] ❌ Lỗi khi tải mẫu từ Google Sheets: ${err.message}`);
         return {};
     }
 }
