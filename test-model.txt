@@ -1,2 +1,0 @@
-﻿[dotenv@17.3.1] injecting env (5) from .env -- tip: ≡ƒöÉ encrypt with Dotenvx: https://dotenvx.com
-MODEL_OK: Hello, how are you today?

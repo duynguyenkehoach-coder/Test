@@ -1,43 +1,14 @@
 # Dependencies
 node_modules/
 
-# Environment variables (NEVER commit secrets!)
+# Secrets (KHÔNG ĐƯỢC COMMIT!)
 .env
+cookies.json
 
-# Database
-data/*.db
-data/*.db-journal
-data/*.db-wal
-src/data_store/*.db
-src/data_store/*.db-wal
-src/data_store/*.db-journal
-src/data/*.db
-src/data/*.db-wal
-src/data/*.db-journal
+# Data tự tạo
+seen_posts.json
 
-# Facebook cookies & sessions (sensitive!)
-data/fb_cookies_*.json
-data/sessions/
-*.png.json
-
-# Exported data files
-data/leads_*.json
-data/inbox_*.json
-data/fb_api_debug.json
-
-# Secret/debug files
-apify-status.txt
-push_log.txt
-push_log2.txt
-fb_inspect_output.txt
-fb_api_raw.json
-inspect_fb.js
-
-# Logs
-*.log
-logs/
-
-# OS files
+# OS
 .DS_Store
 Thumbs.db
 desktop.ini
@@ -46,7 +17,6 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
-*.swo
 
-# Temp
-/tmp/
+# Logs
+*.log

@@ -1,25 +1,23 @@
-# Render.com deployment configuration
+# Render.com deployment — Facebook Group Scanner
 # Docs: https://render.com/docs/blueprint-spec
 
 services:
   - type: web
-    name: thg-lead-gen
-    runtime: node
+    name: fb-scanner
+    runtime: docker
     plan: free
-    buildCommand: npm install
-    startCommand: node src/index.js
     envVars:
-      - key: RAPIDAPI_KEY
-        sync: false
-      - key: GROQ_API_KEY
-        sync: false
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: APIFY_TOKEN
-        sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
-      - key: NODE_ENV
-        value: production
+      - key: FB_COOKIES
+        sync: false
+      - key: SCAN_INTERVAL_MINUTES
+        value: "30"
+      - key: MAX_POSTS_PER_GROUP
+        value: "30"
+      - key: MAX_POST_AGE_DAYS
+        value: "3"
+      - key: PORT
+        value: "10000"
