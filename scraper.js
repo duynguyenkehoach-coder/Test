@@ -60,7 +60,26 @@ function saveSeenPosts(seenSet) {
     }
 }
 
-// ── Cookie Loading ───────────────────────────────────────────────────────────
+/**
+ * Phân lọc và chuẩn hóa mảng cookies thành định dạng Playwright
+ */
+function normalizeCookies(rawArray) {
+    if (!Array.isArray(rawArray)) return [];
+    return rawArray
+        .filter(c => c.name && c.value && (c.domain || c.host))
+        .map(c => ({
+            name: c.name,
+            value: c.value,
+            domain: c.domain || c.host || '.facebook.com',
+            path: c.path || '/',
+            httpOnly: !!c.httpOnly,
+            secure: c.secure !== false,
+            sameSite: c.sameSite === 'no_restriction' ? 'None'
+                : c.sameSite === 'lax' ? 'Lax'
+                : c.sameSite === 'strict' ? 'Strict' : 'None',
+            ...(c.expirationDate ? { expires: c.expirationDate || c.expires } : {}),
+        }));
+}
 
 /**
  * Load cookies từ file cookies.json hoặc .env FB_COOKIES
@@ -72,46 +91,56 @@ function loadCookies() {
     if (fs.existsSync(cookieFile)) {
         try {
             const raw = JSON.parse(fs.readFileSync(cookieFile, 'utf8'));
-            const cookies = raw
-                .filter(c => c.name && c.value && c.domain)
-                .map(c => ({
-                    name: c.name,
-                    value: c.value,
-                    domain: c.domain,
-                    path: c.path || '/',
-                    httpOnly: !!c.httpOnly,
-                    secure: c.secure !== false,
-                    sameSite: c.sameSite === 'no_restriction' ? 'None'
-                        : c.sameSite === 'lax' ? 'Lax'
-                        : c.sameSite === 'strict' ? 'Strict' : 'None',
-                    ...(c.expirationDate ? { expires: c.expirationDate } : {}),
-                }));
-            console.log(`[Scraper] 🍪 Cookies từ cookies.json (${cookies.length} cookies)`);
-            return cookies;
+            const cookies = normalizeCookies(raw);
+            if (cookies.length > 0) {
+                console.log(`[Scraper] 🍪 Cookies từ cookies.json (${cookies.length} cookies)`);
+                return cookies;
+            }
         } catch (e) {
             console.error(`[Scraper] ❌ Đọc cookies.json thất bại: ${e.message}`);
         }
     }
 
-    // Ưu tiên 2: Chuỗi cookie từ .env
-    if (config.FB_COOKIES && config.FB_COOKIES.includes('=')) {
-        const cookies = config.FB_COOKIES.split(';')
-            .map(s => s.trim())
-            .filter(Boolean)
-            .map(pair => {
-                const [n, ...r] = pair.split('=');
-                return {
-                    name: n.trim(),
-                    value: r.join('=').trim(),
-                    domain: '.facebook.com',
-                    path: '/',
-                    httpOnly: true,
-                    secure: true,
-                    sameSite: 'None',
-                };
-            });
-        console.log(`[Scraper] 🍪 Cookies từ .env (${cookies.length} cookies)`);
-        return cookies;
+    // Ưu tiên 2: Chuỗi cookie từ .env / GitHub Secrets
+    if (config.FB_COOKIES) {
+        const val = config.FB_COOKIES.trim();
+        
+        // Trường hợp 2.1: JSON Array
+        if (val.startsWith('[') && val.endsWith(']')) {
+            try {
+                const raw = JSON.parse(val);
+                const cookies = normalizeCookies(raw);
+                if (cookies.length > 0) {
+                    console.log(`[Scraper] 🍪 Cookies từ JSON string (${cookies.length} cookies)`);
+                    return cookies;
+                }
+            } catch (e) {
+                console.error(`[Scraper] ❌ Parse JSON từ FB_COOKIES thất bại: ${e.message}`);
+            }
+        }
+
+        // Trường hợp 2.2: Định dạng chuỗi key=value
+        if (val.includes('=')) {
+            const cookies = val.split(';')
+                .map(s => s.trim())
+                .filter(Boolean)
+                .map(pair => {
+                    const [n, ...r] = pair.split('=');
+                    return {
+                        name: n.trim(),
+                        value: r.join('=').trim(),
+                        domain: '.facebook.com',
+                        path: '/',
+                        httpOnly: true,
+                        secure: true,
+                        sameSite: 'None',
+                    };
+                });
+            if (cookies.length > 0) {
+                console.log(`[Scraper] 🍪 Cookies từ String format (${cookies.length} cookies)`);
+                return cookies;
+            }
+        }
     }
 
     console.error('[Scraper] ❌ Không tìm thấy cookies! Hãy tạo cookies.json hoặc điền FB_COOKIES trong .env');
