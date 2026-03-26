@@ -597,6 +597,7 @@ async function commentOnPost(browser, postUrl, commentText, imagePath = null) {
     if (!commentText && !imagePath) return false;
 
     let page = null;
+    let downloadedTempFile = null;
     try {
         const cookies = loadCookies();
         const context = await browser.newContext();
@@ -605,8 +606,12 @@ async function commentOnPost(browser, postUrl, commentText, imagePath = null) {
         page = await context.newPage();
         console.log(`[Scraper] 💬 Đang vào bài viết để bình luận: ${postUrl}`);
         
-        await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 35000 });
-        await delay(3000 + Math.random() * 2000);
+        await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 40000 });
+        await delay(5000);
+        
+        // Cuộn xuống để đảm bảo thành phần được load
+        await page.mouse.wheel(0, 400);
+        await delay(2000);
 
         // Tìm ô bình luận (thử nhiều selector phổ biến)
         const commentSelectors = [
@@ -618,8 +623,11 @@ async function commentOnPost(browser, postUrl, commentText, imagePath = null) {
 
         let commentBox = null;
         for (const selector of commentSelectors) {
-            commentBox = await page.waitForSelector(selector, { timeout: 15000 }).catch(() => null);
-            if (commentBox) break;
+            commentBox = await page.waitForSelector(selector, { timeout: 15000, state: 'visible' }).catch(() => null);
+            if (commentBox) {
+                await commentBox.scrollIntoViewIfNeeded();
+                break;
+            }
         }
 
         if (!commentBox) {
@@ -629,7 +637,6 @@ async function commentOnPost(browser, postUrl, commentText, imagePath = null) {
         }
 
         // Xử lý upload ảnh nếu có
-        let downloadedTempFile = null;
         if (imagePath) {
             try {
                 let fullPath = '';
@@ -666,8 +673,32 @@ async function commentOnPost(browser, postUrl, commentText, imagePath = null) {
                 if (fs.existsSync(fullPath)) {
                     console.log(`[Scraper] 📸 Đang tải lên ảnh: ${path.basename(fullPath)}`);
                     
-                    // Selector cho file input (thường ẩn)
-                    const fileInput = await page.waitForSelector('input[type="file"][accept*="image"]', { timeout: 8000 }).catch(() => null);
+                    // Click vào ô bình luận bằng JS để chắc chắn (vượt qua lỗi not visible)
+                    await page.evaluate(el => el.click(), commentBox).catch(() => {});
+                    await delay(1500);
+
+                    // Thử tìm file input
+                    let fileInput = await page.$('input[type="file"][accept*="image"]');
+                    
+                    if (!fileInput) {
+                        // Nếu không thấy, thử tìm nút "Đính kèm ảnh" để kích hoạt nó hiện ra
+                        const photoBtnSelectors = [
+                            'div[aria-label="Attach a photo or video"]',
+                            'div[aria-label="Đính kèm ảnh hoặc video"]',
+                            'div[aria-label="Đính kèm ảnh"]',
+                            'div[aria-label="Chọn ảnh/video"]',
+                            'i[class*="camera"]'
+                        ];
+                        for (const sel of photoBtnSelectors) {
+                            const btn = await page.$(sel);
+                            if (btn) {
+                                await btn.click({ force: true });
+                                await delay(1500);
+                                fileInput = await page.$('input[type="file"][accept*="image"]');
+                                if (fileInput) break;
+                            }
+                        }
+                    }
                     
                     if (fileInput) {
                         await fileInput.setInputFiles(fullPath);
@@ -686,8 +717,8 @@ async function commentOnPost(browser, postUrl, commentText, imagePath = null) {
 
         // Nhập bình luận
         if (commentText) {
-            await commentBox.click();
-            await delay(500);
+            await page.evaluate(el => el.click(), commentBox).catch(() => {});
+            await delay(1000);
             await page.keyboard.type(commentText, { delay: 80 });
             await delay(1000);
         }
