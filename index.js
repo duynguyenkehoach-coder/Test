@@ -61,6 +61,9 @@ async function runScan() {
 
         // Bước 1: Quét bài viết và tự động bình luận
         const onNewPost = async (post, browser) => {
+            const ageInfo = post.age_hours !== null ? `${(post.age_hours * 60).toFixed(0)} phút` : 'không rõ';
+            console.log(`   [Nhận diện] ${ageInfo} trước: "${post.content.substring(0, 60).replace(/\n/g, ' ')}..."`);
+
             // Chỉ xử lý bài đăng trong vòng 60 phút (1 giờ)
             if (post.age_hours !== null && post.age_hours > 1) {
                 return; // Bỏ qua hoàn toàn bài cũ

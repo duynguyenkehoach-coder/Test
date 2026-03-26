@@ -269,9 +269,8 @@ async function scrapeGroups(groups, onNewPost = null) {
                 console.log(`[Scraper] [${i + 1}/${groups.length}] 📥 ${group.name}`);
                 
                 let targetUrl = `https://www.facebook.com/groups/${groupId}?sorting_setting=CHRONOLOGICAL`;
-                if (group.url.includes('/share/g/')) {
-                    targetUrl = group.url; // Giữ nguyên link share để Facebook tự redirect
-                }
+                // Ngay cả khi là link share, ta vẫn cố gắng chuyển về dạng chuẩn để ép sorting
+                console.log(`[Scraper] 🔗 URL mục tiêu: ${targetUrl}`);
 
                 await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
                 await delay(3000 + Math.random() * 2000);
@@ -325,14 +324,26 @@ async function scrapeGroups(groups, onNewPost = null) {
                         const articles = feed.querySelectorAll(':scope > div');
                         let cnt = 0, lastTime = '';
 
+                        // Duyệt ngược để tìm bài cuối cùng có mốc thời gian
                         for (let i = articles.length - 1; i >= 0; i--) {
-                            if (articles[i].innerText?.length > 50) {
+                            const txt = articles[i].innerText || '';
+                            if (txt.length > 20) {
                                 cnt++;
                                 if (!lastTime) {
-                                    for (const sp of articles[i].querySelectorAll('span')) {
-                                        const t = sp.textContent?.trim();
-                                        if (t && t.match(/^\d+[mhdw]$|^just now$|^yesterday$|^hôm qua$|^\d+\s*(phút|giờ|ngày|tuần|năm|tháng)/i)) {
-                                            lastTime = t; break;
+                                    // Ưu tiên tìm trong thẻ aria-label trước
+                                    const timeEl = articles[i].querySelector('span[aria-labelledby], span[aria-label]');
+                                    if (timeEl) {
+                                        const label = timeEl.getAttribute('aria-label') || '';
+                                        if (label.match(/\d+/) && (label.includes('phút') || label.includes('giờ') || label.includes('ngày') || label.includes('m') || label.includes('h'))) {
+                                            lastTime = label;
+                                        }
+                                    }
+                                    if (!lastTime) {
+                                        for (const sp of articles[i].querySelectorAll('span')) {
+                                            const t = sp.textContent?.trim();
+                                            if (t && t.match(/^\d+[mhdw]$|^just now$|^yesterday$|^hôm qua$|^\d+\s*(phút|giờ|ngày|tuần|năm|tháng)/i)) {
+                                                lastTime = t; break;
+                                            }
                                         }
                                     }
                                 }
@@ -342,6 +353,7 @@ async function scrapeGroups(groups, onNewPost = null) {
                         let stopEarly = false;
                         if (lastTime) {
                             const s = lastTime.toLowerCase();
+                            // Chỉ dừng nếu thấy dấu hiệu của bài cực cũ (tuần, tháng, năm) hoặc quá ngày config
                             if (s.match(/w\b|wk|week|tuần|tháng|month|năm|year/)) stopEarly = true;
                             const dayMatch = s.match(/(\d+)\s*(d\b|day|ngày)/);
                             if (dayMatch && parseInt(dayMatch[1]) > maxDays) stopEarly = true;
@@ -383,7 +395,7 @@ async function scrapeGroups(groups, onNewPost = null) {
                     function parseRelativeTime(timeStr) {
                         if (!timeStr) return null;
                         const s = timeStr.trim().toLowerCase();
-                        if (s.includes('just now') || s.includes('vừa xong')) return 0;
+                        if (s.includes('just now') || s.includes('vừa xong') || s.includes('1 phút')) return 0.01;
                         let m = s.match(/(\d+)\s*(m\b|min|phút)/); if (m) return parseInt(m[1]) / 60;
                         m = s.match(/(\d+)\s*(h\b|hr|giờ)/); if (m) return parseInt(m[1]);
                         m = s.match(/(\d+)\s*(d\b|day|ngày)/); if (m) return parseInt(m[1]) * 24;
@@ -400,7 +412,7 @@ async function scrapeGroups(groups, onNewPost = null) {
 
                     articles.forEach(a => {
                         const txt = a.innerText || '';
-                        if (txt.length < 50) return;
+                        if (txt.length < 20) return; // Giảm xuống 20 để không bỏ sót bài ngắn
 
                         // Lấy URL bài viết
                         const links = Array.from(a.querySelectorAll('a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid"]'));
@@ -417,12 +429,23 @@ async function scrapeGroups(groups, onNewPost = null) {
                         if (postUrl && seenUrls.has(postUrl)) return;
                         if (postUrl) seenUrls.add(postUrl);
 
-                        // Lấy thời gian
+                        // Lấy thời gian chuẩn hơn (ưu tiên các thẻ aria-label hoặc các text đặc thù)
                         let timeStr = '';
-                        for (const sp of a.querySelectorAll('span')) {
-                            const t = sp.textContent?.trim();
-                            if (t && t.match(/^\d+[mhdw]$|^just now$|^yesterday$|^hôm qua$|^\d+\s*(phút|giờ|ngày|tuần)/i)) {
-                                timeStr = t; break;
+                        // Thử tìm trong các thẻ có aria-label chứa thời gian
+                        const timeEl = a.querySelector('span[aria-labelledby], span[aria-label]');
+                        if (timeEl) {
+                            const label = timeEl.getAttribute('aria-label') || '';
+                            if (label.match(/\d+/) && (label.includes('phút') || label.includes('giờ') || label.includes('ngày') || label.includes('m') || label.includes('h'))) {
+                                timeStr = label;
+                            }
+                        }
+
+                        if (!timeStr) {
+                            for (const sp of a.querySelectorAll('span, a')) {
+                                const t = sp.textContent?.trim();
+                                if (t && t.match(/^\d+[mhdw]$|^just now$|^yesterday$|^hôm qua$|^\d+\s*(phút|giờ|ngày|tuần)/i)) {
+                                    timeStr = t; break;
+                                }
                             }
                         }
                         if (!timeStr) {
