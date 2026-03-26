@@ -268,12 +268,31 @@ async function scrapeGroups(groups, onNewPost = null) {
 
                 console.log(`[Scraper] [${i + 1}/${groups.length}] 📥 ${group.name}`);
                 
-                let targetUrl = `https://www.facebook.com/groups/${groupId}?sorting_setting=CHRONOLOGICAL`;
-                // Ngay cả khi là link share, ta vẫn cố gắng chuyển về dạng chuẩn để ép sorting
-                console.log(`[Scraper] 🔗 URL mục tiêu: ${targetUrl}`);
+                // Nếu là link share, ta phải truy cập link share trước để FB redirect
+                let targetUrl = group.url;
+                const isShareLink = group.url.includes('/share/g/');
+                
+                if (!isShareLink) {
+                    const groupId = extractGroupId(group.url);
+                    if (groupId) {
+                        targetUrl = `https://www.facebook.com/groups/${groupId}?sorting_setting=CHRONOLOGICAL`;
+                    }
+                }
 
-                await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                console.log(`[Scraper] 🔗 URL mục tiêu: ${targetUrl}`);
+                await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 35000 });
                 await delay(3000 + Math.random() * 2000);
+
+                // Nếu là link share, sau khi load xong ta thử ép sorting bằng URL hiện tại
+                if (isShareLink) {
+                    const currentUrl = page.url();
+                    if (currentUrl.includes('/groups/') && !currentUrl.includes('sorting_setting')) {
+                        const sortedUrl = currentUrl + (currentUrl.includes('?') ? '&' : '?') + 'sorting_setting=CHRONOLOGICAL';
+                        console.log(`[Scraper] 🔄 Chuyển hướng sang link đã ép sorting: ${sortedUrl}`);
+                        await page.goto(sortedUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+                        await delay(2000);
+                    }
+                }
 
                 // Kiểm tra checkpoint / login
                 const url = page.url();
